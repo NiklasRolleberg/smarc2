@@ -382,7 +382,7 @@ class LoloProxOpsAction():
     def get_yaw_from_path(self, start_pose:PoseStamped, path : Path) -> float: 
 
         if(len(path.poses) < 4):
-            self._node.get_logger().Error("Path too short: " +str(len(path.poses)))
+            self._node.get_logger().error("Path too short: " +str(len(path.poses)))
             return self.get_yaw_from_posestamped(start_pose)
         
 
@@ -477,18 +477,18 @@ class LoloProxOpsAction():
         gridmap = OccupancyGrid()
         gridmap.header.stamp = self._node.get_clock().now().to_msg()
         gridmap.header.frame_id = frame_id
-        gridmap.info.height = int(maxy-miny)+1
-        gridmap.info.width = int(maxx-minx)+1
-        gridmap.info.resolution = 1.0
+        gridmap.info.resolution = 5.0 #TODO pick resolution based on map size
+        gridmap.info.height = int( (maxy-miny) / gridmap.info.resolution )+1
+        gridmap.info.width = int( (maxx-minx) / gridmap.info.resolution )+1
         gridmap.info.origin.position.x = minx
         gridmap.info.origin.position.y = miny
         gridmap.info.origin.position.z = 0.0
-
+        
         gridmap.data = [-1]*(gridmap.info.width*gridmap.info.height)
 
         for x in range(gridmap.info.width):
             for y in range(gridmap.info.height):
-                if(not self.is_inside_boundary(gridmap.info.origin.position.x + x,gridmap.info.origin.position.y + y, boundary)):
+                if(not self.is_inside_boundary(gridmap.info.origin.position.x + (x*gridmap.info.resolution) ,gridmap.info.origin.position.y + (y*gridmap.info.resolution), boundary)):
                     gridmap.data[x + y*gridmap.info.width] = 100
                 else:
                     gridmap.data[x + y*gridmap.info.width] = 0
