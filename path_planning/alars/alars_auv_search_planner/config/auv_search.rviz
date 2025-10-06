@@ -1,0 +1,421 @@
+Panels:
+  - Class: rviz_common/Displays
+    Help Height: 0
+    Name: Displays
+    Property Tree Widget:
+      Expanded:
+        - /Global Options1
+        - /Status1
+        - /TF1/Frames1
+        - /TF1/Tree1
+        - /PointStamped1/Topic1
+      Splitter Ratio: 0.40929535031318665
+    Tree Height: 829
+  - Class: rviz_common/Selection
+    Name: Selection
+  - Class: rviz_common/Tool Properties
+    Expanded:
+      - /2D Goal Pose1
+      - /Publish Point1
+    Name: Tool Properties
+    Splitter Ratio: 0.5886790156364441
+  - Class: rviz_common/Views
+    Expanded:
+      - /Current View1
+    Name: Views
+    Splitter Ratio: 0.5
+  - Class: rviz_common/Time
+    Experimental: false
+    Name: Time
+    SyncMode: 0
+    SyncSource: ""
+Visualization Manager:
+  Class: ""
+  Displays:
+    - Alpha: 0.5
+      Cell Size: 1
+      Class: rviz_default_plugins/Grid
+      Color: 160; 160; 164
+      Enabled: false
+      Line Style:
+        Line Width: 0.029999999329447746
+        Value: Lines
+      Name: Grid
+      Normal Cell Count: 0
+      Offset:
+        X: 0
+        Y: 0
+        Z: 0
+      Plane: XY
+      Plane Cell Count: 200
+      Reference Frame: <Fixed Frame>
+      Value: false
+    - Class: rviz_default_plugins/TF
+      Enabled: true
+      Frame Timeout: 15
+      Frames:
+        All Enabled: false
+        Quadrotor/GPS:
+          Value: true
+        Quadrotor/Hook:
+          Value: true
+        Quadrotor/IMU:
+          Value: true
+        Quadrotor/WinchSystem:
+          Value: true
+        Quadrotor/WinchToHook:
+          Value: true
+        Quadrotor/base_link:
+          Value: true
+        Quadrotor/camera:
+          Value: true
+        Quadrotor/camera_link:
+          Value: true
+        Quadrotor/depthsensor_link:
+          Value: true
+        Quadrotor/gps_link:
+          Value: true
+        Quadrotor/hull:
+          Value: true
+        Quadrotor/imu_link:
+          Value: true
+        Quadrotor/odom:
+          Value: true
+        Quadrotor/propeller1_link:
+          Value: true
+        Quadrotor/propeller2_link:
+          Value: true
+        Quadrotor/propeller3_link:
+          Value: true
+        Quadrotor/propeller4_link:
+          Value: true
+        Quadrotor/rangereceiver_link:
+          Value: true
+        Quadrotor/winch_link:
+          Value: true
+        map_gt:
+          Value: true
+        sam_auv_v1/back_prop_link:
+          Value: true
+        sam_auv_v1/base_link:
+          Value: true
+        sam_auv_v1/battery_link:
+          Value: true
+        sam_auv_v1/camera_down_link:
+          Value: true
+        sam_auv_v1/camera_front_left_link:
+          Value: true
+        sam_auv_v1/camera_front_link:
+          Value: true
+        sam_auv_v1/camera_front_right_link:
+          Value: true
+        sam_auv_v1/dvl_link:
+          Value: true
+        sam_auv_v1/front_prop_link:
+          Value: true
+        sam_auv_v1/gps_link:
+          Value: true
+        sam_auv_v1/imu_link:
+          Value: true
+        sam_auv_v1/odom:
+          Value: true
+        sam_auv_v1/pressure_link:
+          Value: true
+        sam_auv_v1/rope_link:
+          Value: true
+        sam_auv_v1/sbg_link:
+          Value: true
+        sam_auv_v1/sidescan_link:
+          Value: true
+        sam_auv_v1/tcg1_link:
+          Value: true
+        sam_auv_v1/tcg2_link:
+          Value: true
+        sam_auv_v1/thruster_link:
+          Value: true
+        sam_auv_v1/thruster_yaw_link:
+          Value: true
+        sam_auv_v1/uw_gps_link:
+          Value: true
+        sam_auv_v1/vbs_link:
+          Value: true
+        utm:
+          Value: false
+        utm_33_V:
+          Value: true
+      Marker Scale: 20
+      Name: TF
+      Show Arrows: true
+      Show Axes: true
+      Show Names: false
+      Tree:
+        map_gt:
+          Quadrotor/odom:
+            Quadrotor/base_link:
+              Quadrotor/camera_link:
+                Quadrotor/camera:
+                  {}
+              Quadrotor/depthsensor_link:
+                {}
+              Quadrotor/gps_link:
+                Quadrotor/GPS:
+                  {}
+              Quadrotor/hull:
+                {}
+              Quadrotor/imu_link:
+                Quadrotor/IMU:
+                  {}
+              Quadrotor/propeller1_link:
+                {}
+              Quadrotor/propeller2_link:
+                {}
+              Quadrotor/propeller3_link:
+                {}
+              Quadrotor/propeller4_link:
+                {}
+              Quadrotor/rangereceiver_link:
+                {}
+              Quadrotor/winch_link:
+                Quadrotor/WinchSystem:
+                  Quadrotor/Hook:
+                    {}
+                  Quadrotor/WinchToHook:
+                    {}
+          sam_auv_v1/odom:
+            sam_auv_v1/base_link:
+              sam_auv_v1/battery_link:
+                {}
+              sam_auv_v1/camera_down_link:
+                {}
+              sam_auv_v1/camera_front_left_link:
+                {}
+              sam_auv_v1/camera_front_link:
+                {}
+              sam_auv_v1/camera_front_right_link:
+                {}
+              sam_auv_v1/dvl_link:
+                {}
+              sam_auv_v1/gps_link:
+                {}
+              sam_auv_v1/imu_link:
+                {}
+              sam_auv_v1/pressure_link:
+                {}
+              sam_auv_v1/rope_link:
+                {}
+              sam_auv_v1/sbg_link:
+                {}
+              sam_auv_v1/sidescan_link:
+                {}
+              sam_auv_v1/tcg1_link:
+                {}
+              sam_auv_v1/tcg2_link:
+                {}
+              sam_auv_v1/thruster_yaw_link:
+                sam_auv_v1/thruster_link:
+                  sam_auv_v1/back_prop_link:
+                    {}
+                  sam_auv_v1/front_prop_link:
+                    {}
+              sam_auv_v1/uw_gps_link:
+                {}
+              sam_auv_v1/vbs_link:
+                {}
+        utm_33_V:
+          utm:
+            {}
+      Update Interval: 0
+      Value: true
+    - Alpha: 1
+      Class: rviz_default_plugins/PointStamped
+      Color: 248; 228; 92
+      Enabled: true
+      History Length: 1
+      Name: PointStamped
+      Radius: 5
+      Topic:
+        Depth: 5
+        Durability Policy: Volatile
+        Filter size: 5
+        History Policy: Keep Last
+        Reliability Policy: Reliable
+        Value: /sam_auv_v1/position
+      Value: true
+    - Class: rviz_default_plugins/Image
+      Enabled: true
+      Max Value: 1
+      Median window: 5
+      Min Value: 0
+      Name: Image
+      Normalize Range: true
+      Topic:
+        Depth: 5
+        Durability Policy: Volatile
+        History Policy: Keep Last
+        Reliability Policy: Reliable
+        Value: /Quadrotor/image_annotated/non_filtered
+      Value: true
+    - Class: rviz_default_plugins/Image
+      Enabled: false
+      Max Value: 1
+      Median window: 5
+      Min Value: 0
+      Name: Image
+      Normalize Range: true
+      Topic:
+        Depth: 5
+        Durability Policy: Volatile
+        History Policy: Keep Last
+        Reliability Policy: Reliable
+        Value: /Quadrotor/image_annotated/non_filtered
+      Value: false
+    - Alpha: 0.699999988079071
+      Class: rviz_default_plugins/Map
+      Color Scheme: map
+      Draw Behind: false
+      Enabled: true
+      Name: Map
+      Topic:
+        Depth: 5
+        Durability Policy: Volatile
+        Filter size: 10
+        History Policy: Keep Last
+        Reliability Policy: Reliable
+        Value: /M350/rviz/grid_map
+      Update Topic:
+        Depth: 5
+        Durability Policy: Volatile
+        History Policy: Keep Last
+        Reliability Policy: Reliable
+        Value: /M350/rviz/grid_map_updates
+      Use Timestamp: false
+      Value: true
+    - Alpha: 10
+      Class: rviz_default_plugins/PointStamped
+      Color: 204; 41; 204
+      Enabled: true
+      History Length: 1
+      Name: PointStamped
+      Radius: 2
+      Topic:
+        Depth: 5
+        Durability Policy: Volatile
+        Filter size: 10
+        History Policy: Keep Last
+        Reliability Policy: Reliable
+        Value: /M350/rviz/max_prob_cell
+      Value: true
+    - Alpha: 1
+      Buffer Length: 1
+      Class: rviz_default_plugins/Path
+      Color: 25; 255; 0
+      Enabled: true
+      Head Diameter: 0.30000001192092896
+      Head Length: 0.20000000298023224
+      Length: 0.30000001192092896
+      Line Style: Lines
+      Line Width: 0.029999999329447746
+      Name: Path
+      Offset:
+        X: 0
+        Y: 0
+        Z: 0
+      Pose Color: 255; 85; 255
+      Pose Style: None
+      Radius: 0.029999999329447746
+      Shaft Diameter: 0.10000000149011612
+      Shaft Length: 0.10000000149011612
+      Topic:
+        Depth: 5
+        Durability Policy: Volatile
+        Filter size: 10
+        History Policy: Keep Last
+        Reliability Policy: Reliable
+        Value: /M350/rviz/path
+      Value: true
+  Enabled: true
+  Global Options:
+    Background Color: 48; 48; 48
+    Fixed Frame: map_gt
+    Frame Rate: 30
+  Name: root
+  Tools:
+    - Class: rviz_default_plugins/Interact
+      Hide Inactive Objects: true
+    - Class: rviz_default_plugins/MoveCamera
+    - Class: rviz_default_plugins/Select
+    - Class: rviz_default_plugins/FocusCamera
+    - Class: rviz_default_plugins/Measure
+      Line color: 128; 128; 0
+    - Class: rviz_default_plugins/SetInitialPose
+      Covariance x: 0.25
+      Covariance y: 0.25
+      Covariance yaw: 0.06853891909122467
+      Topic:
+        Depth: 5
+        Durability Policy: Volatile
+        History Policy: Keep Last
+        Reliability Policy: Reliable
+        Value: /initialpose
+    - Class: rviz_default_plugins/SetGoal
+      Topic:
+        Depth: 5
+        Durability Policy: Volatile
+        History Policy: Keep Last
+        Reliability Policy: Reliable
+        Value: /goal_pose
+    - Class: rviz_default_plugins/PublishPoint
+      Single click: true
+      Topic:
+        Depth: 5
+        Durability Policy: Volatile
+        History Policy: Keep Last
+        Reliability Policy: Reliable
+        Value: /clicked_point
+  Transformation:
+    Current:
+      Class: rviz_default_plugins/TF
+  Value: true
+  Views:
+    Current:
+      Class: rviz_default_plugins/Orbit
+      Distance: 274.8954162597656
+      Enable Stereo Rendering:
+        Stereo Eye Separation: 0.05999999865889549
+        Stereo Focal Distance: 1
+        Swap Stereo Eyes: false
+        Value: false
+      Focal Point:
+        X: 89.59545135498047
+        Y: -40.63336181640625
+        Z: 3.5949454307556152
+      Focal Shape Fixed Size: false
+      Focal Shape Size: 0.05000000074505806
+      Invert Z Axis: false
+      Name: Current View
+      Near Clip Distance: 0.009999999776482582
+      Pitch: 1.5697963237762451
+      Target Frame: <Fixed Frame>
+      Value: Orbit (rviz)
+      Yaw: 3.1335272789001465
+    Saved: ~
+Window Geometry:
+  Displays:
+    collapsed: false
+  Height: 1043
+  Hide Left Dock: false
+  Hide Right Dock: true
+  Image:
+    collapsed: false
+  QMainWindow State: 000000ff00000000fd00000004000000000000029d0000037afc0200000022fb0000001200530065006c0065006300740069006f006e00000001e10000009b0000005c00fffffffb0000001e0054006f006f006c002000500072006f007000650072007400690065007302000001ed000001df00000185000000a3fb000000120056006900650077007300200054006f006f02000001df000002110000018500000122fb000000200054006f006f006c002000500072006f0070006500720074006900650073003203000002880000011d000002210000017afc0000003d0000037a000000c900fffffffa000000010100000002fb0000000a0049006d0061006700650000000000ffffffff0000005e00fffffffb000000100044006900730070006c0061007900730100000000000001920000015600fffffffb0000000a0049006d0061006700650000000204000001b30000002800fffffffb0000002000730065006c0065006300740069006f006e00200062007500660066006500720200000138000000aa0000023a00000294fb00000014005700690064006500530074006500720065006f02000000e6000000d2000003ee0000030bfb0000000c004b0069006e0065006300740200000186000001060000030c00000261fb0000000a0049006d00610067006501000002b7000000e50000000000000000fb0000000a0049006d006100670065000000025d0000007b0000000000000000fb0000000a0049006d0061006700650000000208000001940000000000000000fb0000000a0049006d006100670065000000028e0000010e0000000000000000fb0000000a0049006d006100670065000000023e0000015e0000000000000000fb0000000a0049006d0061006700650100000235000001670000000000000000fb0000000a0049006d00610067006501000002bc000000e00000000000000000fb0000000a0049006d00610067006500000001cf000001000000000000000000fb0000000a0049006d00610067006500000002d5000000c70000000000000000fb0000000a0049006d006100670065000000023e0000009a0000000000000000fb0000000a0049006d00610067006501000001f3000000e50000000000000000fb0000000a0049006d0061006700650100000273000001290000000000000000fb0000000a0049006d0061006700650100000249000001530000000000000000fb0000000a0049006d006100670065030000022b000000c6000003c000000303fb0000000a0049006d006100670065020000022c000000d800000192000000f2fb0000000a0049006d006100670065020000027a0000029300000192000000f4fb0000000a0049006d00610067006503000001f7000000cf000002c200000217fb0000000a0049006d00610067006503000003d800000136000002b600000204fb0000000c00430061006d00650072006100000001fa000000ee0000000000000000fb0000000c00430061006d00650072006100000002a1000001160000000000000000fb0000000a0049006d00610067006500000002a80000010f0000000000000000fb0000000a0049006d00610067006500000002c8000000ef0000000000000000fb0000000a0049006d006100670065000000024e0000009a0000000000000000fb0000000a0049006d006100670065010000010c0000014d0000000000000000fb0000000a0049006d006100670065010000025f00000158000000000000000000000001000001000000037afc0200000003fb0000001e0054006f006f006c002000500072006f00700065007200740069006500730100000041000000780000000000000000fb0000000a00560069006500770073000000003d0000037a000000a400fffffffb0000001200530065006c0065006300740069006f006e010000025a000000b20000000000000000000000020000073a000000a9fc0100000003fb0000000a0049006d0061006700650200000046000002260000073a000000a9fb0000000a0049006d006100670065030000020b0000011a000002a7000001fbfb0000000a00560069006500770073030000004e00000080000002e100000197000000030000078000000039fc0100000002fb0000000800540069006d0065010000000000000780000002fb00fffffffb0000000800540069006d00650100000000000004500000000000000000000004dd0000037a00000004000000040000000800000008fc0000000100000002000000010000000a0054006f006f006c00730100000000ffffffff0000000000000000
+  Selection:
+    collapsed: false
+  Time:
+    collapsed: false
+  Tool Properties:
+    collapsed: false
+  Views:
+    collapsed: true
+  Width: 1920
+  X: 0
+  Y: 1200
