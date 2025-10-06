@@ -97,7 +97,6 @@ class SearchPlanner(Node, ABC):
         self.tf_listener = TransformListener(self.tf_buffer, self)
         all_topics_and_types = self.get_topic_names_and_types()
         all_topics = [elem[0] for elem in all_topics_and_types]
-        print(all_topics)
 
         # send a warning if a topic is not registered
         used_topics = [params['topics.move_drone'], params['topics.drone_odom']]
@@ -149,7 +148,7 @@ class SearchPlanner(Node, ABC):
         pose_msg.header.frame_id = self.drone_odom_frame_id
         pose_msg.pose.position.x = x
         pose_msg.pose.position.y = y
-        pose_msg.pose.position.z = z - 1.16 # - self.drone_init_pos.point.z 
+        pose_msg.pose.position.z = z  # - self.drone_init_pos.point.z 
         self.point_publisher.publish(pose_msg)
 
         # return current position as feedback
@@ -227,7 +226,7 @@ class SearchPlanner(Node, ABC):
                 pose_msg.header.stamp = self.get_clock().now().to_msg()
                 pose_msg.pose.position.x = self.path[0][0]
                 pose_msg.pose.position.y = self.path[0][1]
-                pose_msg.pose.position.z = self.flight_height - 1.16 if self.params['mode'] == 'sim' else self.flight_height #HACK: check if -1.16 is still needed
+                pose_msg.pose.position.z = self.flight_height #- 1.16 if self.params['mode'] == 'sim' else self.flight_height #HACK: check if -1.16 is still needed
                 
             if self.params['mode'] == 'sim' and pose_msg is not None:
                 self.point_publisher.publish(pose_msg)
@@ -241,7 +240,7 @@ class SearchPlanner(Node, ABC):
         pose_msg = PoseStamped()
         pose_msg.header.frame_id = self.drone_odom_frame_id
         pose_msg.header.stamp = self.get_clock().now().to_msg()
-        pose_msg.pose.position.z = self.flight_height - 1.16 # self.drone_init_pos.point.z
+        pose_msg.pose.position.z = self.flight_height  # self.drone_init_pos.point.z
         self.point_publisher.publish(pose_msg)
         odom_position = self.transform_point(self.drone_position)
         return odom_position.point.x, odom_position.point.y
@@ -311,16 +310,21 @@ class SpiralPathModel(SearchPlanner):
         SAM's estimated velocity
         
         """
-        start = time.time()
+
         current_pos_odom = self.transform_point(self.drone_position, self.drone_odom_frame_id)
         if self.path_needed:
             if self.phase == 'line':
-                self.path = [[current_pos_odom.point.x, current_pos_odom.point.y], self.grid_map.GPS_ping_odom]
+                # compute displacement between current pos and gps and divide line into N waypoints
+                delta = (self.grid_map.GPS_ping_odom[0]-current_pos_odom.point.x, self.grid_map.GPS_ping_odom[1]-current_pos_odom.point.y)
+                max_component = max(abs(delta[0]), abs(delta[1]))
+                sign = (delta[0]/abs(delta[0]), delta[1]/abs(delta[1]))
+                N = int(max_component/self.distance_thresh)
+                self.path = list(zip(np.linspace(current_pos_odom.point.x, self.grid_map.GPS_ping_odom[0], N), 
+                                     np.linspace(current_pos_odom.point.y, self.grid_map.GPS_ping_odom[1], N)))
                 self.phase = 'circle'
-                self.path_needed = False
                 # if mode = 'srv', the next path is generated as soon service receives request. If mode = 'sim' or 'as', 
                 # we use distance feeback to determine when to publish next path
-                if self.params['mode'] == 'srv': self.path_needed = True  
+                self.path_needed = True if self.params['mode'] == 'srv' else False 
 
             elif self.phase == 'circle':
                 # check velocity direction to produce points smoothly
@@ -353,33 +357,26 @@ class SpiralPathModel(SearchPlanner):
             self.path_num_points = len(self.path)
             
             # publish path for visualization in rviz
-            end = time.time()
             self.publish_path()
 
 
         elif not self.path_needed and not self.path_completed:
-            end = start
             if len(self.path) == 0:
                 self.path_completed = True 
             else:
                 self.pose2pub = self.publish_waypoint(self.distance_thresh, current_pos_odom)
                
         else:
-            end = start
             self.path_needed = True
             self.path_completed = False
             self.phase == 'line'
 
         # compute distance between drone initial position and sam initial position to log on metrics
         if self.phase != "line":
-            distance = 0
             for i, pt in enumerate(self.path):
                  if i < len(self.path)-1: distance += dist(pt, self.path[i+1]) 
-        else:
-            distance = dist(self.path[0], self.path[-1])
-        distance = distance if end != start else 0
  
-        return self.path, distance, end-start
+        return self.path
 
 
 
@@ -410,7 +407,8 @@ class GreedyPathModel(SearchPlanner):
         with highest probability. This cell can be retrieved using the full map or using a region around
         the drone's current position. In the latter case, the radius has to be specified -> horizon
         """
-        start = time.time()
+        time_start = time.time()
+        distance = 0
         if self.path_needed:
             self.get_logger().info(f'Path is needed, running {self.params["path_planner"]}) path planner')
             self.path_needed = False
@@ -431,13 +429,13 @@ class GreedyPathModel(SearchPlanner):
                 except IndexError:
                     idx = np.unravel_index(np.argmax(self.grid_map.prior, axis=None), self.grid_map.prior.shape)
 
-            # generate pseudo obstacles and plan path 
+            # plan path and publish it
             goal = [self.grid_map.X[idx[0]][idx[1]], self.grid_map.Y[idx[0]][idx[1]]]
             self.path = [start, goal]
             self.path_num_points = len(self.path)
 
-            # publish path for visualization in rviz
-            end = time.time()
+            time_end = time.time()
+            distance =  dist(self.path[0], self.path[-1]) 
             self.publish_path()
             
             # If mode = 'srv', the next path is generated as soon service receives request. 
@@ -446,7 +444,7 @@ class GreedyPathModel(SearchPlanner):
 
 
         elif not self.path_needed and not self.path_completed:
-            end = start
+            time_end = time_start
             if len(self.path) == 0:
                 self.path_completed = True 
             else:
@@ -454,14 +452,11 @@ class GreedyPathModel(SearchPlanner):
                 self.pose2pub = self.publish_waypoint(self.distance_thresh, current_pos_odom)            
         
         else:
-            end = start
+            time_end = time_start
             self.path_needed = True
             self.path_completed = False
-
-        distance =  dist(self.path[0], self.path[-1]) if self.phase != "circle" else 2*pi*self.r
-        distance = distance if end != start else 0
             
-        return self.path, distance, end - start
+        return self.path, distance, time_end - time_start
     
 """ --------------------- A*  path planners --------------------------------------"""
 
@@ -775,7 +770,7 @@ class APFPathModel(SearchPlanner):
             self.path_needed = True
             self.path_completed = False
 
-        distance =  dist(self.path[0], self.path[-1]) if self.phase != "circle" else 2*pi*self.r
+        distance =  dist(self.path[0], self.path[-1]) 
         distance = distance if end != start else 0
 
         return self.path, distance, end-start
