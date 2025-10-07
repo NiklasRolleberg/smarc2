@@ -371,10 +371,6 @@ class SpiralPathModel(SearchPlanner):
             self.path_completed = False
             self.phase == 'line'
 
-        # compute distance between drone initial position and sam initial position to log on metrics
-        if self.phase != "line":
-            for i, pt in enumerate(self.path):
-                 if i < len(self.path)-1: distance += dist(pt, self.path[i+1]) 
  
         return self.path
 
@@ -402,13 +398,12 @@ class GreedyPathModel(SearchPlanner):
             self.get_logger().error("No valid parameters received in Greedy Path Model")
 
 
-    def generate_path(self) -> Tuple[Path, float, float]:
+    def generate_path(self) -> Path:
         """ It makes use of the grid map to generate a striaght line between current position and cell
         with highest probability. This cell can be retrieved using the full map or using a region around
         the drone's current position. In the latter case, the radius has to be specified -> horizon
         """
-        time_start = time.time()
-        distance = 0
+
         if self.path_needed:
             self.get_logger().info(f'Path is needed, running {self.params["path_planner"]}) path planner')
             self.path_needed = False
@@ -434,8 +429,6 @@ class GreedyPathModel(SearchPlanner):
             self.path = [start, goal]
             self.path_num_points = len(self.path)
 
-            time_end = time.time()
-            distance =  dist(self.path[0], self.path[-1]) 
             self.publish_path()
             
             # If mode = 'srv', the next path is generated as soon service receives request. 
@@ -444,7 +437,6 @@ class GreedyPathModel(SearchPlanner):
 
 
         elif not self.path_needed and not self.path_completed:
-            time_end = time_start
             if len(self.path) == 0:
                 self.path_completed = True 
             else:
@@ -452,11 +444,10 @@ class GreedyPathModel(SearchPlanner):
                 self.pose2pub = self.publish_waypoint(self.distance_thresh, current_pos_odom)            
         
         else:
-            time_end = time_start
             self.path_needed = True
             self.path_completed = False
             
-        return self.path, distance, time_end - time_start
+        return self.path
     
 """ --------------------- A*  path planners --------------------------------------"""
 
@@ -725,7 +716,6 @@ class APFPathModel(SearchPlanner):
         
         The resultant of forces is then convert to a displacement vector, which is proportional to the force.
         """
-        start = time.time()
         if self.path_needed:
 
             # get current position in odom and cell with highets prob in a given radius
@@ -749,7 +739,6 @@ class APFPathModel(SearchPlanner):
             self.path_num_points = len(self.path)
 
             # publish path for visualization in rviz
-            end = time.time()
             self.publish_path()
 
             # if mode = 'srv', the next path is generated as soon service receives request. If mode = 'sim' or 'as', 
@@ -758,7 +747,6 @@ class APFPathModel(SearchPlanner):
         
 
         elif not self.path_needed and not self.path_completed:
-            end = start
             if len(self.path) == 0:
                 self.path_completed = True 
             else:
@@ -766,14 +754,11 @@ class APFPathModel(SearchPlanner):
                 self.pose2pub = self.publish_waypoint(self.distance_thresh, current_pos_odom)            
         
         else:
-            end = start
             self.path_needed = True
             self.path_completed = False
 
-        distance =  dist(self.path[0], self.path[-1]) 
-        distance = distance if end != start else 0
 
-        return self.path, distance, end-start
+        return self.path
     
 
     def create_forces(self, X, Y, prior, start:np.array):
