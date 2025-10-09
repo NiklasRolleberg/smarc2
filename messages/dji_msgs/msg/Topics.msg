@@ -19,6 +19,7 @@ string ESTIMATED_AUV_TOPIC = 'alars_detection/auv' # PointStamped
 string ESTIMATED_MIDDLE_TOPIC = 'alars_detection/middle' # PointStamped
 string ESTIMATED_HOOK_TOPIC = 'alars_detection/hook_est' #PoseStamped
 string ESTIMATED_EKF_HOOK_TOPIC = 'alars_detection/hook_ekf' #PoseStamped
+string ESTIMATED_CNN_TOPIC = 'alars_detection/cnn' # PointStamped
 
 # services
 string ENABLE_ALARS_DETECTOR_SERVICE_TOPIC = 'enable_alars_detector' # Trigger
