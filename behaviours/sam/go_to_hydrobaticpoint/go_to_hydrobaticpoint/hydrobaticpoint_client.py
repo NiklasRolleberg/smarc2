@@ -106,8 +106,13 @@ class HydropointClient(SMARCActionClient):
         # Latch AFTER confirming server readiness to avoid “sent into the void”
         self._send_latch = True
 
+        # DEBUG ONLY!!
+        #mocap_goal.pose.position.x = 2.0
+
         self.logger.info(f"[HydropointClient] Sending goal (frame={mocap_goal.header.frame_id})")
         goal_msg = BaseAction.Goal()
+
+
         goal_msg.goal = self._json_ops.encode(mocap_goal)
 
         # IMPORTANT: ensure your SMARCActionClient wires callbacks through send_goal
