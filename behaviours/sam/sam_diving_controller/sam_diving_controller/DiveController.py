@@ -123,7 +123,7 @@ class DiveControllerInterface:
         actuator_state = self._dive_pub.get_actuator_states()
 
         if actuator_state == ActuatorStates.ENGAGED:
-            u_vbs_neutral = self.param['vbs_u_neutral'] 
+            u_vbs_neutral = 0.0 #self.param['vbs_u_neutral'] 
             u_lcg_neutral = self.param['lcg_u_neutral']
             u_tv_hor_neutral = self.param['tv_u_neutral']
             u_tv_ver_neutral = self.param['tv_u_neutral']
@@ -569,7 +569,7 @@ class DiveControllerMPC(DiveControllerInterface):
         build = True
 
         # create nmpc object for the OCP
-        self.N_horizon = 30 # Prediction horizon
+        self.N_horizon = 20 # Prediction horizon
         self.nmpc = NMPC(sam, self._dt, self.N_horizon, update_solver_settings=build)
         self.nx = self.nmpc.nx        # State vector length + control vector
         self.nu = self.nmpc.nu        # Control derivative vector length
@@ -710,8 +710,30 @@ class DiveControllerMPC(DiveControllerInterface):
         # FIXME: Remove all the print statements here. They only should appear in the convenience node
         s = f"\nNMPC INFO\n" # {self._dive_sub.current_idx}/{self.traj_len}:\n"
         s += f"NMPC solver status: {self._acados_status[status]}\n"
-        #s += f"NMPC solve time: {(end_time - start_time)*1000:.1f} ms\n"
+        s += f"NMPC solve time: {(end_time - start_time)*1000:.1f} ms\n"
         #s += f"Traj. index: {self._dive_sub.current_idx}/{self.traj_len}:\n" if self.ref_is_traj else f""
+        s += "States:\n"
+        s += f"   x: {self._current_state.pose.pose.position.x:.3f}, "\
+             f"y: {self._current_state.pose.pose.position.y:.3f}, "\
+             f"z: {self._current_state.pose.pose.position.z:.3f}, "\
+             f"qx: {self._current_state.pose.pose.orientation.x:.3f}, "\
+             f"qy: {self._current_state.pose.pose.orientation.y:.3f}, "\
+             f"qz: {self._current_state.pose.pose.orientation.z:.3f}, "\
+             f"qw: {self._current_state.pose.pose.orientation.w:.3f}\n"
+        s += f"Waypoint:\n"
+        s += f"   x: {self.waypoint.pose.pose.position.x:.3f}, "\
+             f"y: {self.waypoint.pose.pose.position.y:.3f}, "\
+             f"z: {self.waypoint.pose.pose.position.z:.3f}, "\
+             f"qx: {self.waypoint.pose.pose.orientation.x:.3f}, "\
+             f"qy: {self.waypoint.pose.pose.orientation.y:.3f}, "\
+             f"qz: {self.waypoint.pose.pose.orientation.z:.3f}, "\
+             f"qw: {self.waypoint.pose.pose.orientation.w:.3f}\n"
+        s += f"Actuators:\n"
+        s += f"   VBS: {self._input.vbs:.3f}, "\
+             f"LCG: {self._input.lcg:.3f}, "\
+             f"TV stern: {self._input.thrustervertical:.3f}, "\
+             f"TV rudder: {self._input.thrusterhorizontal:.3f}, "\
+             f"RPM: {self._input.thrusterrpm:.3f}\n"
 
         self._loginfo(s)
 
@@ -1002,7 +1024,7 @@ class DiveControllerMPC(DiveControllerInterface):
         # Assign the calculated control signal to actuators
         u_vbs = mpc_solution[13]
         u_lcg = mpc_solution[14]
-        u_stern = -mpc_solution[15] 
+        u_stern = mpc_solution[15] 
         u_rudder = -mpc_solution[16]
         u_rpm1 = mpc_solution[17]
         u_rpm2 = mpc_solution[18]
