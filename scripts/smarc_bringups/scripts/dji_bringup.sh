@@ -1,9 +1,15 @@
 #! /bin/bash
 
-#source ~/colcon_ws/install/setup.bash
-
 ROBOT_NAME=M350
 SESSION=${ROBOT_NAME}_bringup
+
+# check if there is already a tmux session with this name
+if tmux has-session -t $SESSION 2>/dev/null; then
+    echo "There is already a tmux session named $SESSION."
+    echo "Please close it before launching this script."
+    echo "Exiting."
+    exit 1
+fi
 
 MQTT_ADDR=20.240.40.232
 MQTT_PORT=1884
@@ -101,17 +107,34 @@ tmux split-window -v -t $SESSION:1.1      # Split right pane into top-right (0.1
 tmux select-layout -t $SESSION:1 tiled    # Arrange as a 2x2 grid
 
 tmux select-pane -t $SESSION:1.0
-tmux send-keys "ros2 launch alars_auv_search_planner search_planning_launch.py  mode:=\"'as'\" namespace:=\"'$ROBOT_NAME'\"" C-m
+tmux send-keys "ros2 launch alars_auv_search_planner search_planning_launch.py  mode:=\"'as'\" namespace:=\"'$ROBOT_NAME'\" use_sim_time:=$USE_SIM_TIME" C-m
 # the line above with all the quotes is annyoing but it works...
 
 tmux select-pane -t $SESSION:1.1
-tmux send-keys "echo 'This will be alars-localize'" C-m
+tmux send-keys "ros2 run alars alars_localize_action_server --ros-args -r __ns:=/$ROBOT_NAME \
+-p use_sim_time:=$USE_SIM_TIME \
+-p tracking_tolerance:=0.1 \
+-p tracking_aggressiveness:=3.0 \
+-p wait_before_motion:=1.0" C-m
 
 tmux select-pane -t $SESSION:1.2
-tmux send-keys "echo 'This will be alars-recover'" C-m
+ALARS_RECOVER_SETPOINT_TOLERANCE=0.2
+if [[ $USE_SIM_TIME = "True" ]]; then
+    ALARS_RECOVER_SETPOINT_TOLERANCE=1.0
+fi
+tmux send-keys "ros2 run alars alars_recover_action_server --ros-args -r __ns:=/$ROBOT_NAME \
+-p use_sim_time:=$USE_SIM_TIME \
+-p setpoint_tolerance:=$ALARS_RECOVER_SETPOINT_TOLERANCE" C-m
+
 
 tmux select-pane -t $SESSION:1.3
-tmux send-keys "echo 'This will be alars-checkload'" C-m
+MOVE_TO_SETPOINT_TOLERANCE=0.3
+if [[ $USE_SIM_TIME = "True" ]]; then
+    MOVE_TO_SETPOINT_TOLERANCE=1.0
+fi
+tmux send-keys "ros2 launch go_to_geopoint go_to_geopoint_server.launch robot_name:=$ROBOT_NAME use_sim_time:=$USE_SIM_TIME \
+setpoint_topic:=move_to_setpoint \
+setpoint_tolerance:=$MOVE_TO_SETPOINT_TOLERANCE" C-m
 
 
 # bt
@@ -125,11 +148,14 @@ pulse_rate:=$PULSE_RATE \
 use_sim_time:=$USE_SIM_TIME \
 bt_timeout:=5.0" C-m
 
-# move-to
-tmux new-window -t $SESSION:3 -n 'MoveTo'
-tmux rename-window "MoveTo"
+
+# alars-bt
+LOADED_WEIGHT_KG=1.2 # real empty sam + hook + rope weight is 1.78kg, just the hook and rope is 0.79kg
+tmux new-window -t $SESSION:3 -n 'alars-bt'
+tmux rename-window "alars-bt"
 tmux select-window -t $SESSION:3
-tmux send-keys "ros2 launch go_to_geopoint go_to_geopoint_server.launch robot_name:=$ROBOT_NAME use_sim_time:=$USE_SIM_TIME setpoint_topic:=move_to_setpoint" C-m
+tmux send-keys "ros2 run alars alars_bt --ros-args -r __ns:=/$ROBOT_NAME -p use_sim_time:=$USE_SIM_TIME \
+-p loaded_weight_kg:=$LOADED_WEIGHT_KG" C-m
 
 
 # camera and detection node
@@ -139,24 +165,16 @@ tmux select-window -t $SESSION:4
 tmux split-window -h -t $SESSION:4.0
 tmux select-pane -t $SESSION:4.0
 
-SHOW_DEBUG=0
-ENABLE_DETECTOR_ON_START=0
+# auv buoy detector
+AUV_DETECTOR_CONFIG_FILENAME=auv_detector_field_calibration.yaml
 if [[ $USE_SIM_TIME = "True" ]]; then
-    SHOW_DEBUG=1
-    ENABLE_DETECTOR_ON_START=1
+    AUV_DETECTOR_CONFIG_FILENAME=auv_detector_sim_calibration.yaml
 fi
+AUV_DETECTOR_CONFIG_FILE=$(ros2 pkg prefix auv_detector --share)/config/$AUV_DETECTOR_CONFIG_FILENAME
+
 tmux send-keys "ros2 run auv_detector auv_buoy_detector --ros-args \
--r __ns:=/$ROBOT_NAME \
--p use_sim_time:=$USE_SIM_TIME \
--p debug_imshow:=$SHOW_DEBUG \
--p enable_buoy_detector:=1 \
--p enable_auv_detector:=1 \
--p enable_rope_detector:=0 \
--p buoy_color_lower_orange:='[8,121,35]' \
--p buoy_color_upper_orange:='[40,157,247]' \
--p auv_color_lower_yellow:='[25, 0, 169]' \
--p auv_color_upper_yellow:='[46, 103, 221]' \
--p enable_on_start:=$ENABLE_DETECTOR_ON_START" C-m
+-r __ns:=/$ROBOT_NAME -p use_sim_time:=$USE_SIM_TIME \
+--params-file $AUV_DETECTOR_CONFIG_FILE" C-m
 
 # the cam driver is needed just for the real thing
 if [[ $USE_SIM_TIME = "False" ]]; then
@@ -184,6 +202,14 @@ if [[ $USE_SIM_TIME = "True" ]]; then
         tmux select-pane -t $SESSION:9.1
         tmux send-keys "mosquitto -p $MQTT_PORT" C-m
     fi
+fi
+
+if [[ $USE_SIM_TIME = "False" ]]; then
+    # new window for load_cell_driver
+    tmux new-window -t $SESSION:7 -n 'LoadCell'
+    tmux rename-window "LoadCell"
+    tmux select-window -t $SESSION:7
+    tmux send-keys "ros2 run nau7802_ros2_driver nau7802_ros2_driver --ros-args -r __ns:=/$ROBOT_NAME" C-m
 fi
 
 # Set default window to either the captain 
