@@ -1,5 +1,7 @@
 #!/usr/bin/python
 
+import numpy as np
+
 import rclpy
 from rclpy.node import Node
 from rclpy.executors import MultiThreadedExecutor
@@ -22,6 +24,8 @@ from dji_msgs.msg import Topics as DJITopics
 from dji_msgs.msg import Links as DJILinks
 from smarc_msgs.msg import Topics as SmarcTopics
 
+from alars.speed_names import SpeedNames
+
 
 class MoveToAction():
     def __init__(self,
@@ -30,7 +34,6 @@ class MoveToAction():
 
         self._node.declare_parameter('robot_name', 'M350')
         self._robot_name : str = self._node.get_parameter('robot_name').get_parameter_value().string_value
-
         self.ODOM_FRAME : str = self._robot_name + '/' + DJILinks.ODOM
         self._drone_in_odom : None | PoseStamped = None
 
@@ -43,6 +46,15 @@ class MoveToAction():
         self._goal_tolerance : None | float = None
         self._node.declare_parameter('default_tolerance', 0.3)
         self._default_tolerance : float = self._node.get_parameter('default_tolerance').get_parameter_value().double_value
+
+        self._node.declare_parameter("speeds", [0.5, 1.0, 1.5])
+        speeds = self._node.get_parameter("speeds").get_parameter_value().double_array_value
+        self.SPEED_VALUES : dict[SpeedNames, float] = {
+            SpeedNames.SLOW: speeds[0],
+            SpeedNames.STANDARD: speeds[1],
+            SpeedNames.FAST: speeds[2]
+        }
+        self._goal_speed : float | None = None
 
         self._setpoint_pub = self._node.create_publisher(
             msg_type = PoseStamped,
@@ -107,10 +119,24 @@ class MoveToAction():
                 timeout = Duration(seconds=1)
             )
             self._goal_in_odom = do_transform_pose_stamped(goal_in_utm_pose, tf)
+
             self._goal_tolerance = float(goal_request['waypoint']['tolerance']) if 'tolerance' in goal_request['waypoint'] else 0.5
+            speed_str = goal_request['speed'] if 'speed' in goal_request else 'standard'
+            # test if speed_str is a float or one of the SpeedNames
+            try:
+                speed_value = float(speed_str)
+            except:
+                try:
+                    speed_value = self.SPEED_VALUES[SpeedNames[speed_str.upper()]]
+                except:
+                    self.log(f"Unknown speed name: '{speed_str}', defaulting to STANDARD")
+                    speed_value = self.SPEED_VALUES[SpeedNames.STANDARD]
+
+            self._goal_speed = speed_value
+
             pos = self._goal_in_odom.pose.position
             self.log(
-                f"Received goal in odom: [{pos.x:.2f},{pos.y:.2f},{pos.z:.2f}], tolerance: {self._goal_tolerance}"
+                f"Received goal in odom: [{pos.x:.2f},{pos.y:.2f},{pos.z:.2f}], tolerance: {self._goal_tolerance}, speed: {self._goal_speed}"
             )
             return True
         
@@ -140,26 +166,46 @@ class MoveToAction():
         if self._goal_tolerance is None:
             self.log("No goal tolerance set, failing...")
             return False
+
+        if self._goal_speed is None:
+            self.log("No goal speed set, failing...")
+            return False
+
+        goal_position = np.array([self._goal_in_odom.pose.position.x,
+                                  self._goal_in_odom.pose.position.y,
+                                  self._goal_in_odom.pose.position.z])
+        self_position = np.array([self._drone_in_odom.pose.position.x,
+                                  self._drone_in_odom.pose.position.y,
+                                  self._drone_in_odom.pose.position.z])
+
+        goal_error = goal_position - self_position
+        goal_error_mag = np.linalg.norm(goal_error)
+        self._distance_remaining = float(goal_error_mag)
+
+        # maybe we reached already
+        if self._distance_remaining <= self._goal_tolerance:
+            self.log(f"Reached goal within tolerance {self._goal_tolerance}m")
+            return True
         
+        # not reached, publish a setpoint in the direction of the goal
+        # "speed away"
+        if goal_error_mag > self._goal_speed:
+            goal_direction_vec = goal_error / goal_error_mag
+            setpoint_position = self_position + goal_direction_vec * self._goal_speed
+        else:
+            # if we are very close, just go to the goal
+            setpoint_position = goal_position
 
         # publish the setpoint
         setpoint = PoseStamped()
         setpoint.header.stamp = self.now_stamp
         setpoint.header.frame_id = self.ODOM_FRAME
-        setpoint.pose.position = self._goal_in_odom.pose.position
+        setpoint.pose.position.x = setpoint_position[0]
+        setpoint.pose.position.y = setpoint_position[1]
+        setpoint.pose.position.z = setpoint_position[2]
         setpoint.pose.orientation.w = 1.0  # neutral orientation
         self._setpoint_pub.publish(setpoint)
 
-        # check if we are within tolerance
-        dx : float = self._drone_in_odom.pose.position.x - self._goal_in_odom.pose.position.x
-        dy : float = self._drone_in_odom.pose.position.y - self._goal_in_odom.pose.position.y
-        dz : float = self._drone_in_odom.pose.position.z - self._goal_in_odom.pose.position.z
-        self._distance_remaining = float((dx**2 + dy**2 + dz**2)**0.5)
-
-        if self._distance_remaining <= self._goal_tolerance:
-            self.log(f"Reached goal within tolerance {self._goal_tolerance}m")
-            return True
-        
         return None
 
     def _give_feedback(self) -> str:
