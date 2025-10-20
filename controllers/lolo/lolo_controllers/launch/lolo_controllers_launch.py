@@ -37,7 +37,7 @@ def generate_launch_description():
                      "p_gain": 0.1,
                      "i_gain": 0.0,
                      "d_gain": 0.0,
-                     "output_limit": 0.05,
+                     "output_limit": 0.075,
                      "meassurement_topic": ControlTopics.CONTROL_YAW_TOPIC,
                      "setpoint_topic": LoloTopics.YAW_SETPOINT,
                      "output_topic": LoloTopics.YAW_RATE_SETPOINT,
