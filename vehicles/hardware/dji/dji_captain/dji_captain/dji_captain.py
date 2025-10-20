@@ -93,20 +93,19 @@ class DjiCaptain():
 
 
         self._node.declare_parameter("robot_name", "M350")
-        self._node.declare_parameter("controller_deadzone", 0.1)
-        self._node.declare_parameter("controller_yawrate_multiplier", 0.3)
-        # give an error-causing default value to force the user to pass this parameter every time
-        # there is no safe assumption that can be made for this.
-        self._node.declare_parameter("home_altitude_above_water", -1.0)
-
         self.ROBOT_NAME : str = self._node.get_parameter("robot_name").get_parameter_value().string_value
         self._TF_NS : str = f"{self.ROBOT_NAME}/"
 
+        self._node.declare_parameter("controller_deadzone", 0.1)
         self._CONTROLLER_DEADZONE : float = self._node.get_parameter("controller_deadzone").get_parameter_value().double_value
+        self._node.declare_parameter("controller_yawrate_multiplier", 0.3)
         self._CONTROLLER_YAWRATE_MULTIPLIER : float = self._node.get_parameter("controller_yawrate_multiplier").get_parameter_value().double_value
         
-        self._HOME_ALT_ABOVE_WATER = self._node.get_parameter("home_altitude_above_water").get_parameter_value().double_value
 
+        # give an error-causing default value to force the user to pass this parameter every time
+        # there is no safe assumption that can be made for this.
+        self._node.declare_parameter("home_altitude_above_water", -1.0)
+        self._HOME_ALT_ABOVE_WATER = self._node.get_parameter("home_altitude_above_water").get_parameter_value().double_value
         if self._HOME_ALT_ABOVE_WATER <= 0:
             self.log(f"Warning: home_altitude_above_water parameter not set or invalid! It is {self._HOME_ALT_ABOVE_WATER}")
             self.log("YOU MUST PASS THIS PARAMETER AND MAKE SURE IT IS CORRECT!")
@@ -114,7 +113,7 @@ class DjiCaptain():
             sys.exit(1)
 
         
-        
+
         self._control_mode = ControlModes.FLUvel
         self._move_to_setpoint : PoseStamped | None = None
         self._joy_timer : None | Timer = None
@@ -1142,6 +1141,8 @@ class DjiCaptain():
         # until we have a better idea of where the gimbal is...
         # and we do this in the _flat_ frame, so roll and pitch are zeroed out
         # like the gimbal in theory does.
+        # this ignores the change in position due to drone attitude, but that is small
+        # and uncontrollable by us, so we'll ignore until that little bit matters.
         gimbal_in_base = TransformStamped()
         gimbal_in_base.header.stamp = now
         gimbal_in_base.header.frame_id = self.BASE_FLAT_FRAME
@@ -1151,12 +1152,14 @@ class DjiCaptain():
         # same as above, winch in base_link
         winch_in_base = TransformStamped()
         winch_in_base.header.stamp = now
-        winch_in_base.header.frame_id = self.BASE_FLAT_FRAME
+        winch_in_base.header.frame_id = self.BASE_FRAME
         winch_in_base.child_frame_id = self.WINCH_FRAME
-        # Set offset for winch_link (example, not correct values):
-        winch_in_base.transform.translation.x = 0.0  # example values
-        winch_in_base.transform.translation.y = 0.0
-        winch_in_base.transform.translation.z = 0.5
+        # Set offset for winch_link
+        # roughly measured in cad model, from the center of the battery lock to right leg T junction, 
+        # assuming the T junction is in-line with base_link origin
+        winch_in_base.transform.translation.x = 0.0 
+        winch_in_base.transform.translation.y = -0.194 
+        winch_in_base.transform.translation.z = -0.322
         winch_in_base.transform.rotation.x = 0.0
         winch_in_base.transform.rotation.y = 0.0
         winch_in_base.transform.rotation.z = 0.0
