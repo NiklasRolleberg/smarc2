@@ -45,7 +45,7 @@ class MoveToAction():
         self._goal_in_odom : PoseStamped|None = None
         self._goal_tolerance : None | float = None
         self._node.declare_parameter('default_tolerance', 0.3)
-        self._default_tolerance : float = self._node.get_parameter('default_tolerance').get_parameter_value().double_value
+        self._default_goal_tolerance : float = self._node.get_parameter('default_tolerance').get_parameter_value().double_value
 
         self._node.declare_parameter("speeds", [0.5, 1.0, 1.5])
         speeds = self._node.get_parameter("speeds").get_parameter_value().double_array_value
@@ -55,6 +55,10 @@ class MoveToAction():
             SpeedNames.FAST: speeds[2]
         }
         self._goal_speed : float | None = None
+
+        # if set true, move vertically first, then horizontally always
+        self._node.declare_parameter("vertical_first", True)
+        self._VERTICAL_FIRST_MODE : bool = self._node.get_parameter("vertical_first").get_parameter_value().bool_value
 
         self._setpoint_pub = self._node.create_publisher(
             msg_type = PoseStamped,
@@ -120,7 +124,7 @@ class MoveToAction():
             )
             self._goal_in_odom = do_transform_pose_stamped(goal_in_utm_pose, tf)
 
-            self._goal_tolerance = float(goal_request['waypoint']['tolerance']) if 'tolerance' in goal_request['waypoint'] else 0.5
+            self._goal_tolerance = float(goal_request['waypoint']['tolerance']) if 'tolerance' in goal_request['waypoint'] else self._default_goal_tolerance
             speed_str = goal_request['speed'] if 'speed' in goal_request else 'standard'
             # test if speed_str is a float or one of the SpeedNames
             try:
@@ -177,6 +181,14 @@ class MoveToAction():
         self_position = np.array([self._drone_in_odom.pose.position.x,
                                   self._drone_in_odom.pose.position.y,
                                   self._drone_in_odom.pose.position.z])
+        
+        # if vertical first mode, check if we need to move vertically first
+        if self._VERTICAL_FIRST_MODE:
+            vertical_error = abs(goal_position[2] - self_position[2])
+            if vertical_error > self._goal_tolerance:
+                # need to move vertically first
+                goal_position[0] = self_position[0]
+                goal_position[1] = self_position[1]
 
         goal_error = goal_position - self_position
         goal_error_mag = np.linalg.norm(goal_error)
