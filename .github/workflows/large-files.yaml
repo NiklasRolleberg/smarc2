@@ -1,0 +1,71 @@
+name: Block Large Files in PR
+
+on:
+  pull_request:
+    branches: [humble, gh_workflow_testing]
+
+jobs:
+  check-large-files:
+    name: Fail PR if files > 10MB
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout PR head
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0  # need full history to diff with base
+
+      - name: Fetch base commit
+        run: |
+          BASE_SHA="${{ github.event.pull_request.base.sha }}"
+          # Ensure the base commit is present locally for diffing
+          git fetch --no-tags --depth=1 origin "$BASE_SHA"
+
+      - name: Check for files larger than 10MB in the PR diff
+        run: |
+          set -euo pipefail
+
+          MAX=$((10 * 1024 * 1024)) # 10 MB in bytes
+          BASE_SHA="${{ github.event.pull_request.base.sha }}"
+          HEAD_SHA="${{ github.sha }}"
+
+          echo "Comparing changes between:"
+          echo "  BASE: $BASE_SHA"
+          echo "  HEAD: $HEAD_SHA"
+
+          # Get added/modified/renamed files in the PR
+          mapfile -t CHANGED < <(git diff --name-only --diff-filter=AMR "$BASE_SHA" "$HEAD_SHA")
+
+          if [[ ${#CHANGED[@]} -eq 0 ]]; then
+            echo "No added/modified files in this PR."
+            exit 0
+          fi
+
+          echo "Files changed (${#CHANGED[@]}):"
+          printf ' - %s\n' "${CHANGED[@]}"
+
+          BIG=()
+          for f in "${CHANGED[@]}"; do
+            # Skip if file no longer exists in HEAD (edge case of rename/delete)
+            [[ -f "$f" ]] || continue
+            size=$(wc -c < "$f")
+            if (( size > MAX )); then
+              # Format sizes in IEC (e.g., 12M) if numfmt available
+              if command -v numfmt >/dev/null 2>&1; then
+                human_size=$(numfmt --to=iec "$size")
+                human_max=$(numfmt --to=iec "$MAX")
+                BIG+=("$f ($human_size > $human_max)")
+              else
+                BIG+=("$f ($size bytes > $MAX bytes)")
+              fi
+            fi
+          done
+
+          if (( ${#BIG[@]} > 0 )); then
+            echo "❌ Large files detected in this PR (limit 10MB):"
+            printf ' - %s\n' "${BIG[@]}"
+            echo
+            echo "Please remove, compress, or use Git LFS (if appropriate) before merging."
+            exit 1
+          fi
+
+          echo "✅ No files over 10MB found in the PR diff."
