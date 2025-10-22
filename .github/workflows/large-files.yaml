@@ -1,0 +1,31 @@
+name: Block Large Files
+
+on:
+  push:
+    branches:
+        - humble
+        - gh_workflow_testing
+  pull_request:
+    branches:
+        - humble
+
+jobs:
+  check-large:
+    runs-on: ubuntu-22.04
+    steps:
+      - uses: actions/checkout@v4
+        with: { fetch-depth: 0 }
+      - name: Reject blobs > 10MB in diff
+        run: |
+          MAX=$((10 * 1024 * 1024))
+          # Compare against main for PRs; fall back to previous commit for pushes
+          BASE="${{ github.event.pull_request.base.sha || github.event.before }}"
+          git fetch --no-tags --depth=1 origin ${BASE:-HEAD~1}
+          git diff --name-only --diff-filter=AM ${BASE:-HEAD~1} HEAD | while read -r f; do
+            [[ -f "$f" ]] || continue
+            sz=$(wc -c < "$f")
+            if [ "$sz" -gt "$MAX" ]; then
+              echo "❌ $f is too large ($(numfmt --to=iec $sz))"
+              exit 1
+            fi
+          done
