@@ -20,8 +20,8 @@ from PIL import Image as PILImage
 from collections import deque
 import os
 
-from ament_index_python.packages import get_package_share_directory
-import yaml
+#from ament_index_python.packages import get_package_share_directory
+#import yaml
 
 
 # ==== CNN Definition (same as in training file) ====
