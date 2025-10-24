@@ -108,8 +108,8 @@ class DiveSub():
         self.path_sub = node.create_subscription(msg_type=Path, topic='planned_path', callback=self._path_cb, qos_profile=10)
 
         # Test of subscribers - excluding ctrl_synch_msg
-        self.lcg_fb = node.create_subscription(msg_type=PercentStamped, topic=SamTopics.LCG_CMD_TOPIC, callback=self._lcg_cb, qos_profile=10)
-        self.vbs_fb = node.create_subscription(msg_type=PercentStamped, topic=SamTopics.VBS_CMD_TOPIC, callback=self._vbs_cb, qos_profile=10)
+        self.lcg_fb = node.create_subscription(msg_type=PercentStamped, topic=SamTopics.LCG_FB_TOPIC, callback=self._lcg_cb, qos_profile=10)
+        self.vbs_fb = node.create_subscription(msg_type=PercentStamped, topic=SamTopics.VBS_FB_TOPIC, callback=self._vbs_cb, qos_profile=10)
         # self.rpm1_fb = node.create_subscription(msg_type=ThrusterRPM, topic=SamTopics.THRUSTER1_CMD_TOPIC, callback=self._lcg_cb, qos_profile=10)
         # self.rpm2_fb = node.create_subscription(msg_type=ThrusterRPM, topic=SamTopics.THRUSTER2_CMD_TOPIC, callback=self._lcg_cb, qos_profile=10)
         # FIXME: Why is this hardcoded?
