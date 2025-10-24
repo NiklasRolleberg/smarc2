@@ -41,11 +41,11 @@
 	url = https://github.com/NinjaTuna007/serial_ping_pkg.git
 [submodule "simulation/SMARCUnity"]
 	path = simulation/SMARCUnity
-	url = https://github.com/smarc-project/SMARCUnity
+	url = git@github.com:smarc-project/SMARCUnity.git
 	branch = master
 [submodule "simulation/SMARCAssets"]
 	path = simulation/SMARCAssets
-	url = https://github.com/smarc-project/SMARCAssets
+	url = git@github.com:smarc-project/SMARCAssets.git
 	branch = master
 [submodule "messages/psdk_interfaces"]
 	path = messages/psdk_interfaces
