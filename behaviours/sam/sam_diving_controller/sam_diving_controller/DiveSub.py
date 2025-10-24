@@ -254,6 +254,7 @@ class DiveSub():
 
         self._states_in_mocap.header.frame_id = self._waypoint_global.header.frame_id
         self._states_in_mocap.pose.pose = tf2_geometry_msgs.do_transform_pose(self._states.pose.pose, self._tf_global_odom)
+        self._states_in_mocap.twist = self._states.twist
 
         self._transformed_state_to_mocap = True
 
