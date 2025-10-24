@@ -107,7 +107,7 @@ class HydropointClient(SMARCActionClient):
         self._send_latch = True
 
         # DEBUG ONLY!!
-        #mocap_goal.pose.position.x = 3.0
+        mocap_goal.pose.position.x = 3.0
 
         self.logger.info(f"[HydropointClient] Sending goal (frame={mocap_goal.header.frame_id})")
         goal_msg = BaseAction.Goal()
