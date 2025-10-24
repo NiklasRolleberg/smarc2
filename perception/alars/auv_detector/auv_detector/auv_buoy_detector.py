@@ -26,6 +26,13 @@ class DetectionNode(Node):
         self.declare_parameter('auv_color_lower_yellow', [25, 0, 169])
         self.declare_parameter('auv_color_upper_yellow', [46, 103, 221])
 
+        # default values from field test rosbag
+        self.declare_parameter('calibration_altitude', 8.7)
+        self.declare_parameter('buoy_area_percent_at_calibration_altitude', 0.007)
+        self.declare_parameter('auv_area_percent_at_calibration_altitude', 0.149)
+        self.declare_parameter('sensitivity_area_percent', 0.10)
+        self.declare_parameter('least_area_pixels', 10)
+
         self._CAMERA_PIXELS_FRAME = "camera_pixels_normalized"  # Frame for publishing detected points
 
         ################################################################################
@@ -43,6 +50,8 @@ class DetectionNode(Node):
             self.get_parameter('buoy_color_upper_orange').value, dtype=np.uint8
         )
 
+        
+
         # AUV detection (yellow range)
         self.auv_color_lower_yellow = np.array(
             self.get_parameter('auv_color_lower_yellow').value, dtype=np.uint8
@@ -50,17 +59,30 @@ class DetectionNode(Node):
         self.auv_color_upper_yellow = np.array(
             self.get_parameter('auv_color_upper_yellow').value, dtype=np.uint8
         )
+
+        
         # Minimum and maximum area thresholds at 8 meters, so you can intuitively estimate
         # what percentage of the image the buoy and AUV will occupy.
-        self.initial_altitude = 8.7                              # unit: meter  
-        self.buoy_area_percent_at_initial_altitude = 0.007*0.01  # unit: percentage 
-        self.auv_area_percent_at_initial_altitude = 0.149*0.01   # unit: percentage 
-        self.sensitivity_area_percent =  0.10*0.01               # unit: percentage 
+        # unit: meter
+        self.initial_altitude = self.get_parameter('calibration_altitude').get_parameter_value().double_value  
+        # unit: percentage
+        self.buoy_area_percent_at_initial_altitude = 0.01 * self.get_parameter('buoy_area_percent_at_calibration_altitude').get_parameter_value().double_value
+        self.auv_area_percent_at_initial_altitude = 0.01 * self.get_parameter('auv_area_percent_at_calibration_altitude').get_parameter_value().double_value
+        self.sensitivity_area_percent = 0.01 * self.get_parameter('sensitivity_area_percent').get_parameter_value().double_value
 
 
         # The lower bound of the detection is usually set to 10 to remove environmental noise. 
-        self.least_area_pixels = 10                              # unit: Pixel 
+        # unit: Pixel
+        self.least_area_pixels = self.get_parameter('least_area_pixels').get_parameter_value().integer_value
     
+        self.get_logger().info(f"Buoy HSV Lower: {self.buoy_color_lower_orange}, Upper: {self.buoy_color_upper_orange}")
+        self.get_logger().info(f"AUV HSV Lower: {self.auv_color_lower_yellow}, Upper: {self.auv_color_upper_yellow}")
+        self.get_logger().info(f"Initial Altitude: {self.initial_altitude} m")
+        self.get_logger().info(f"Buoy Area at Initial Altitude: {self.buoy_area_percent_at_initial_altitude*100:.2f} %")
+        self.get_logger().info(f"AUV Area at Initial Altitude: {self.auv_area_percent_at_initial_altitude*100:.2f} %")
+        self.get_logger().info(f"Sensitivity Area Percent: {self.sensitivity_area_percent*100:.2f} %")
+        self.get_logger().info(f"Least Area Pixels: {self.least_area_pixels} pixels")
+
         # Here, I set the area thresholds based on AUV height. 
         # If the AUV height is less than 10 meters, buoy_min_area_by_height[0] is used. 
         # If it is greater than 10 meters, buoy_min_area_by_height[1] is used. 
@@ -196,6 +218,8 @@ class DetectionNode(Node):
         #         break
 
     def image_callback(self, msg: Image):
+
+        center_buoy = None  # Ensure center_buoy is always defined
 
         if not self.detector_enabled:
             # Detector disabled — do minimal processing / return quickly.
@@ -374,39 +398,79 @@ class DetectionNode(Node):
                         )     
 
                     if self.auv_min_area <= max_area <= self.auv_max_area:
-                        # Get center
-                        M = cv2.moments(max_contour)
-                        if M["m00"] != 0:
-                            cx = int(M["m10"] / M["m00"])
-                            cy = int(M["m01"] / M["m00"])
-                            # Normalize coordinates between -1 and 1, with 0 at the image center
-                            img_h, img_w = cv_image.shape[:2]
-                            norm_cx = 2 * (cx / img_w) - 1
-                            norm_cy = 2 * (cy / img_h) - 1
+                        # Now, pick the edge center closer to buoy
+                        if center_buoy is None:
+                            # No buoy, just use contour centroid
+                            M = cv2.moments(max_contour)
+                            if M["m00"] != 0:
+                                cx = int(M["m10"] / M["m00"])
+                                cy = int(M["m01"] / M["m00"])
+                            else:
+                                return  # Avoid division by zero
+                        else:
+                            # Buoy detected, recovery needs to know the
+                            # AUV tip position not its center, so fit
+                            # a rectangle on the contour and pick
+                            # the short edge closer to the buoy
+                            # This assumes the AUV is longer than it is wide
+                            # This assumes the buoy is not inside the AUV contour
+                            # This assumes the rope is relatively straight and doesnt curve
+                            # behind the back of the auv... and so on
+                            # Need a better detection method for the complicated cases
 
-                            # --- calculate percentage of image covered by the contour ---
-                            auv_area = max_area / total_pixels  # value between 0 and 1
+                            # Fit a rotated rectangle to the contour
+                            rect = cv2.minAreaRect(max_contour)
+                            box = cv2.boxPoints(rect)
+                            box = np.int0(box)
+                            # Get the four corners
+                            corners = box
+                            # Find the two short edges (pairs of corners)
+                            dists = [np.linalg.norm(corners[i] - corners[(i+1)%4]) for i in range(4)]
+                            # Indices of the two short edges
+                            short_edges = sorted(range(4), key=lambda i: dists[i])[:2]
+                            # Each short edge is (corners[i], corners[(i+1)%4])
+                            edge_centers = []
+                            for i in short_edges:
+                                pt1 = corners[i]
+                                pt2 = corners[(i+1)%4]
+                                center = (pt1 + pt2) / 2.0
+                                edge_centers.append(center)
+                            buoy_point = np.array(center_buoy)
+                            distances = [np.linalg.norm(center - buoy_point) for center in edge_centers]
+                            min_idx = np.argmin(distances)
+                            cx, cy = edge_centers[min_idx]
+                            cx = int(cx)
+                            cy = int(cy)
+                            
 
-                            #center_auv = (cx,cy)
-                            center_auv = np.array([cx, cy])
-                            cv2.circle(preview_auv, (cx, cy), 10, (0, 0, 255), 1)
+                        # Normalize coordinates between -1 and 1, with 0 at the image center
+                        img_h, img_w = cv_image.shape[:2]
+                        norm_cx = 2 * (cx / img_w) - 1
+                        norm_cy = 2 * (cy / img_h) - 1
+                        auv_position_msg = PointStamped()
+                        auv_position_msg.header.frame_id = self._CAMERA_PIXELS_FRAME
+                        auv_position_msg.header.stamp = self.get_clock().now().to_msg()
+                        auv_position_msg.point.x = float(norm_cx)
+                        auv_position_msg.point.y = float(norm_cy)
+                        self.auv_pub.publish(auv_position_msg)
 
-                            cv2.circle(cv_image_noted, (cx, cy), 10, (0, 0, 255), 1)
+                        # --- calculate percentage of image covered by the contour ---
+                        auv_area = max_area / total_pixels  # value between 0 and 1
 
-                            auv_position_msg = PointStamped()
-                            auv_position_msg.header.frame_id = self._CAMERA_PIXELS_FRAME
-                            auv_position_msg.header.stamp = self.get_clock().now().to_msg()
-                            auv_position_msg.point.x = float(norm_cx)
-                            auv_position_msg.point.y = float(norm_cy)
-                            self.auv_pub.publish(auv_position_msg)
+                        #center_auv = (cx,cy)
+                        center_auv = np.array([cx, cy])
+                        cv2.circle(preview_auv, (cx, cy), 10, (0, 0, 255), 1)
 
-                            # Put area text
-                            cv2.putText(preview_auv, f"AUV Area: {int(max_area)} ({auv_area:.3%})", (cx + 10, cy - 10),
-                                        cv2.FONT_HERSHEY_SIMPLEX, 0.6, (255, 255, 255), 1)
-                            #cv2.drawContours(preview_auv, [max_contour], -1, (0, 255, 0), 1) 
+                        cv2.circle(cv_image_noted, (cx, cy), 10, (0, 0, 255), 1)
 
-                            cv2.putText(cv_image_noted, f"AUV Area: {int(max_area)} ({auv_area:.3%})", (cx + 10, cy - 10),
-                                        cv2.FONT_HERSHEY_SIMPLEX, 0.6, (255, 255, 255), 1)
+
+                        # Put area text
+                        cv2.putText(preview_auv, f"AUV Area: {int(max_area)} ({auv_area:.3%})", (cx + 10, cy - 10),
+                                    cv2.FONT_HERSHEY_SIMPLEX, 0.6, (255, 255, 255), 1)
+                        #cv2.drawContours(preview_auv, [max_contour], -1, (0, 255, 0), 1) 
+
+                        cv2.putText(cv_image_noted, f"AUV Area: {int(max_area)} ({auv_area:.3%})", (cx + 10, cy - 10),
+                                    cv2.FONT_HERSHEY_SIMPLEX, 0.6, (255, 255, 255), 1)
                 if self.debug_imshow >= 2:
                     cv2.imshow('HSV_auv', preview_auv)
 
