@@ -18,6 +18,21 @@
     </visual>
   </link>
 
+  <link name="$(arg robot_name)/sonar_link"/>
+  <joint name="$(arg robot_name)/sonar_joint" type="fixed">
+    <parent link="$(arg robot_name)/base_link"/>
+    <child link="$(arg robot_name)/sonar_link"/>
+    <origin rpy="0. ${-pi/6} 0.0" xyz="0.22 0. -0.16"/>
+  </joint>
+
+  <link name="$(arg robot_name)/dvl_frame"/>
+  <joint name="$(arg robot_name)/dvl_joint" type="fixed">
+    <parent link="$(arg robot_name)/base_link"/>
+    <child link="$(arg robot_name)/dvl_frame"/>
+    <origin rpy="0. 0. 0.0" xyz="-0.15 -0.15 0.15"/>
+  </joint>
+
+
   </xacro:macro>
 
 </robot>
