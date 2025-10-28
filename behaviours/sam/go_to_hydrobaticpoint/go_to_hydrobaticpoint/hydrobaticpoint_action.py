@@ -44,7 +44,7 @@ class HydrobaticPointAction:
             # TODO: add timeout
             # timeout = float(fmt_dict["hydropoint"]["timeout"])
             return hydropoint
-        elif component is ActionComponent.FEEDBACK:
+        elif component is 2:
             # TODO: add time_remaining
             return float(fmt_dict["distance_remaining"])
         else:
