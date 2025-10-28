@@ -133,8 +133,8 @@ class DiveSub():
         #self.ctrl_synch_msg.registerCallback(self._ctrl_synch_cb)
 
         # DEBUGGING the trajectory tracking
-        file_path = "/home/parallels/ros2_ws/src/smarc2/behaviours/sam/sam_diving_controller/sam_diving_controller/trajectoryComplexity3.csv"
-        self.path = self.read_csv_to_array(file_path)
+        #file_path = "/home/parallels/ros2_ws/src/smarc2/behaviours/sam/sam_diving_controller/sam_diving_controller/trajectoryComplexity3.csv"
+        #self.path = self.read_csv_to_array(file_path)
 
         self._loginfo("Dive Subscriber Node started")
 
