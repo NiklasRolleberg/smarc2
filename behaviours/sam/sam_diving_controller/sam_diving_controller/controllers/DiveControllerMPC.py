@@ -213,6 +213,7 @@ class DiveControllerMPC(DiveControllerInterface):
                 self.trajectory = np.array(self.trajectory)  # Convert/make sure it is a numpy array
 
             # Declare duration of sim.
+            self._loginfo(f"trajectory: {self.trajectory}")
             self.traj_len = self.trajectory.shape[0]
 
             # Augment the trajectory and control input reference
