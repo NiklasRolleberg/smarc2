@@ -21,123 +21,124 @@ from go_to_hydrobaticpoint.hydrobaticpoint_action import HydrobaticPointAction
 
 
 class HydropointClient(SMARCActionClient):
-   """Client for sending Geopoint message requests to vehicles.
+    """Client for sending Geopoint message requests to vehicles.
 
-   Attributes:
-       logger: shorthand for `node.get_logger()`
-   """
+    Attributes:
+        logger: shorthand for `node.get_logger()`
+    """
 
-   def __init__(
-       self,
-       node: Node,
-       action_name: str,
-       action_type: ActionType,
-       **kwargs,
-   ):
-       super().__init__(node, action_name, action_type)
-       self.logger = self._node.get_logger()
-       self.declare_parameters()
-       self._json_ops = HydrobaticPointAction()
-       self.logger.set_level(rclpy.logging.LoggingSeverity.INFO)
-       self.goal_processed = False
+    def __init__(
+        self,
+        node: Node,
+        action_name: str,
+        action_type: ActionType,
+        **kwargs,
+    ):
+        super().__init__(node, action_name, action_type)
+        self.logger = self._node.get_logger()
+        self.declare_parameters()
+        self._json_ops = HydrobaticPointAction()
+        self.logger.set_level(rclpy.logging.LoggingSeverity.INFO)
+        self.goal_processed = False
 
-       # Wait for server
-       # while not self._client.wait_for_server(timeout_sec=1.) and rclpy.ok():
-       #     self.logger.info(f"Node {action_name} waiting for go_to_hydropoint server")
+        # Wait for server
+        # while not self._client.wait_for_server(timeout_sec=1.) and rclpy.ok():
+        #     self.logger.info(f"Node {action_name} waiting for go_to_hydropoint server")
 
-       self.logger.info(f"Node {action_name} connected to go_to_hydropoint server")
-
-
-   def run(self):
-       self.logger.info("Subscribing to mocap hydro point topic")
-       self.mocap_goal_sub = self._node.create_subscription(PoseStamped, 
-                                                           ControlTopics.MOCAP_HYDROPOINT,
-                                                           self.mocap_hydro_cb, 1)
-    #    self.mocap_goal_sub = self._node.create_subscription(PoseStamped, 
-    #                                                         '/mqtt/hula/pose',
-    #                                                         self.mqtt_hydro_cb, 1)
+        self.logger.info(f"Node {action_name} connected to go_to_hydropoint server")
 
 
-   def mqtt_hydro_cb(self, mqtt_goal: String):
-
-       if not self.goal_processed:
-
-           if self.state != ActionClientState.SENT:
-
-               if self.state == ActionClientState.ACCEPTED or self.state == ActionClientState.RUNNING:
-                   self.goal_processed = True
-                   self._node.destroy_subscription(self.mocap_goal_sub)
-                   return
-
-               self.logger.info(f"Sending goal {mqtt_goal}")
-               goal_msg = BaseAction.Goal()
-               goal_msg.goal = self._json_ops.encode(mqtt_goal)
-               self.send_goal(goal_msg)
+    def run(self):
+        self.logger.info("Subscribing to mocap hydro point topic")
+        self.mocap_goal_sub = self._node.create_subscription(PoseStamped, 
+                                                            ControlTopics.MOCAP_HYDROPOINT,
+                                                            self.mocap_hydro_cb, 1)
+        #    self.mocap_goal_sub = self._node.create_subscription(PoseStamped, 
+        #                                                         '/mqtt/hula/pose',
+        #                                                         self.mqtt_hydro_cb, 1)
 
 
-   def mocap_hydro_cb(self, mocap_goal: PoseStamped):
+    def mqtt_hydro_cb(self, mqtt_goal: String):
 
-       if not self.goal_processed:
+        if not self.goal_processed:
 
-           if self.state != ActionClientState.SENT:
+            if self.state != ActionClientState.SENT:
 
-               if self.state == ActionClientState.ACCEPTED or self.state == ActionClientState.RUNNING:
-                   self.goal_processed = True
-                   self._node.destroy_subscription(self.mocap_goal_sub)
-                   return
+                if self.state == ActionClientState.ACCEPTED or self.state == ActionClientState.RUNNING:
+                    self.goal_processed = True
+                    self._node.destroy_subscription(self.mocap_goal_sub)
+                    return
 
-               self.logger.info(f"Sending goal {mocap_goal}")
-               goal_msg = BaseAction.Goal()
-               goal_msg.goal = self._json_ops.encode(mocap_goal)
-               self.send_goal(goal_msg)
+                self.logger.info(f"Sending goal {mqtt_goal}")
+                goal_msg = BaseAction.Goal()
+                goal_msg.goal = self._json_ops.encode(mqtt_goal)
+                self.send_goal(goal_msg)
 
-   def declare_parameters(self):
-       """Location to declare parameters."""
-       pass
 
-   def goal_response_callback(self, goal_handle: ClientGoalHandle):
-       """Result when a goal is sent to the server."""
-       if not goal_handle.accepted:
-           self.logger.info("Goal was not accepted")
-           return
-       else:
-           self.logger.info("Goal was accepted")
+    def mocap_hydro_cb(self, mocap_goal: PoseStamped):
 
-   def feedback_callback(self, feedback_msg: ActionFeedback):
-       """Result when a goal is sent to the server."""
-       self.logger.debug(f"Received feedback {feedback_msg.feedback}")
-       self.dist_rem = self._json_ops.decode(
-           feedback_msg.feedback,
-           ActC.FEEDBACK,
-       )
+        if self.state != ActionClientState.SENT:
 
-   def result_callback(self, result: ActionResult, status: GoalStatus):
-       """Result when a goal is sent to the server."""
-       self.logger.info(f"Waypoint reached boolean: {result}")
-       if result.success:
-           return self.get_goal_success()
-       else:
-           return self.get_goal_error()
+            # if not self.goal_processed:
+            if self.state == ActionClientState.RUNNING:
+            #    self.goal_processed = True
+                self._node.destroy_subscription(self.mocap_goal_sub)
+                return
 
-   def cancel_callback(self, response):
-       """Cancellation callback.
+            else:
+                # self.logger.info(f"Sending goal {mocap_goal}")
+                goal_msg = BaseAction.Goal()
+                goal_msg.goal = self._json_ops.encode(mocap_goal)
+                self.send_goal(goal_msg)
 
-       Args:
-           response: receives CancelGoal action msg
-       """
-       if len(response.goals_canceling) > 0:
-           self.logger.info("Successfully canceled goal.")
-       else:
-           self.logger.info("Unsuccessfully canceled goal.")
 
-   def cancel_geopoint(self):
-       """Interacts with action server to cancel action.
+    def declare_parameters(self):
+        """Location to declare parameters."""
+        pass
 
-       Returns:
-           Boolean where true signifies a goal was successfully canceled. False if not true.
+    def goal_response_callback(self, goal_handle: ClientGoalHandle):
+        """Result when a goal is sent to the server."""
+        if not goal_handle.accepted:
+            self.logger.info("Goal was not accepted")
+            return
+        else:
+            self.logger.info("Goal was accepted")
 
-       """
-       self.cancel_goal(self.cancel_callback)
+    def feedback_callback(self, feedback_msg: ActionFeedback):
+        """Result when a goal is sent to the server."""
+        self.logger.debug(f"Received feedback {feedback_msg.feedback}")
+        # self.dist_rem = self._json_ops.decode(
+        #     feedback_msg.feedback,
+        #     2
+        # )
+
+    def result_callback(self, result: ActionResult, status: GoalStatus):
+        """Result when a goal is sent to the server."""
+        self.logger.info(f"Waypoint reached boolean: {result}")
+        if result.success:
+            return self.get_goal_success()
+        else:
+            return self.get_goal_error()
+
+    def cancel_callback(self, response):
+        """Cancellation callback.
+
+        Args:
+            response: receives CancelGoal action msg
+        """
+        if len(response.goals_canceling) > 0:
+            self.logger.info("Successfully canceled goal.")
+        else:
+            self.logger.info("Unsuccessfully canceled goal.")
+
+    def cancel_geopoint(self):
+        """Interacts with action server to cancel action.
+
+        Returns:
+            Boolean where true signifies a goal was successfully canceled. False if not true.
+
+        """
+        self.cancel_goal(self.cancel_callback)
 
 
 def main(args=None):
