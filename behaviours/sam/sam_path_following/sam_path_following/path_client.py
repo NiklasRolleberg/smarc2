@@ -57,19 +57,16 @@ class PathClient(SMARCActionClient):
 
 
     def run(self):
-        # DEBUGGING the trajectory tracking                                                                                                  
-        file_path = "/home/parallels/ros2_ws/src/smarc2/behaviours/sam/sam_diving_controller/sam_diving_controller/trajectoryComplexity3.csv"
+        # DEBUGGING the trajectory tracking
+        file_path = "/home/parallels/ros2_ws/src/smarc2/behaviours/sam/sam_diving_controller/sam_diving_controller/simple_path_complexity_1.csv"
         np_path = self.read_csv_to_array(file_path)
         
         path = self.convert_np_path_to_trajectory(np_path)
 
         self.send_path(path)
 
-        pass
-        #self.logger.info("Subscribing to mocap hydro point topic")
-        #self.mocap_goal_sub = self._node.create_subscription(PoseStamped, 
-        #                                                     ControlTopics.MOCAP_HYDROPOINT,
-        #                                                     self.mocap_hydro_cb, 1)
+        self.logger.info("Path sent")
+
 
     def read_csv_to_array(self, file_path: str):                    
         """                                                         
