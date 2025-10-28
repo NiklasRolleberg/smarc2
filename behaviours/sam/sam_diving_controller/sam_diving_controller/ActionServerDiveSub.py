@@ -519,9 +519,9 @@ class HydropointServer(SMARCActionServer, DiveSub):
         result_msg = self.action_type.Result
         hydropoint = self._json_ops.decode(goal_handle.request.goal, 0) #ActC.GOAL)
         self.logger.info(f"Hydropoint sent: {hydropoint}")
-
-        # Action succeeded
         status = self.feedback_loop(hydropoint, goal_handle)
+
+        # Action finished
         if status == "cancelled":
             self.logger.info("Goal was cancelled by client.")
             self.set_mission_state(MissionStates.CANCELLED, "AS")

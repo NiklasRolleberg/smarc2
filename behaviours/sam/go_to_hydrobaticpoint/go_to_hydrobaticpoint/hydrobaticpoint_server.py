@@ -235,7 +235,7 @@ class HydropointServer(SMARCActionServer):
             A populated ActionResult message
         """
         result_msg = self.action_type.Result
-        hydropoint = self._json_ops.decode(goal_handle.request.goal, ActC.GOAL)
+        hydropoint = self._json_ops.decode(goal_handle.request.goal, 0)
         self.logger.info(f"Hydropoint sent: {hydropoint}")
         # rate = self._node.create_rate()
 
@@ -266,8 +266,12 @@ class HydropointServer(SMARCActionServer):
 
         """
         goal_request = goal_request.goal
-        hydro_setpoint = self._json_ops.decode(goal_request, ActC.GOAL)
+        print(goal_request)
+        hydro_setpoint = self._json_ops.decode(goal_request, 0)
         self.logger.info(f"Recieved setpoint at {hydro_setpoint}")
+        if hydro_setpoint == None:
+            return GoalResponse.REJECT
+        
         pose_stamped = hydro_setpoint
         try:
             dist = self.compute_distance(pose_stamped)
