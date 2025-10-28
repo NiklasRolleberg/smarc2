@@ -12,7 +12,6 @@ from rclpy.executors import MultiThreadedExecutor
 from rcl_interfaces.msg import ParameterDescriptor
 from smarc_control_msgs.msg import Topics as ControlTopics
 from smarc_control_msgs.msg import WpMPC, SamControl 
-from smarc_control_msgs.action import TrajectoryMPC
 from smarc_msgs.msg import PercentStamped, ThrusterRPM, ThrusterFeedback
 from sam_msgs.msg import Topics as SamTopics
 from sam_msgs.msg import ThrusterAngles
@@ -32,28 +31,15 @@ from smarc_action_base.smarc_action_base import (
 )                                                
 from smarc_msgs.action import BaseAction
 from smarc_msgs.msg import Topics as SMaRCTopics
+import json
 
 from go_to_hydrobaticpoint.hydrobaticpoint_server import HydropointServer
 from rclpy.action.server import ServerGoalHandle
 from go_to_hydrobaticpoint.hydrobaticpoint_action import ActionComponent as ActC
-
-# class HydropointServerPath(HydropointServer):
+from sam_path_following.path_client import PathClient
+# from sam_path_following.path_action import PathAction
     
-#     def __init__(
-#         self, node: Node, action_name, action_type: ActionType,
-#     ):
-#         super().__init__(
-#             node,
-#             action_name,
-#             action_type,
-#         )
-
-#         self._hydropoint = None
-#         self._received_waypoint = True
-#         self.path_computed = False
-
-    
-class SamPathPlanner(HydropointServer):
+class SamPathPlanner(HydropointServer, PathClient):
 
     def __init__(
                 self,
@@ -73,11 +59,23 @@ class SamPathPlanner(HydropointServer):
             action_type,
         )
 
-        self._hydropoint = None
-        self._received_waypoint = True
-        self.path_computed = False
+        action_name = "auv_trajectory_tracking"
+        PathClient.__init__(
+            self,
+            self._node, 
+            action_name,
+            action_type,
+        )
 
-        self.set_parameters()
+        # This has to be declared before calling the constructors
+        self.declare_parameters()
+
+        self._hydropoint = None
+        # self._received_waypoint = False
+        self.path_computed = False
+        self.call_planner = False
+
+        # self.set_parameters()
 
         self._tf_buffer = Buffer()
         self._tf_listener = TransformListener(
@@ -87,16 +85,6 @@ class SamPathPlanner(HydropointServer):
         # Declare your publishers here
         self.path_pub = self._node.create_publisher(Path, 'planned_path', 1)  # For Rviz
         self.pose_pub = self._node.create_publisher(PoseStamped, 'planned_pose', 1)  # For Rviz
-
-        # Action client for sending the paths
-        # action_type = ActionType(BaseAction)
-        # action_name = "auv_trajectory_tracking"
-        # self.ac = PathClient(self, action_name, action_type) 
-        # self.traj_pub = self.create_publisher(TrajectoryMPC, ControlTopics.TRAJ_MPC, 1)
-
-        action_type = ActionType(BaseAction)
-        # self.hp_as = HydropointServerPath(self, "go_to_hydropoint", action_type)
-        self.distance_frame = "sam/base_link"
 
         # Declare your subscribers here
         # self.pose_sub = self.create_subscription(PoseStamped, 
@@ -133,25 +121,68 @@ class SamPathPlanner(HydropointServer):
 
         self._goal_handle = None
 
+    def declare_parameters(self):
+        """Location to declare parameters."""
+        node = self._node
 
-    def set_parameters(self):
         ## Add your parameters here
-        # self.robot_name = self.declare_parameter("robot_name", "sam").value
-        self.map_frame = self._node.declare_parameter("map_frame", "mocap").value
-        # self.base_frame = self.declare_parameter("base_frame", f"{self.robot_name}/base_link").value
-        self.node_rate = self._node.declare_parameter("node_rate", 1.).value
-        self.x_max = self._node.declare_parameter("x_max", 10).value   # map
-        self.y_max = self._node.declare_parameter("y_max", 2.5).value  # map
-        self.z_max = self._node.declare_parameter("z_max", 3).value   # map
-        self.x_min = self._node.declare_parameter("x_min", 0).value    # map
-        self.y_min = self._node.declare_parameter("y_min", -2.5).value   # map
-        self.z_min = self._node.declare_parameter("z_min", -0.5).value   # map
-        self.TILESIZE = self._node.declare_parameter("TILESIZE", 0.5).value   # map resolution
+        if not node.has_parameter("robot_name"):
+            self.robot_name = self._node.declare_parameter("robot_name", "sam").value
+        if not node.has_parameter("map_frame"):
+            self.map_frame = self._node.declare_parameter("map_frame", "mocap").value
+        if not node.has_parameter("base_frame"):
+            self.base_frame = self._node.declare_parameter("base_frame", f"{self.robot_name}/base_link").value
+        if not node.has_parameter("node_rate"):
+            self.node_rate = self._node.declare_parameter("node_rate", 1.).value
+        if not node.has_parameter("x_max"):
+            self.x_max = self._node.declare_parameter("x_max", 10).value   # map
+        if not node.has_parameter("y_max"):            
+            self.y_max = self._node.declare_parameter("y_max", 2.5).value  # map
+        if not node.has_parameter("z_max"):
+            self.z_max = self._node.declare_parameter("z_max", 3).value   # map
+        if not node.has_parameter("x_min"):
+            self.x_min = self._node.declare_parameter("x_min", 0).value    # map
+        if not node.has_parameter("y_min"):
+            self.y_min = self._node.declare_parameter("y_min", -2.5).value   # map
+        if not node.has_parameter("z_min"):
+            self.z_min = self._node.declare_parameter("z_min", -0.5).value   # map
+        if not node.has_parameter("TILESIZE"):
+            self.TILESIZE = self._node.declare_parameter("TILESIZE", 0.5).value   # map resolution
 
         # Variables
         self.sam_pose_t = None
         self.sam_control_t = None
         self.sam_goal_t = PoseStamped() # The action server will send an empty msg when cancelling
+        if not node.has_parameter("target_frame"):
+            self._target_frame_param = node.declare_parameter("target_frame", "odom").value
+
+        self.target_frame = (
+            f"{self.robot_name}/{self._target_frame_param}"
+        )
+        self._node.get_logger().info(f"Target frame {self.target_frame}")
+        
+        if not node.has_parameter("distance_frame"):
+            self._distance_frame_param = node.declare_parameter(
+                "distance_frame",
+                "base_link",
+                ParameterDescriptor(
+                    description="Frame for which the distance to target will be computed (usually base_link)"
+                ),
+            ).value
+
+        if not node.has_parameter("goal_threshold"):
+            self._goal_threshold = (
+                node.declare_parameter(
+                    "goal_threshold",
+                    10,
+                    ParameterDescriptor(
+                        description="Distance threshold in meters where a goal should be rejected. (Euclidean Norm)"
+                    )
+                ).value
+            )
+        
+        self.distance_frame = f"{self.robot_name}/{self._distance_frame_param}"
+        self._node.get_logger().info(f"Distance frame {self.distance_frame}")
 
 
     def state_cb(self, msg: Odometry):
@@ -159,9 +190,9 @@ class SamPathPlanner(HydropointServer):
         
         # Tf 
         try:    
-            t = self._tf_buffer.lookup_transform(self.map_frame, "sam/base_link", rclpy.time.Time())
+            t = self._tf_buffer.lookup_transform(self.map_frame, self.distance_frame, rclpy.time.Time())
         except TransformException as ex:
-            self._node.get_logger().warn(f'Could not transform {self.map_frame} to sam/base_link: {ex}')
+            self._node.get_logger().warn(f'Could not transform {self.map_frame} to {self.distance_frame}: {ex}')
             return
         
         # Transform the pose        
@@ -194,8 +225,6 @@ class SamPathPlanner(HydropointServer):
             A populated ActionResult message
         """
 
-        if not self._received_waypoint:
-            self.logger.info(f"Missing goal")
         if self.sam_pose_t == None:
             self.logger.info(f"Missing pose")
         if self.sam_control_t == None:
@@ -206,9 +235,24 @@ class SamPathPlanner(HydropointServer):
         if self._received_waypoint and self.sam_pose_t != None and self.sam_control_t != None:
             self.logger.info(f"All inputs received")  
 
-            self._hydropoint = self._json_ops.decode(goal_handle.request.goal, 0)
+            fmt_dict = json.loads(goal_handle.request.goal.data)
+            self.logger.info(f"Hydropoint raw received: {fmt_dict}")
+
+            # if component is 0: #ActionComponent.GOAL:
+            hydropoint = PoseStamped()
+            hydropoint.header.frame_id = str(fmt_dict["hydropoint"]["frame_id"])
+            hydropoint.pose.position.x = float(fmt_dict["hydropoint"]["position"]["x"])
+            hydropoint.pose.position.y = float(fmt_dict["hydropoint"]["position"]["y"])
+            hydropoint.pose.position.z = float(fmt_dict["hydropoint"]["position"]["z"])
+            hydropoint.pose.orientation.x = float(fmt_dict["hydropoint"]["orientation"]["x"])
+            hydropoint.pose.orientation.y = float(fmt_dict["hydropoint"]["orientation"]["y"])
+            hydropoint.pose.orientation.z = float(fmt_dict["hydropoint"]["orientation"]["z"])
+            hydropoint.pose.orientation.w = float(fmt_dict["hydropoint"]["orientation"]["w"])
+
+            # self._hydropoint = self._json_ops.decode(goal_handle.request.goal, 0)
+            self._hydropoint = hydropoint
             self.logger.info(f"Hydropoint received: {self._hydropoint}")
-            self._received_waypoint = True
+            self.call_planner = True
 
             status = self.feedback_loop(self._hydropoint, goal_handle)
 
@@ -234,12 +278,11 @@ class SamPathPlanner(HydropointServer):
         rate = self._node.create_rate(1, self._node.get_clock())
         d = self.compute_distance(pose_stamped)
         feedback = self.action_type.Feedback
+
+        self.compute_path()
         # tol_check = self._tol_check(d)
         while not self.path_computed:
             self.logger.info(f"On feedback loop")
-
-            # Path planning here
-            self.compute_path()
                 
             if goal_handle.is_cancel_requested:
                 self.logger.info("Goal was cancelled by client.")
@@ -261,266 +304,123 @@ class SamPathPlanner(HydropointServer):
 
     def compute_path(self):
 
-        # Do planning stuff here
-        # === Start state ===
-        quat = [self.sam_pose_t.pose.pose.orientation.w,
-                self.sam_pose_t.pose.pose.orientation.x,
-                self.sam_pose_t.pose.pose.orientation.y,
-                self.sam_pose_t.pose.pose.orientation.z]
-        quat = quat/np.linalg.norm(quat)
+        self._node.get_logger().info(f"Compute path loop")
 
-        start_state = np.array([
-                self.sam_pose_t.pose.pose.position.x,
-                self.sam_pose_t.pose.pose.position.y,
-                self.sam_pose_t.pose.pose.position.z + 0.5,
-            #    quat[0],quat[1],quat[2],quat[3],
-                1,0,0,0,
-                self.sam_pose_t.twist.twist.linear.x,
-                self.sam_pose_t.twist.twist.linear.y,
-                self.sam_pose_t.twist.twist.linear.z,
-                self.sam_pose_t.twist.twist.angular.x,
-                self.sam_pose_t.twist.twist.angular.y,
-                self.sam_pose_t.twist.twist.angular.z,
-                self.sam_control_t.vbs.value,
-                self.sam_control_t.lcg.value ,
-                0., 0., 0., 0
-                # self.sam_control_t.thruster_angles.thruster_vertical_radians,
-                # self.sam_control_t.thruster_angles.thruster_horizontal_radians,
-                # self.sam_control_t.rpms.thruster_1_rpm,
-                # self.sam_control_t.rpms.thruster_2_rpm
-            ])
+        if self.call_planner:
 
-        # start_state = np.array([
-        #                     self.sam_pose_t.pose.pose.position.x,
-        #                     self.sam_pose_t.pose.pose.position.y,
-        #                     self.sam_pose_t.pose.pose.position.z + 0.5,
-        #        self.sam_pose_t.pose.pose.orientation.w,
-        #        self.sam_pose_t.pose.pose.orientation.x,
-        #        self.sam_pose_t.pose.pose.orientation.y,
-        #        self.sam_pose_t.pose.pose.orientation.z,
-        #                        0.,
-        #                        0.,
-        #                        0.,
-        #                        0.,
-        #                        0.,
-        #                        0.,
-        #                        0.,
-        #                        0.,
-        #                        0.,
-        #                        0.,
-        #                        0.,
-        #                        0.,
-        # ])
+            self.call_planner = False
 
-        # Goal recevied by the ac. Set received to false
-        self.sam_goal_t = self._hydropoint
-        self._received_waypoint = False
+            # Do planning stuff here
+            # === Start state ===
+            quat = [self.sam_pose_t.pose.pose.orientation.w,
+                    self.sam_pose_t.pose.pose.orientation.x,
+                    self.sam_pose_t.pose.pose.orientation.y,
+                    self.sam_pose_t.pose.pose.orientation.z]
+            quat = quat/np.linalg.norm(quat)
 
-        # Getting the current orientation of the goal
-        q0_goal_before = self.sam_goal_t.pose.orientation.w
-        q1_goal_before = self.sam_goal_t.pose.orientation.x
-        q2_goal_before = self.sam_goal_t.pose.orientation.y
-        q3_goal_before = self.sam_goal_t.pose.orientation.z
-        r = R.from_quat([q1_goal_before, q2_goal_before, q3_goal_before, q0_goal_before])
-        roll, pitch, yaw = r.as_euler('xyz', degrees=True)
-        self._node.get_logger().info(f"Yaw:...{yaw:.2f}, Pitch:{pitch:.2f}, Roll:{roll}")
+            start_state = np.array([
+                    self.sam_pose_t.pose.pose.position.x,
+                    self.sam_pose_t.pose.pose.position.y,
+                    self.sam_pose_t.pose.pose.position.z + 0.5,
+                #    quat[0],quat[1],quat[2],quat[3],
+                    1,0,0,0,
+                    self.sam_pose_t.twist.twist.linear.x,
+                    self.sam_pose_t.twist.twist.linear.y,
+                    self.sam_pose_t.twist.twist.linear.z,
+                    self.sam_pose_t.twist.twist.angular.x,
+                    self.sam_pose_t.twist.twist.angular.y,
+                    self.sam_pose_t.twist.twist.angular.z,
+                    self.sam_control_t.vbs.value,
+                    self.sam_control_t.lcg.value ,
+                    0., 0., 0., 0
+                    # self.sam_control_t.thruster_angles.thruster_vertical_radians,
+                    # self.sam_control_t.thruster_angles.thruster_horizontal_radians,
+                    # self.sam_control_t.rpms.thruster_1_rpm,
+                    # self.sam_control_t.rpms.thruster_2_rpm
+                ])
 
-        # # === End state ===
-        end_state = np.array([
-                self.sam_goal_t.pose.position.x,
-                self.sam_goal_t.pose.position.y,
-                self.sam_goal_t.pose.position.z,
-                self.sam_goal_t.pose.orientation.w,
-                self.sam_goal_t.pose.orientation.x,
-                self.sam_goal_t.pose.orientation.y,
-                self.sam_goal_t.pose.orientation.z,
-                # q0,q1,q2,q3,
-                0, 0, 0,
-                0, 0, 0,
-                50, 50, 0, 0, 0, 0
-            ])
+            # start_state = np.array([
+            #                     self.sam_pose_t.pose.pose.position.x,
+            #                     self.sam_pose_t.pose.pose.position.y,
+            #                     self.sam_pose_t.pose.pose.position.z + 0.5,
+            #        self.sam_pose_t.pose.pose.orientation.w,
+            #        self.sam_pose_t.pose.pose.orientation.x,
+            #        self.sam_pose_t.pose.pose.orientation.y,
+            #        self.sam_pose_t.pose.pose.orientation.z,
+            #                        0.,
+            #                        0.,
+            #                        0.,
+            #                        0.,
+            #                        0.,
+            #                        0.,
+            #                        0.,
+            #                        0.,
+            #                        0.,
+            #                        0.,
+            #                        0.,
+            #                        0.,
+            # ])
 
+            # Goal recevied by the ac. Set received to false
+            self.sam_goal_t = self._hydropoint
 
-        # === Motion Planner ===
-        ## Collect the map parameters
-        map_boundaries = (self.x_max, self.y_max, self.z_max, self.x_min, self.y_min, self.z_min)
-        map_resolution = self.TILESIZE
+            # Getting the current orientation of the goal
+            q0_goal_before = self.sam_goal_t.pose.orientation.w
+            q1_goal_before = self.sam_goal_t.pose.orientation.x
+            q2_goal_before = self.sam_goal_t.pose.orientation.y
+            q3_goal_before = self.sam_goal_t.pose.orientation.z
+            r = R.from_quat([q1_goal_before, q2_goal_before, q3_goal_before, q0_goal_before])
+            roll, pitch, yaw = r.as_euler('xyz', degrees=True)
+            self._node.get_logger().info(f"Yaw:...{yaw:.2f}, Pitch:{pitch:.2f}, Roll:{roll}")
 
-        #Print the states
-        self._node.get_logger().info(f"Initial state:...{start_state}")
-        self._node.get_logger().info(f"-----------")
-        self._node.get_logger().info(f"Final State:...{end_state}")
+            # # === End state ===
+            end_state = np.array([
+                    self.sam_goal_t.pose.position.x,
+                    self.sam_goal_t.pose.position.y,
+                    self.sam_goal_t.pose.position.z,
+                    self.sam_goal_t.pose.orientation.w,
+                    self.sam_goal_t.pose.orientation.x,
+                    self.sam_goal_t.pose.orientation.y,
+                    self.sam_goal_t.pose.orientation.z,
+                    # q0,q1,q2,q3,
+                    0, 0, 0,
+                    0, 0, 0,
+                    50, 50, 0, 0, 0, 0
+                ])
 
 
-        ## Call the planner
-        self._node.get_logger().info(f'Calling planner...')
-        trajectory, self.path_computed = MotionPlanningROS(start_state, end_state, map_boundaries, map_resolution)
+            # === Motion Planner ===
+            ## Collect the map parameters
+            map_boundaries = (self.x_max, self.y_max, self.z_max, self.x_min, self.y_min, self.z_min)
+            map_resolution = self.TILESIZE
 
-        # ## Plot the inputs 
-        # if successful == 1:
-        #     sol = np.asarray(trajectory).T  # the columns are the states
-        #     t_eval = np.linspace(0, 0.1*len(trajectory), len(trajectory))
-        #     sol = Sol(t_eval, sol)
-            
-        #     plot_results(sol)
-        #     self.get_logger().info(f'Inputs successfully plotted')
+            #Print the states
+            self._node.get_logger().info(f"Initial state:...{start_state}")
+            self._node.get_logger().info(f"-----------")
+            self._node.get_logger().info(f"Final State:...{end_state}")
 
-        # TODO: Add a flag that only publishes the path/sends it when
-        # the planning was successful. Otherwise, it's pointless
-        
-        ## Publish trajectory for Rviz
-        self.publishTrajectoryRviz(trajectory)
 
-        ## Parse your output into this action
-        #goal_path = TrajectoryMPC.Goal()
+            ## Call the planner
+            self._node.get_logger().info(f'Calling planner')
+            trajectory, self.path_computed = MotionPlanningROS(start_state, end_state, map_boundaries, map_resolution)
+            self.path_computed = True
 
-        # Send to MPC
-        self._node._logger.info(f"Sending goal to MPC")
-        # self.ac.send_path(trajectory)
+            # self._node._logger.info(f"Sending path to controller")
+            # path = self.convert_np_path_to_trajectory(np.array(trajectory))
+            # self.send_path(path)
 
-        # Reset this after planning
-        self.sam_goal_t = PoseStamped() 
+            # ## Publish trajectory for Rviz
+            # self.publishTrajectoryRviz(trajectory)
 
-    # def run(self):
-        
-    #     rate = self.create_rate(self.node_rate)  # Hz rate
-    #     while rclpy.ok():
-    #         #rclpy.spin_once(self, timeout_sec=0.0) 
-
-    #         if not self.hp_as._received_waypoint:
-    #             self._logger.info(f"Missing goal")
-    #         if self.sam_pose_t == None:
-    #             self._logger.info(f"Missing pose")
-    #         if self.sam_control_t == None:
-    #             self._logger.info(f"Missing control")
-            
-    #         # If goal is empty or feedback has not been received yet, keep spinning
-    #         if self.hp_as._received_waypoint and self.sam_pose_t != None and self.sam_control_t != None:
-    #             self._logger.info(f"All inputs received")
-    #             # success = self.destroy_subscription(self.odom_sub)
-    #             # success = self.destroy_subscription(self.pose_sub)
+            # ## Plot the inputs 
+            # if successful == 1:
+            #     sol = np.asarray(trajectory).T  # the columns are the states
+            #     t_eval = np.linspace(0, 0.1*len(trajectory), len(trajectory))
+            #     sol = Sol(t_eval, sol)
                 
-    #             # Do planning stuff here
-    #             # === Start state ===
-    #             quat = [self.sam_pose_t.pose.pose.orientation.w,
-    #                     self.sam_pose_t.pose.pose.orientation.x,
-    #                     self.sam_pose_t.pose.pose.orientation.y,
-    #                     self.sam_pose_t.pose.pose.orientation.z]
-    #             quat = quat/np.linalg.norm(quat)
+            #     plot_results(sol)
+            #     self.get_logger().info(f'Inputs successfully plotted')
 
-    #             start_state = np.array([
-    #                    self.sam_pose_t.pose.pose.position.x,
-    #                    self.sam_pose_t.pose.pose.position.y,
-    #                    self.sam_pose_t.pose.pose.position.z + 0.5,
-    #                 #    quat[0],quat[1],quat[2],quat[3],
-    #                     1,0,0,0,
-    #                    self.sam_pose_t.twist.twist.linear.x,
-    #                    self.sam_pose_t.twist.twist.linear.y,
-    #                    self.sam_pose_t.twist.twist.linear.z,
-    #                    self.sam_pose_t.twist.twist.angular.x,
-    #                    self.sam_pose_t.twist.twist.angular.y,
-    #                    self.sam_pose_t.twist.twist.angular.z,
-    #                    self.sam_control_t.vbs.value,
-    #                    self.sam_control_t.lcg.value ,
-    #                    0., 0., 0., 0
-    #                    # self.sam_control_t.thruster_angles.thruster_vertical_radians,
-    #                    # self.sam_control_t.thruster_angles.thruster_horizontal_radians,
-    #                    # self.sam_control_t.rpms.thruster_1_rpm,
-    #                    # self.sam_control_t.rpms.thruster_2_rpm
-    #                ])
-
-    #             # start_state = np.array([
-    #             #                     self.sam_pose_t.pose.pose.position.x,
-    #             #                     self.sam_pose_t.pose.pose.position.y,
-    #             #                     self.sam_pose_t.pose.pose.position.z + 0.5,
-    #             #        self.sam_pose_t.pose.pose.orientation.w,
-    #             #        self.sam_pose_t.pose.pose.orientation.x,
-    #             #        self.sam_pose_t.pose.pose.orientation.y,
-    #             #        self.sam_pose_t.pose.pose.orientation.z,
-    #             #                        0.,
-    #             #                        0.,
-    #             #                        0.,
-    #             #                        0.,
-    #             #                        0.,
-    #             #                        0.,
-    #             #                        0.,
-    #             #                        0.,
-    #             #                        0.,
-    #             #                        0.,
-    #             #                        0.,
-    #             #                        0.,
-    #             # ])
-
-    #             # Goal recevied by the ac. Set received to false
-    #             self.sam_goal_t = self.hp_as.self._waypoint_global
-    #             self.hp_as._received_waypoint = False
-
-    #             # Getting the current orientation of the goal
-    #             q0_goal_before = self.sam_goal_t.pose.orientation.w
-    #             q1_goal_before = self.sam_goal_t.pose.orientation.x
-    #             q2_goal_before = self.sam_goal_t.pose.orientation.y
-    #             q3_goal_before = self.sam_goal_t.pose.orientation.z
-    #             r = R.from_quat([q1_goal_before, q2_goal_before, q3_goal_before, q0_goal_before])
-    #             roll, pitch, yaw = r.as_euler('xyz', degrees=True)
-    #             self.get_logger().info(f"Yaw:...{yaw:.2f}, Pitch:{pitch:.2f}, Roll:{roll}")
-
-    #             # # === End state ===
-    #             end_state = np.array([
-    #                    self.sam_goal_t.pose.position.x,
-    #                    self.sam_goal_t.pose.position.y,
-    #                    self.sam_goal_t.pose.position.z,
-    #                    self.sam_goal_t.pose.orientation.w,
-    #                    self.sam_goal_t.pose.orientation.x,
-    #                    self.sam_goal_t.pose.orientation.y,
-    #                    self.sam_goal_t.pose.orientation.z,
-    #                    # q0,q1,q2,q3,
-    #                    0, 0, 0,
-    #                    0, 0, 0,
-    #                    50, 50, 0, 0, 0, 0
-    #                ])
-
-
-    #             # === Motion Planner ===
-    #             ## Collect the map parameters
-    #             map_boundaries = (self.x_max, self.y_max, self.z_max, self.x_min, self.y_min, self.z_min)
-    #             map_resolution = self.TILESIZE
-
-    #             #Print the states
-    #             self.get_logger().info(f"Initial state:...{start_state}")
-    #             self.get_logger().info(f"-----------")
-    #             self.get_logger().info(f"Final State:...{end_state}")
-
-
-    #             ## Call the planner
-    #             self.get_logger().info(f'Calling planner...')
-    #             trajectory, self.path_computed = MotionPlanningROS(start_state, end_state, map_boundaries, map_resolution)
-
-    #             # ## Plot the inputs 
-    #             # if successful == 1:
-    #             #     sol = np.asarray(trajectory).T  # the columns are the states
-    #             #     t_eval = np.linspace(0, 0.1*len(trajectory), len(trajectory))
-    #             #     sol = Sol(t_eval, sol)
-                    
-    #             #     plot_results(sol)
-    #             #     self.get_logger().info(f'Inputs successfully plotted')
-
-    #             # TODO: Add a flag that only publishes the path/sends it when
-    #             # the planning was successful. Otherwise, it's pointless
-                
-    #             ## Publish trajectory for Rviz
-    #             self.publishTrajectoryRviz(trajectory)
-
-    #             ## Parse your output into this action
-    #             #goal_path = TrajectoryMPC.Goal()
-
-    #             # Send to MPC
-    #             self._logger.info(f"Sending goal to MPC")
-    #             # self.ac.send_path(trajectory)
-
-    #             # Reset this after planning
-    #             self.sam_goal_t = PoseStamped() 
-
-    #         rate.sleep()
 
 
     def publishTrajectoryRviz(self, trajectory, typeMsg = "trajectory"):
@@ -548,19 +448,24 @@ class SamPathPlanner(HydropointServer):
         self.path_pub.publish(path_msg)
         self._node._logger.info(f"Trajectory published for Rviz2")
 
-
 def main(args=None):
     rclpy.init(args=args)
     node = rclpy.create_node("sam_planner_node")
     planner = SamPathPlanner(node)
-    
-    # try:
-    #     planner.run()
-    # except KeyboardInterrupt:
-    #     pass
-    # finally:
-    #     planner._node.destroy_node()
+    # node.create_timer(1, planner.compute_path)
+
+    # executor = MultiThreadedExecutor(num_threads=10)
+    # executor.add_node(node)
+    try:
+    #     # rclpy.spin(node, executor=executor)
+    #     # executor.spin()
+        rclpy.spin(node)
+    #     node.get_logger().info()("Spinning up")
+    except KeyboardInterrupt:
+    #     # executor.shutdown()
+    #     # node.destroy_node()
     #     rclpy.shutdown()
+        pass
 
 
 if __name__ == '__main__':
