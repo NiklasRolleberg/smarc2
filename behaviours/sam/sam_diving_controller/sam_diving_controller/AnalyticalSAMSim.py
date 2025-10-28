@@ -73,7 +73,7 @@ class AnalyticalSAMSim(DiveControllerInterface):
 
         self._current_control = self._dive_sub.get_control_input()
 
-        if self.i % 30 == 0:
+        if self.i % 100 == 0:
             self._current_state = self.convert_flu_to_frd(self._current_state_in_mocap, convert_state)
 
 
