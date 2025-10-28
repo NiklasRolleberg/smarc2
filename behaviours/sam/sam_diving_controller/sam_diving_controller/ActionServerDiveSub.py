@@ -611,6 +611,8 @@ class MPCPathServer(PathServer, DiveSub):
         )
         DiveSub.__init__(self,self._node, self.param)
 
+        #node.destroy_subscription(self.path_sub)
+
         self._loginfo("Path Action Server started")
 
 
