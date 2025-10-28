@@ -254,6 +254,8 @@ class HydropointServer(SMARCActionServer, DiveSub):
         target_frame: frame that goal's should be transformed to
     """
 
+    # TODO: Refactor this the same way you have the MPCPathServer below
+
     def __init__(
                 self,
                 node: Node,
