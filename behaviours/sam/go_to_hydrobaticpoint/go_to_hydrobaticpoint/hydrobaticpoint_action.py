@@ -31,7 +31,7 @@ class HydrobaticPointAction:
             
         """
         fmt_dict = json.loads(serialized_fmt.data)
-        if component is 0: #ActionComponent.GOAL:
+        if component == 0: #ActionComponent.GOAL:
             hydropoint = PoseStamped()
             hydropoint.header.frame_id = str(fmt_dict["hydropoint"]["frame_id"])
             hydropoint.pose.position.x = float(fmt_dict["hydropoint"]["position"]["x"])
@@ -44,7 +44,7 @@ class HydrobaticPointAction:
             # TODO: add timeout
             # timeout = float(fmt_dict["hydropoint"]["timeout"])
             return hydropoint
-        elif component is 2:
+        elif component == 2:
             # TODO: add time_remaining
             return float(fmt_dict["distance_remaining"])
         else:

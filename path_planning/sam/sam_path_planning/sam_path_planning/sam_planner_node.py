@@ -74,13 +74,12 @@ class SamPathPlanner(HydropointServer, PathClient):
         # self._received_waypoint = False
         self.path_computed = False
         self.call_planner = False
+        self.path_found = False
 
         # self.set_parameters()
 
         self._tf_buffer = Buffer()
-        self._tf_listener = TransformListener(
-            self._tf_buffer, self._node, spin_thread=True
-        )
+        self._tf_listener = TransformListener(self._tf_buffer, self._node)
 
         # Declare your publishers here
         self.path_pub = self._node.create_publisher(Path, 'planned_path', 1)  # For Rviz
@@ -236,7 +235,6 @@ class SamPathPlanner(HydropointServer, PathClient):
             self.logger.info(f"All inputs received")  
 
             fmt_dict = json.loads(goal_handle.request.goal.data)
-            self.logger.info(f"Hydropoint raw received: {fmt_dict}")
 
             # if component is 0: #ActionComponent.GOAL:
             hydropoint = PoseStamped()
@@ -251,21 +249,31 @@ class SamPathPlanner(HydropointServer, PathClient):
 
             # self._hydropoint = self._json_ops.decode(goal_handle.request.goal, 0)
             self._hydropoint = hydropoint
-            self.logger.info(f"Hydropoint received: {self._hydropoint}")
+            # self.logger.info(f"Hydropoint received: {self._hydropoint}")
+            
+            # Call path planner and move on to feedback
             self.call_planner = True
-
             status = self.feedback_loop(self._hydropoint, goal_handle)
 
             if status == "cancelled":
                 self.logger.info("Goal was cancelled by client.")
                 result_msg.success = False
+                self.path_found = False
                 return result_msg
         
-            result_msg.success = True
-        
+            if self.path_found:
+                result_msg.success = True
+                goal_handle.succeed()
+
+            else:
+                goal_handle.abort()
+                result_msg.success = False
+
         else:
+            goal_handle.abort()
             result_msg.success = False
         
+        self.path_found = False
         return result_msg
     
     def feedback_loop(self, pose_stamped: PoseStamped, goal_handle: ServerGoalHandle):
@@ -278,11 +286,9 @@ class SamPathPlanner(HydropointServer, PathClient):
         rate = self._node.create_rate(1, self._node.get_clock())
         d = self.compute_distance(pose_stamped)
         feedback = self.action_type.Feedback
-
-        self.compute_path()
         # tol_check = self._tol_check(d)
         while not self.path_computed:
-            self.logger.info(f"On feedback loop")
+            self.logger.debug(f"On feedback loop")
                 
             if goal_handle.is_cancel_requested:
                 self.logger.info("Goal was cancelled by client.")
@@ -312,10 +318,10 @@ class SamPathPlanner(HydropointServer, PathClient):
 
             # Do planning stuff here
             # === Start state ===
-            quat = [self.sam_pose_t.pose.pose.orientation.w,
+            quat = np.array([self.sam_pose_t.pose.pose.orientation.w,
                     self.sam_pose_t.pose.pose.orientation.x,
                     self.sam_pose_t.pose.pose.orientation.y,
-                    self.sam_pose_t.pose.pose.orientation.z]
+                    self.sam_pose_t.pose.pose.orientation.z], dtype=float)
             quat = quat/np.linalg.norm(quat)
 
             start_state = np.array([
@@ -388,7 +394,6 @@ class SamPathPlanner(HydropointServer, PathClient):
                     50, 50, 0, 0, 0, 0
                 ])
 
-
             # === Motion Planner ===
             ## Collect the map parameters
             map_boundaries = (self.x_max, self.y_max, self.z_max, self.x_min, self.y_min, self.z_min)
@@ -399,19 +404,22 @@ class SamPathPlanner(HydropointServer, PathClient):
             self._node.get_logger().info(f"-----------")
             self._node.get_logger().info(f"Final State:...{end_state}")
 
+            # For debugging
 
-            ## Call the planner
+            # Call the planner
             self._node.get_logger().info(f'Calling planner')
-            trajectory, self.path_computed = MotionPlanningROS(start_state, end_state, map_boundaries, map_resolution)
+            trajectory, self.path_found = MotionPlanningROS(start_state, end_state, map_boundaries, map_resolution)
+
+            # If path found
+            if self.path_found:
+                self._node._logger.info(f"Sending path to controller")
+                path = self.convert_np_path_to_trajectory(np.array(trajectory))
+                self.send_path(path)
+
+                ## Publish trajectory for Rviz
+                self.publishTrajectoryRviz(trajectory)
+
             self.path_computed = True
-
-            # self._node._logger.info(f"Sending path to controller")
-            # path = self.convert_np_path_to_trajectory(np.array(trajectory))
-            # self.send_path(path)
-
-            # ## Publish trajectory for Rviz
-            # self.publishTrajectoryRviz(trajectory)
-
             # ## Plot the inputs 
             # if successful == 1:
             #     sol = np.asarray(trajectory).T  # the columns are the states
@@ -448,23 +456,21 @@ class SamPathPlanner(HydropointServer, PathClient):
         self.path_pub.publish(path_msg)
         self._node._logger.info(f"Trajectory published for Rviz2")
 
+
 def main(args=None):
     rclpy.init(args=args)
     node = rclpy.create_node("sam_planner_node")
     planner = SamPathPlanner(node)
-    # node.create_timer(1, planner.compute_path)
+    node.create_timer(1, planner.compute_path)
 
-    # executor = MultiThreadedExecutor(num_threads=10)
-    # executor.add_node(node)
+    executor = MultiThreadedExecutor()
+    executor.add_node(node)
     try:
-    #     # rclpy.spin(node, executor=executor)
-    #     # executor.spin()
-        rclpy.spin(node)
-    #     node.get_logger().info()("Spinning up")
+        executor.spin()
     except KeyboardInterrupt:
-    #     # executor.shutdown()
-    #     # node.destroy_node()
-    #     rclpy.shutdown()
+        executor.shutdown()
+        node.destroy_node()
+        rclpy.shutdown()
         pass
 
 
