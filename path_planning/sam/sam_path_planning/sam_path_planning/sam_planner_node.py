@@ -102,6 +102,7 @@ class SamPathPlanner(HydropointServer, PathClient):
         self.rpm2_fb = Subscriber(self._node, ThrusterFeedback, SamTopics.THRUSTER2_FB_TOPIC)
         # self.rpm1_fb = Subscriber(self, ThrusterFeedback, 'with_header/thruster1_fb')
         # self.rpm2_fb = Subscriber(self, ThrusterFeedback, 'with_header/thruster2_fb')
+        self._node.get_logger().info(f'Subscribers for ctrl inputs created')    
 
         self.ctrl_synch_msg = ApproximateTimeSynchronizer(
             [self.vbs_fb, self.lcg_fb],
