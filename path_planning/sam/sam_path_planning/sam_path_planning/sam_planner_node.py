@@ -1,5 +1,6 @@
 import rclpy
 import rclpy.logging
+import time
 import numpy as np
 from rclpy.node import Node
 from scipy.spatial.transform import Rotation as R
@@ -333,8 +334,9 @@ class SamPathPlanner(HydropointServer, PathClient):
             start_state = np.array([
                     self.sam_pose_t.pose.pose.position.x,
                     self.sam_pose_t.pose.pose.position.y,
-                    self.sam_pose_t.pose.pose.position.z,  # Add offset to avoid collision with surface
+                    self.sam_pose_t.pose.pose.position.z + 0.5,  # Add offset to avoid collision with surface
                     quat_frd[3],quat_frd[0],quat_frd[1],quat_frd[2],
+                    # 1,0,0,0,
                     self.sam_pose_t.twist.twist.linear.x,
                     self.sam_pose_t.twist.twist.linear.y,
                     self.sam_pose_t.twist.twist.linear.z,
@@ -389,12 +391,18 @@ class SamPathPlanner(HydropointServer, PathClient):
             # For debugging
 
             # Call the planner
+            t = time.time()
             self._node.get_logger().info(f'Calling planner')
             trajectory, self.path_found, debugMsg = MotionPlanningROS(start_state, end_state, map_boundaries, map_resolution)
             self._node.get_logger().info(f'Planner finished. Path found: {self.path_found}. Debug msg: {debugMsg}')
+            t_end = time.time()
+            self._node.get_logger().info(f'Planning time: {t_end - t:.2f} seconds')
 
             # If path found
             if self.path_found:
+                # Number of vertices in the trajectory
+                print(f"Length of trajectory: {len(trajectory):.2f} vertices>>")
+                
                 self._node._logger.info(f"Sending path to controller")
                 path = self.convert_np_path_to_trajectory(np.array(trajectory))
                 self.send_path(path)
