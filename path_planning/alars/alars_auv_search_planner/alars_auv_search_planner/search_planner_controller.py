@@ -15,6 +15,7 @@ from smarc_utilities.georef_utils import convert_latlon_to_utm
 from dji_msgs.msg import Topics as Topics_dji
 from dji_msgs.msg import Links as Links_dji
 from smarc_msgs.msg import Topics as Topics_smarc
+import traceback
 
 
 class SearchPlannerController(Node):
@@ -88,22 +89,6 @@ class SearchPlannerController(Node):
         self.countsToInitializePlanner = 2
 
 
-        if self.model_params['mode'] == 'sim':
-            self.PATH_DISTANCE, self.PATH_TIME = [], []
-            # try:
-            #     #HACK horrible, horrible thing to do... but this is what happens when 
-            #     # you dont separate your research from your software development properly
-            #     from dotenv import load_dotenv
-            #     import mlflow
-            #     load_dotenv()
-            #     uri = os.getenv('URI')
-            #     mlflow.set_tracking_uri(uri=uri) #NOTE set the tracking server's uri for experiment puporses 
-            # except:
-            #     self.get_logger().warn("Couldn't connect to mlflow tracking server, proceding without result tracking ...")
-
-
-
-
     def init_search_srv_callback(self, request, response):
         """ 
         Stores the GPS_ping (after transforming it to map) and desired quadrotor initial position, 
@@ -128,7 +113,7 @@ class SearchPlannerController(Node):
     def get_path_srv_callback(self, request, response):
         """ Generates path and converts to PoseArray"""
         if request.data:
-            _ , path, _ , _ = self.planner.generate_path() 
+            path = self.planner.generate_path() 
             path_msg = PoseArray()
             pose_list = []
             for i, position in enumerate(path):
@@ -239,13 +224,11 @@ class SearchPlannerController(Node):
                         self.return_to_base()
 
                 try:
-                    _, distance, time = self.planner.generate_path()
-                    if distance != 0 and self.model_params["mode"] == 'sim': 
-                        self.PATH_DISTANCE.append(distance)
-                        self.PATH_TIME.append(time)
+                    _ = self.planner.generate_path()
                 except Exception as e:
                     self.get_logger().warn('Path generation failed; search planner could not publish waypoint')
                     self.get_logger().warn(str(e))
+                    self.get_logger().warn(traceback.format_exc())
                     return None
                 finally:
                     self.callback_running = False
@@ -430,9 +413,6 @@ class SearchPlannerController(Node):
         Experiment purposes only: checks when drone reaches AUV and logs parameters and metrics
         into a mlflow server, as long as uri is properly set up
         """
-        TEST_SCHEDULE = "1"
-        RUN_COUNTER = "10"
-        INDEP_VAR = str(self.model_params["grid_map.workspace.variance"])
 
         try:
             distance = self.planner.calculate_distance(self.planner.drone_position, self.planner.sam_position)
@@ -441,36 +421,7 @@ class SearchPlannerController(Node):
             return False
 
         if distance <= tan((pi/180)*self.model_params["drone.camera_fov"]/2)*self.planner.drone_position.point.z:
-            self.get_logger().info("Experiment ended, logging information ...")
-            self.END = time.time()
-            prior = "UniPeakGaussian" # UniPeakGaussian, BiPeakGaussian, AsynGaussian
-
-            params = {
-                "PlannerType": self.model_params["path_planner"],
-                "SAM_Variance": self.model_params["sam.init_pos_variance"],
-                "GPS_Variance": self.model_params["grid_map.workspace.variance"],
-                "Dist2AUV": self.calc_init_distance(),
-                "PriorType": prior, 
-                "Height": self.model_params["drone.flight_height"],
-                "Resol": self.model_params["grid_map.workspace.resol"],
-                "AUV_Vel": 0
-            }
-            metrics = {
-                "TimeOfFlight": self.END - self.START,
-            }
-            dist_time_rows = np.array(list(zip(self.PATH_DISTANCE, self.PATH_TIME)))
-            np.savetxt('results.csv', dist_time_rows, delimiter=",", fmt='%s')
-
-            # try:
-            #     mlflow.set_experiment(experiment_name = self.model_params["path_planner"] + "_" + TEST_SCHEDULE) # `spiral`, `greedy`, `astar`, or `apf`)
-            #     with mlflow.start_run(run_name = prior + INDEP_VAR + "_run_"+RUN_COUNTER, 
-            #                         description= self.model_params["path_planner"] + " planner experiment"):
-            #         mlflow.log_params(params)
-            #         mlflow.log_metrics(metrics)
-            #         mlflow.log_artifact("results.csv")
-            # except:
-            #     self.get_logger().info('Could not log experiment data!')
-                
+            self.get_logger().info("Experiment ended, logging information ...")             
             return True
         return False
 
