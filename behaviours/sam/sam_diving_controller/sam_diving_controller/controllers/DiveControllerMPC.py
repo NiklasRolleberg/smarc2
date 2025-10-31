@@ -15,7 +15,7 @@ from smarc_modelling.vehicles.SAM_casadi import SAM_casadi
 
 class DiveControllerMPC(DiveControllerInterface):
 
-    def __init__(self, node, dive_pub, dive_sub, param, rate=0.1):
+    def __init__(self, node, dive_pub, dive_sub, param, ref_is_trajectory=False, rate=0.1):
 
         self._node = node
         self._dive_sub = dive_sub
@@ -35,11 +35,13 @@ class DiveControllerMPC(DiveControllerInterface):
         self._input = None
         self.waypoint = None
 
+
         self.pred_mpc = []
 
         # Declare counter
         self.i = 0
         self.traj_len = 0
+        self.traj_index = 0
 
         # Extract the CasADi model
         sam = SAM_casadi(dt=self._dt)
@@ -55,6 +57,8 @@ class DiveControllerMPC(DiveControllerInterface):
 
         self.wp_array = np.zeros(self.nx + self.nu)
 
+        self.ref = np.zeros((self.N_horizon, (self.nx + self.nu)))
+
         # Run the MPC setup
         self.ocp_solver, self.integrator = self.nmpc.setup()
 
@@ -64,9 +68,7 @@ class DiveControllerMPC(DiveControllerInterface):
         # topics yet.
         self._initialized = False
 
-        # FIXME: This should change. We don't want to change code when
-        # switching between trajectories and waypoints
-        self.ref_is_traj = True # Flag to indicate if the reference is a trajectory or not
+        self.ref_is_traj = ref_is_trajectory# Flag to indicate if the reference is a trajectory or not
         self._loginfo("Dive Controller created")
 
         self._acados_status = {0: "ACADOS_SUCCESS",
@@ -104,12 +106,16 @@ class DiveControllerMPC(DiveControllerInterface):
         #    self._loginfo_once("Mission not running")
         #    self._set_actuators_neutral()
         #    return
+        #self._loginfo("mission running")
+
 
         # Engage actuators in case they were off before.
         self._dive_pub.set_actuator_states(ActuatorStates.ENGAGED, "DP")
 
         if not self.get_reference():
             return
+
+        self._loginfo("mission running")
 
         # Get the current states
         convert_state = True  # Flag to convert states
@@ -186,18 +192,20 @@ class DiveControllerMPC(DiveControllerInterface):
 
         # FIXME: Remove all the print statements here. They only should appear in the convenience node
         s = f"\nNMPC INFO\n"  # {self._dive_sub.current_idx}/{self.traj_len}:\n"
-        s += f"NMPC solver status: {self._acados_status[status]}\n"
+        s += f"NMPC solver status: {status}\n"
         # s += f"NMPC solve time: {(end_time - start_time)*1000:.1f} ms\n"
         # s += f"Traj. index: {self._dive_sub.current_idx}/{self.traj_len}:\n" if self.ref_is_traj else f""
+        s += f"current state: x: {x_current[0]}, y: {x_current[1]}, z: {x_current[2]}\n"
         s += f"MPC pred: x: {simX[0]}, y: {simX[1]}, z: {simX[2]}\n"
-        s += f"ref: x: {self.trajectory.shape}\n"
+        s += f"ref: {self.ref[0,:6]}\n"
+        s += f"u_vbs = {mpc_solution[13]}, u_lcg = {mpc_solution[14]} u_stern = {mpc_solution[15]} u_rudder = {-mpc_solution[16]} u_rpm1 = {mpc_solution[17]} u_rpm2 = {mpc_solution[18]}\n"
 
 
         self._loginfo(s)
 
         # Increment trajectory window index
         self.i += 1
-        self._dive_sub.set_current_idx(self.i)
+        self._dive_sub.set_current_idx(self.traj_index)
 
         return
 
@@ -211,6 +219,8 @@ class DiveControllerMPC(DiveControllerInterface):
                 return False
             else:
                 self.trajectory = np.array(self.trajectory)  # Convert/make sure it is a numpy array
+
+            self._loginfo("get ref")
 
             # Declare duration of sim.
             self.traj_len = self.trajectory.shape[0]
@@ -451,12 +461,47 @@ class DiveControllerMPC(DiveControllerInterface):
         Populate reference array depending on whether we have a trajectory or waypoint.
         """
         if self.ref_is_traj:
-            if self.i < self.traj_len:
+            #if self.i < self.traj_len:
                 # extract the sub-trajectory to track under the prediction horizon
-                if self.i <= (self.traj_len - self.N_horizon):
-                    self.ref = self.trajectory[self.i:self.i + self.N_horizon, :]
-                else:
-                    self.ref = self.trajectory[self.i:, :]
+                #if self.i <= (self.traj_len - self.N_horizon):
+                #    self.ref = self.trajectory[self.i:self.i + self.N_horizon, :]
+                #else:
+                #    self.ref = self.trajectory[self.i:, :]
+
+            # Get current position
+            x_current = self._current_state.pose.pose.position.x
+            y_current = self._current_state.pose.pose.position.y
+            z_current = self._current_state.pose.pose.position.z
+
+
+            # Check if we have enough trajectory left for the prediction horizon
+            if self.traj_index + self.N_horizon < self.traj_len:
+                # Get distance to current waypoint
+                d_current = np.sqrt((x_current - self.trajectory[self.traj_index,0])**2 + 
+                                    (y_current - self.trajectory[self.traj_index,1])**2 +
+                                    (z_current - self.trajectory[self.traj_index,2])**2)
+
+                # Get distance to next waypoint
+                d_next = np.sqrt((x_current - self.trajectory[self.traj_index+1,0])**2 + 
+                                (y_current - self.trajectory[self.traj_index+1,1])**2 +
+                                (z_current - self.trajectory[self.traj_index+1,2])**2)
+
+                # Set trajectory index accordingly
+                if d_next < d_current:
+                    self.traj_index += 1
+
+                # Get subtrajectory starting at closest waypoint
+                self.ref = self.trajectory[self.traj_index:self.traj_index + self.N_horizon, :]
+
+                # DEBUG
+                self.ref[:,0] = 4
+                self.ref[:,1] = 0
+                self.ref[:,2] = 0
+                self.ref[:,3] = 1
+                self.ref[:,4:] = 0
+                self.ref[:,13] = 50
+                self.ref[:,14] = 50
+                self.ref[:,15:] = 0
 
             else:
                 self._loginfo_once("Trajectory Tracking Complete")

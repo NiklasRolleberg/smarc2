@@ -133,8 +133,8 @@ class DiveSub():
         #self.ctrl_synch_msg.registerCallback(self._ctrl_synch_cb)
 
         # DEBUGGING the trajectory tracking
-        file_path = "/home/parallels/ros2_ws/src/smarc2/behaviours/sam/sam_diving_controller/sam_diving_controller/trajectoryComplexity3.csv"
-        self.path = self.read_csv_to_array(file_path)
+        #file_path = "/home/parallels/ros2_ws/src/smarc2/behaviours/sam/sam_diving_controller/sam_diving_controller/trajectoryComplexity3.csv"
+        #self.path = self.read_csv_to_array(file_path)
 
         self._loginfo("Dive Subscriber Node started")
 
@@ -202,10 +202,10 @@ class DiveSub():
         #   - Handle path following, which needs to transform the state, but there's no goal, bc. there's no waypoint.
         #   - Flexible enough to change, but not too complicated either.
         #   - Avoid hard coded things...
-        #if self._waypoint_global is None:
-        #    return
-        self._waypoint_global = Odometry()
-        self._waypoint_global.header.frame_id = 'mocap'
+        if self._waypoint_global is None:
+            return
+        #self._waypoint_global = Odometry()
+        #self._waypoint_global.header.frame_id = 'mocap'
 
         try:
             self._tf_base_link_global = self._tf_buffer.lookup_transform(self._robot_base_link,
