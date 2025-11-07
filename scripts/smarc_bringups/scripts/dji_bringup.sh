@@ -186,7 +186,7 @@ if [[ $USE_SIM_TIME = "False" ]]; then
     # for basic usb webcam
     #tmux send-keys "ros2 run usb_cam usb_cam_node_exe --ros-args -r __ns:=/$ROBOT_NAME/gimbal_camera" C-m
     # for the dji gimbal cam
-    # requires ros-humble-gscam install gstreamer1.0-tools gstreamer1.0-plugins-good
+    # requires ros-humble-gscam gstreamer1.0-tools gstreamer1.0-plugins-good
     GSCAM_CONFIG="v4l2src device=/dev/video0 ! image/jpeg,width=1920,height=1080,framerate=30/1 ! jpegdec ! videoconvert ! video/x-raw,format=BGR"
     tmux send-keys "ros2 run gscam gscam_node --ros-args \
     -p gscam_config:=\"$GSCAM_CONFIG\" \
