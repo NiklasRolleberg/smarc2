@@ -131,15 +131,24 @@ class SearchPlanner(Node, ABC):
         
 
     @abstractmethod     
-    def generate_path(self) -> Tuple[Path, float, float]:
-        """ Common method to all children classes that generates a path and publishes the next waypoint. It returns:
-            - false in case search has to stop  and true if everything's good
-            - computed Path
-            - path distance
-            - path elapsed time
-            
-            """
+    def generate_path(self) -> Path:
+        """ Common method to all children classes that generates a path and publishes the next waypoint """
         pass
+
+    def generate_straight_line(self, pos: np.ndarray, goal: np.ndarray) -> list:
+        """ Simple straight line path generator from current position to goal (GPS ping) """
+        delta = goal - pos
+        delta_sign = 2*np.heaviside(delta/(np.abs(delta) + 1e-9), 0) - 1
+        arg_max = np.argmax(np.abs(delta))
+        if arg_max == 0:
+            steps = self.distance_thresh*np.array([1, abs(delta[1])/abs(delta[0])]) * delta_sign
+        else:
+            steps = self.distance_thresh*np.array([abs(delta[0])/abs(delta[1]), 1]) * delta_sign
+        self.path = list(zip(np.arange(pos[0], goal[0], steps[0]), 
+                                np.arange(pos[1], goal[1], steps[1])))
+
+        return self.path
+
 
     def generate_waypoint(self, x, y, z) -> Union[Tuple[float, float], Tuple[None, None]]:
         """ Method to publish a single waypoint for the drone. Return current drone position as feedback"""
@@ -148,7 +157,7 @@ class SearchPlanner(Node, ABC):
         pose_msg.header.frame_id = self.drone_odom_frame_id
         pose_msg.pose.position.x = x
         pose_msg.pose.position.y = y
-        pose_msg.pose.position.z = z  # - self.drone_init_pos.point.z 
+        pose_msg.pose.position.z = z 
         self.point_publisher.publish(pose_msg)
 
         # return current position as feedback
@@ -226,7 +235,7 @@ class SearchPlanner(Node, ABC):
                 pose_msg.header.stamp = self.get_clock().now().to_msg()
                 pose_msg.pose.position.x = self.path[0][0]
                 pose_msg.pose.position.y = self.path[0][1]
-                pose_msg.pose.position.z = self.flight_height #- 1.16 if self.params['mode'] == 'sim' else self.flight_height #HACK: check if -1.16 is still needed
+                pose_msg.pose.position.z = self.flight_height 
                 
             if self.params['mode'] == 'sim' and pose_msg is not None:
                 self.point_publisher.publish(pose_msg)
@@ -240,7 +249,7 @@ class SearchPlanner(Node, ABC):
         pose_msg = PoseStamped()
         pose_msg.header.frame_id = self.drone_odom_frame_id
         pose_msg.header.stamp = self.get_clock().now().to_msg()
-        pose_msg.pose.position.z = self.flight_height  # self.drone_init_pos.point.z
+        pose_msg.pose.position.z = self.flight_height 
         self.point_publisher.publish(pose_msg)
         odom_position = self.transform_point(self.drone_position)
         return odom_position.point.x, odom_position.point.y
@@ -303,7 +312,7 @@ class SpiralPathModel(SearchPlanner):
         self.previous_spiral_displacement = np.array([0,0])
 
 
-    def generate_path(self) -> Tuple[Path, float, float]:
+    def generate_path(self) -> Path:
         """ 
         The spiral planner consists of three movements: a straight line to the GPS ping, an initial circle around that point and
         consecutive spirals after that. The spiral radius increases consecutively and the spiral center moves according to 
@@ -314,14 +323,11 @@ class SpiralPathModel(SearchPlanner):
         current_pos_odom = self.transform_point(self.drone_position, self.drone_odom_frame_id)
         if self.path_needed:
             if self.phase == 'line':
-                # compute displacement between current pos and gps and divide line into N waypoints
-                delta = (self.grid_map.GPS_ping_odom[0]-current_pos_odom.point.x, self.grid_map.GPS_ping_odom[1]-current_pos_odom.point.y)
-                max_component = max(abs(delta[0]), abs(delta[1]))
-                sign = (delta[0]/abs(delta[0]), delta[1]/abs(delta[1]))
-                N = int(max_component/self.distance_thresh)
-                self.path = list(zip(np.linspace(current_pos_odom.point.x, self.grid_map.GPS_ping_odom[0], N), 
-                                     np.linspace(current_pos_odom.point.y, self.grid_map.GPS_ping_odom[1], N)))
+                # generate straight line to GPS ping as consecutive points
+                self.path = self.generate_straight_line(pos = np.array([current_pos_odom.point.x, current_pos_odom.point.y]), 
+                                                        goal = self.grid_map.GPS_ping_odom) 
                 self.phase = 'circle'
+
                 # if mode = 'srv', the next path is generated as soon service receives request. If mode = 'sim' or 'as', 
                 # we use distance feeback to determine when to publish next path
                 self.path_needed = True if self.params['mode'] == 'srv' else False 
@@ -370,7 +376,6 @@ class SpiralPathModel(SearchPlanner):
             self.path_needed = True
             self.path_completed = False
             self.phase == 'line'
-
  
         return self.path
 
@@ -424,11 +429,10 @@ class GreedyPathModel(SearchPlanner):
                 except IndexError:
                     idx = np.unravel_index(np.argmax(self.grid_map.prior, axis=None), self.grid_map.prior.shape)
 
-            # plan path and publish it
+            # plan path as straight line to that cell and publish it 
             goal = [self.grid_map.X[idx[0]][idx[1]], self.grid_map.Y[idx[0]][idx[1]]]
-            self.path = [start, goal]
+            self.path = self.generate_straight_line(pos = np.array(start), goal = np.array(goal))
             self.path_num_points = len(self.path)
-
             self.publish_path()
             
             # If mode = 'srv', the next path is generated as soon service receives request. 
@@ -518,7 +522,6 @@ class AStarPathModel(SearchPlanner):
                 rx.reverse()
                 ry.reverse()
                 self.path = list(zip(rx, ry))
-                #self.get_logger().info(f'Path: {self.path}')
             
             self.path_num_points = len(self.path)
 
@@ -531,7 +534,6 @@ class AStarPathModel(SearchPlanner):
 
 
         elif not self.path_needed and not self.path_completed:
-            #self.get_logger().info('Moving')
             if len(self.path) == 0:
                 self.path_completed = True 
             else:
@@ -708,7 +710,7 @@ class APFPathModel(SearchPlanner):
             self.get_logger().error("No valid parameters received in ARF Path Model")
 
 
-    def generate_path(self) -> Tuple[Path, float, float]:
+    def generate_path(self) -> Path:
         """ 
         We consider the goal cell to exert an attractive force and the remaining cells to exert a repulsive force.
         Similar to regular artifical potential field algorithms but we use probability as well: cells with lower probability will
@@ -732,13 +734,11 @@ class APFPathModel(SearchPlanner):
                 except IndexError:
                     X, Y, prior = self.grid_map.X, self.grid_map.Y, self.grid_map.prior       
 
-            # compute resultant of forces, goal position and corresponding path
+            # compute resultant of forces, goal position and corresponding path (and publish it)
             Fr, goal_distance = self.create_forces(X, Y, prior, start)
             goal = self.create_goal(Fr, self.drone_vel, goal_distance)
-            self.path = [start, start+goal]
+            self.path = self.generate_straight_line(pos = np.array(start), goal = np.array(goal))
             self.path_num_points = len(self.path)
-
-            # publish path for visualization in rviz
             self.publish_path()
 
             # if mode = 'srv', the next path is generated as soon service receives request. If mode = 'sim' or 'as', 
@@ -752,7 +752,6 @@ class APFPathModel(SearchPlanner):
             else:
                 current_pos_odom = self.transform_point(self.drone_position)
                 self.pose2pub = self.publish_waypoint(self.distance_thresh, current_pos_odom)            
-        
         else:
             self.path_needed = True
             self.path_completed = False
@@ -798,7 +797,6 @@ class APFPathModel(SearchPlanner):
     def create_goal(self, Fr: np.array, vel:np.array, goal_distance: float) -> np.array:
         """ Computes goal in the direction of the resultant force. The displacement is proportional to the
         resultant of forces."""
-        vel = max(self.equivalent_drone_vel, np.linalg.norm(vel))
         goal = (1/self.mass)* Fr
         return goal
 

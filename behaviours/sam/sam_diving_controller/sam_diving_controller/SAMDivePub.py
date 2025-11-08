@@ -29,6 +29,7 @@ class SAMDivePub(IDivePub):
         self.param = param
 
         self._actuator_state = ActuatorStates.NEUTRAL
+        self.neutral_pub_count = 0
 
         # Publishers
         self._vbs_pub = node.create_publisher(PercentStamped, SamTopics.VBS_CMD_TOPIC, 10)
@@ -131,7 +132,13 @@ class SAMDivePub(IDivePub):
             self.thrust_rpms_pub.publish(self.rpm_msg)
             self._thrust_vector_pub.publish(self._thrust_vector_msg)
 
-            self.set_actuator_states(ActuatorStates.DISENGAGED, "DP")
+            self._loginfo(f"Publish NEUTRAL step: {self.neutral_pub_count}")
+
+            
+            self.neutral_pub_count += 1
+            if self.neutral_pub_count > 20:
+                self.neutral_pub_count = 0
+                self.set_actuator_states(ActuatorStates.DISENGAGED, "DP")
 
         else:
             self._vbs_pub.publish(self._vbs_msg)

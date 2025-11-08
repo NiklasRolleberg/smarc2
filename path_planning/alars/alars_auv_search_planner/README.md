@@ -39,12 +39,16 @@ To run the search planning standalone, run this command before starting the sim 
 ```
 ros2 run smarc_bringups dji_bringup.sh 7.0
 ```
-After starting the sim and connecting the ros bridge, run:
+After starting the sim and connecting the ros bridge, make the action request. If you want a dedicated terminal for the search planner, run:
 
 ```
-ros2 launch alars_auv_search_planner search_planning_launch.py  mode:="'as'" namespace:="'/M350'"
+ros2 launch alars_auv_search_planner search_planning_launch.py  mode:="'as'" namespace:="'/M350'" use_sim_time:=True
 ```
 You may want to run ``` tmux kill-server ``` after stoping the dji_bringup.
+To launch rviz with every relevant topic, run the following command (change path if needed):
+```
+rviz2 -d path_planning/alars/alars_auv_search_planner/config/auv_search.rviz
+```
 
 Note that the mode parameter is mandatory, which prevents the user from selecting the wrong mode. If namespace isn't defined, "/Quadrotor" is assumed.
 
@@ -81,6 +85,12 @@ RVIZ2 is highly recommended to see the grid map and the planned path.
 Don't forget to
 ```
 colcon build --symlink-install --packages-select <package_name>
+source install/setup.sh
+```
+
+Or
+```
+colcon build --symlink-install --build-base build --install-base install --base-paths src
 source install/setup.sh
 ```
 ## Maintainer

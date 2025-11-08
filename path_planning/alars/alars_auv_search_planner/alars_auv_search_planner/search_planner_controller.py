@@ -13,6 +13,7 @@ from smarc_utilities.georef_utils import convert_latlon_to_utm
 from dji_msgs.msg import Topics as Topics_dji
 from dji_msgs.msg import Links as Links_dji
 from smarc_msgs.msg import Topics as Topics_smarc
+import traceback
 
 
 
@@ -104,7 +105,7 @@ class SearchPlannerController(Node):
     def get_path_srv_callback(self, request, response):
         """ Generates path and converts to PoseArray"""
         if request.data:
-            _ , path, _ , _ = self.planner.generate_path() 
+            path = self.planner.generate_path() 
             path_msg = PoseArray()
             pose_list = []
             for i, position in enumerate(path):
@@ -220,6 +221,7 @@ class SearchPlannerController(Node):
                 except Exception as e:
                     self.get_logger().warn('Path generation failed; search planner could not publish waypoint')
                     self.get_logger().warn(str(e))
+                    self.get_logger().warn(traceback.format_exc())
                     return None
                 finally:
                     self.callback_running = False
@@ -411,7 +413,7 @@ class SearchPlannerController(Node):
             return False
 
         if distance <= tan((pi/180)*self.model_params["drone.camera_fov"]/2)*self.planner.drone_position.point.z:
-            self.get_logger().info("Run ended, returning to base!") 
+            self.get_logger().info("Experiment ended, logging information ...")             
             return True
         
         return False

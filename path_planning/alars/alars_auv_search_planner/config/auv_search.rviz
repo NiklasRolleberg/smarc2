@@ -6,6 +6,7 @@ Panels:
       Expanded:
         - /Global Options1
         - /Status1
+        - /TF1
         - /TF1/Frames1
         - /TF1/Tree1
         - /PointStamped1/Topic1
@@ -55,94 +56,160 @@ Visualization Manager:
       Frame Timeout: 15
       Frames:
         All Enabled: false
-        Quadrotor/GPS:
+        HollowSam/Buoy:
+          Value: false
+        HollowSam/Rope:
+          Value: false
+        HollowSam/RopeSegment_0:
+          Value: false
+        HollowSam/RopeSegment_1:
+          Value: false
+        HollowSam/RopeSegment_10:
+          Value: false
+        HollowSam/RopeSegment_11:
+          Value: false
+        HollowSam/RopeSegment_12:
+          Value: false
+        HollowSam/RopeSegment_13:
+          Value: false
+        HollowSam/RopeSegment_14:
+          Value: false
+        HollowSam/RopeSegment_15:
+          Value: false
+        HollowSam/RopeSegment_16:
+          Value: false
+        HollowSam/RopeSegment_17:
+          Value: false
+        HollowSam/RopeSegment_18:
+          Value: false
+        HollowSam/RopeSegment_19:
+          Value: false
+        HollowSam/RopeSegment_2:
+          Value: false
+        HollowSam/RopeSegment_20:
+          Value: false
+        HollowSam/RopeSegment_21:
+          Value: false
+        HollowSam/RopeSegment_22:
+          Value: false
+        HollowSam/RopeSegment_23:
+          Value: false
+        HollowSam/RopeSegment_24:
+          Value: false
+        HollowSam/RopeSegment_25:
+          Value: false
+        HollowSam/RopeSegment_26:
+          Value: false
+        HollowSam/RopeSegment_27:
+          Value: false
+        HollowSam/RopeSegment_28:
+          Value: false
+        HollowSam/RopeSegment_29:
+          Value: false
+        HollowSam/RopeSegment_3:
+          Value: false
+        HollowSam/RopeSegment_30:
+          Value: false
+        HollowSam/RopeSegment_31:
+          Value: false
+        HollowSam/RopeSegment_4:
+          Value: false
+        HollowSam/RopeSegment_5:
+          Value: false
+        HollowSam/RopeSegment_6:
+          Value: false
+        HollowSam/RopeSegment_7:
+          Value: false
+        HollowSam/RopeSegment_8:
+          Value: false
+        HollowSam/RopeSegment_9:
+          Value: false
+        HollowSam/back_prop_link:
+          Value: false
+        HollowSam/base_link:
+          Value: false
+        HollowSam/front_prop_link:
+          Value: false
+        HollowSam/odom:
+          Value: false
+        HollowSam/rope_link:
+          Value: false
+        HollowSam/thruster_link:
+          Value: false
+        HollowSam/thruster_yaw_link:
+          Value: false
+        M350/GPS:
+          Value: false
+        M350/GimbalCamera:
+          Value: false
+        M350/Hook:
+          Value: false
+        M350/IMU:
+          Value: false
+        M350/WinchSystem:
+          Value: false
+        M350/base_ENU_link:
+          Value: false
+        M350/base_flat_link:
+          Value: false
+        M350/base_link:
+          Value: false
+        M350/batt_left_link:
+          Value: false
+        M350/batt_right_link:
+          Value: false
+        M350/com_link:
+          Value: false
+        M350/depthsensor_link:
+          Value: false
+        M350/front_camera_link:
+          Value: false
+        M350/gimbal_camera_link:
+          Value: false
+        M350/gps_link:
           Value: true
-        Quadrotor/Hook:
+        M350/gps_point:
+          Value: false
+        M350/home_point:
+          Value: false
+        M350/imu_link:
+          Value: false
+        M350/leg_l_link:
+          Value: false
+        M350/leg_r_link:
+          Value: false
+        M350/map:
+          Value: false
+        M350/move_to_setpoint:
+          Value: false
+        M350/odom:
           Value: true
-        Quadrotor/IMU:
-          Value: true
-        Quadrotor/WinchSystem:
-          Value: true
-        Quadrotor/WinchToHook:
-          Value: true
-        Quadrotor/base_link:
-          Value: true
-        Quadrotor/camera:
-          Value: true
-        Quadrotor/camera_link:
-          Value: true
-        Quadrotor/depthsensor_link:
-          Value: true
-        Quadrotor/gps_link:
-          Value: true
-        Quadrotor/hull:
-          Value: true
-        Quadrotor/imu_link:
-          Value: true
-        Quadrotor/odom:
-          Value: true
-        Quadrotor/propeller1_link:
-          Value: true
-        Quadrotor/propeller2_link:
-          Value: true
-        Quadrotor/propeller3_link:
-          Value: true
-        Quadrotor/propeller4_link:
-          Value: true
-        Quadrotor/rangereceiver_link:
-          Value: true
-        Quadrotor/winch_link:
-          Value: true
+        M350/prop_arm_bl_link:
+          Value: false
+        M350/prop_arm_br_link:
+          Value: false
+        M350/prop_arm_fl_link:
+          Value: false
+        M350/prop_arm_fr_link:
+          Value: false
+        M350/prop_bl_link:
+          Value: false
+        M350/prop_br_link:
+          Value: false
+        M350/prop_fl_link:
+          Value: false
+        M350/prop_fr_link:
+          Value: false
+        M350/rope_link:
+          Value: false
+        M350/winch_link:
+          Value: false
         map_gt:
-          Value: true
-        sam_auv_v1/back_prop_link:
-          Value: true
-        sam_auv_v1/base_link:
-          Value: true
-        sam_auv_v1/battery_link:
-          Value: true
-        sam_auv_v1/camera_down_link:
-          Value: true
-        sam_auv_v1/camera_front_left_link:
-          Value: true
-        sam_auv_v1/camera_front_link:
-          Value: true
-        sam_auv_v1/camera_front_right_link:
-          Value: true
-        sam_auv_v1/dvl_link:
-          Value: true
-        sam_auv_v1/front_prop_link:
-          Value: true
-        sam_auv_v1/gps_link:
-          Value: true
-        sam_auv_v1/imu_link:
-          Value: true
-        sam_auv_v1/odom:
-          Value: true
-        sam_auv_v1/pressure_link:
-          Value: true
-        sam_auv_v1/rope_link:
-          Value: true
-        sam_auv_v1/sbg_link:
-          Value: true
-        sam_auv_v1/sidescan_link:
-          Value: true
-        sam_auv_v1/tcg1_link:
-          Value: true
-        sam_auv_v1/tcg2_link:
-          Value: true
-        sam_auv_v1/thruster_link:
-          Value: true
-        sam_auv_v1/thruster_yaw_link:
-          Value: true
-        sam_auv_v1/uw_gps_link:
-          Value: true
-        sam_auv_v1/vbs_link:
-          Value: true
+          Value: false
         utm:
           Value: false
-        utm_33_V:
-          Value: true
+        utm_34_V:
+          Value: false
       Marker Scale: 20
       Name: TF
       Show Arrows: true
@@ -150,80 +217,139 @@ Visualization Manager:
       Show Names: false
       Tree:
         map_gt:
-          Quadrotor/odom:
-            Quadrotor/base_link:
-              Quadrotor/camera_link:
-                Quadrotor/camera:
+          HollowSam/odom:
+            HollowSam/Rope:
+              HollowSam/Buoy:
+                {}
+              HollowSam/RopeSegment_0:
+                {}
+              HollowSam/RopeSegment_1:
+                {}
+              HollowSam/RopeSegment_10:
+                {}
+              HollowSam/RopeSegment_11:
+                {}
+              HollowSam/RopeSegment_12:
+                {}
+              HollowSam/RopeSegment_13:
+                {}
+              HollowSam/RopeSegment_14:
+                {}
+              HollowSam/RopeSegment_15:
+                {}
+              HollowSam/RopeSegment_16:
+                {}
+              HollowSam/RopeSegment_17:
+                {}
+              HollowSam/RopeSegment_18:
+                {}
+              HollowSam/RopeSegment_19:
+                {}
+              HollowSam/RopeSegment_2:
+                {}
+              HollowSam/RopeSegment_20:
+                {}
+              HollowSam/RopeSegment_21:
+                {}
+              HollowSam/RopeSegment_22:
+                {}
+              HollowSam/RopeSegment_23:
+                {}
+              HollowSam/RopeSegment_24:
+                {}
+              HollowSam/RopeSegment_25:
+                {}
+              HollowSam/RopeSegment_26:
+                {}
+              HollowSam/RopeSegment_27:
+                {}
+              HollowSam/RopeSegment_28:
+                {}
+              HollowSam/RopeSegment_29:
+                {}
+              HollowSam/RopeSegment_3:
+                {}
+              HollowSam/RopeSegment_30:
+                {}
+              HollowSam/RopeSegment_31:
+                {}
+              HollowSam/RopeSegment_4:
+                {}
+              HollowSam/RopeSegment_5:
+                {}
+              HollowSam/RopeSegment_6:
+                {}
+              HollowSam/RopeSegment_7:
+                {}
+              HollowSam/RopeSegment_8:
+                {}
+              HollowSam/RopeSegment_9:
+                {}
+            HollowSam/base_link:
+              HollowSam/rope_link:
+                {}
+              HollowSam/thruster_yaw_link:
+                HollowSam/thruster_link:
+                  HollowSam/back_prop_link:
+                    {}
+                  HollowSam/front_prop_link:
+                    {}
+          M350/odom:
+            M350/WinchSystem:
+              M350/Hook:
+                {}
+            M350/base_ENU_link:
+              {}
+            M350/base_flat_link:
+              M350/gimbal_camera_link:
+                M350/GimbalCamera:
                   {}
-              Quadrotor/depthsensor_link:
+              M350/winch_link:
                 {}
-              Quadrotor/gps_link:
-                Quadrotor/GPS:
+            M350/base_link:
+              M350/batt_left_link:
+                {}
+              M350/batt_right_link:
+                {}
+              M350/com_link:
+                {}
+              M350/depthsensor_link:
+                {}
+              M350/front_camera_link:
+                {}
+              M350/gps_link:
+                M350/GPS:
                   {}
-              Quadrotor/hull:
-                {}
-              Quadrotor/imu_link:
-                Quadrotor/IMU:
+              M350/imu_link:
+                M350/IMU:
                   {}
-              Quadrotor/propeller1_link:
+              M350/leg_l_link:
                 {}
-              Quadrotor/propeller2_link:
+              M350/leg_r_link:
                 {}
-              Quadrotor/propeller3_link:
+              M350/prop_arm_bl_link:
+                M350/prop_bl_link:
+                  {}
+              M350/prop_arm_br_link:
+                M350/prop_br_link:
+                  {}
+              M350/prop_arm_fl_link:
+                M350/prop_fl_link:
+                  {}
+              M350/prop_arm_fr_link:
+                M350/prop_fr_link:
+                  {}
+              M350/rope_link:
                 {}
-              Quadrotor/propeller4_link:
-                {}
-              Quadrotor/rangereceiver_link:
-                {}
-              Quadrotor/winch_link:
-                Quadrotor/WinchSystem:
-                  Quadrotor/Hook:
-                    {}
-                  Quadrotor/WinchToHook:
-                    {}
-          sam_auv_v1/odom:
-            sam_auv_v1/base_link:
-              sam_auv_v1/battery_link:
-                {}
-              sam_auv_v1/camera_down_link:
-                {}
-              sam_auv_v1/camera_front_left_link:
-                {}
-              sam_auv_v1/camera_front_link:
-                {}
-              sam_auv_v1/camera_front_right_link:
-                {}
-              sam_auv_v1/dvl_link:
-                {}
-              sam_auv_v1/gps_link:
-                {}
-              sam_auv_v1/imu_link:
-                {}
-              sam_auv_v1/pressure_link:
-                {}
-              sam_auv_v1/rope_link:
-                {}
-              sam_auv_v1/sbg_link:
-                {}
-              sam_auv_v1/sidescan_link:
-                {}
-              sam_auv_v1/tcg1_link:
-                {}
-              sam_auv_v1/tcg2_link:
-                {}
-              sam_auv_v1/thruster_yaw_link:
-                sam_auv_v1/thruster_link:
-                  sam_auv_v1/back_prop_link:
-                    {}
-                  sam_auv_v1/front_prop_link:
-                    {}
-              sam_auv_v1/uw_gps_link:
-                {}
-              sam_auv_v1/vbs_link:
-                {}
-        utm_33_V:
+            M350/gps_point:
+              {}
+            M350/move_to_setpoint:
+              {}
+        utm_34_V:
           utm:
-            {}
+            M350/home_point:
+              M350/map:
+                {}
       Update Interval: 0
       Value: true
     - Alpha: 1
@@ -394,10 +520,10 @@ Visualization Manager:
       Invert Z Axis: false
       Name: Current View
       Near Clip Distance: 0.009999999776482582
-      Pitch: 1.5697963237762451
+      Pitch: 1.5647963285446167
       Target Frame: <Fixed Frame>
       Value: Orbit (rviz)
-      Yaw: 3.1335272789001465
+      Yaw: 3.133527994155884
     Saved: ~
 Window Geometry:
   Displays:
@@ -417,5 +543,5 @@ Window Geometry:
   Views:
     collapsed: true
   Width: 1920
-  X: 0
-  Y: 1200
+  X: 70
+  Y: 360

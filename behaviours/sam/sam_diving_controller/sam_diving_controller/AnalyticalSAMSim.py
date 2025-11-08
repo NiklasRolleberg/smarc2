@@ -13,7 +13,7 @@ from smarc_modelling.control.control import *
 from smarc_modelling.vehicles.SAM_casadi import SAM_casadi
 
 
-class DiveControllerMPC(DiveControllerInterface):
+class AnalyticalSAMSim(DiveControllerInterface):
 
     def __init__(self, node, dive_pub, dive_sub, param, rate=0.1):
 
@@ -38,44 +38,16 @@ class DiveControllerMPC(DiveControllerInterface):
         self.pred_mpc = []
 
         # Declare counter
+        self.ref_is_traj = False
         self.i = 0
         self.traj_len = 0
 
-        # Extract the CasADi model
-        sam = SAM_casadi(dt=self._dt)
-
-        # Flag if you want to rebuild the OCP or not (if changes has been made to the MPC)
-        build = False
-
-        # create nmpc object for the OCP
-        self.N_horizon = 30  # Prediction horizon
-        self.nmpc = NMPC(sam, self._dt, self.N_horizon, update_solver_settings=build)
-        self.nx = self.nmpc.nx  # State vector length + control vector
-        self.nu = self.nmpc.nu  # Control derivative vector length
-
-        self.wp_array = np.zeros(self.nx + self.nu)
-
-        # Run the MPC setup
-        self.ocp_solver, self.integrator = self.nmpc.setup()
-
-        # NOTE: This needs to happen in the update function with some check
-        # before proceeding. Otherwise, you don't get the right data from the
-        # dive sub node, because it's not yet spinning and thus doesn't get the
-        # topics yet.
         self._initialized = False
 
-        # FIXME: This should change. We don't want to change code when
-        # switching between trajectories and waypoints
-        self.ref_is_traj = True # Flag to indicate if the reference is a trajectory or not
-        self._loginfo("Dive Controller created")
+        # Extract the CasADi model
+        sam = SAM_casadi(dt=self._dt)
+        self.dynamics = sam.dynamics()
 
-        self._acados_status = {0: "ACADOS_SUCCESS",
-                               1: "ACADOS_NAN_DETECTED",
-                               2: "ACADOS_MAXITER",
-                               3: "ACADOS_MINSTEP",
-                               4: "ACADOS_QP_FAILURE",
-                               5: "ACADOS_READY",
-                               6: "ACADOS_UNBOUNDED"}
 
     def update(self):
         """
@@ -84,32 +56,6 @@ class DiveControllerMPC(DiveControllerInterface):
         # FIXME: This doesn't quite work. Replacing it with checking if
         # mission_state == RUNNING blocked the whole controller and it wouldn't
         # get the waypoint either.
-        mission_state = self._dive_sub.get_mission_state()
-        if mission_state == MissionStates.RECEIVED:
-            self._loginfo_once("Mission Received")
-            self._set_actuators_neutral()
-            return
-
-        if mission_state == MissionStates.COMPLETED:
-            self._loginfo_once("Mission Complete")
-            self._set_actuators_neutral()
-            return
-
-        if mission_state == MissionStates.CANCELLED:
-            self._loginfo_once("Mission Cancelled")
-            self._set_actuators_neutral()
-            return
-
-        # if mission_state != MissionStates.RUNNING:
-        #    self._loginfo_once("Mission not running")
-        #    self._set_actuators_neutral()
-        #    return
-
-        # Engage actuators in case they were off before.
-        self._dive_pub.set_actuator_states(ActuatorStates.ENGAGED, "DP")
-
-        if not self.get_reference():
-            return
 
         # Get the current states
         convert_state = True  # Flag to convert states
@@ -120,86 +66,88 @@ class DiveControllerMPC(DiveControllerInterface):
             self._loginfo(f"No state available yet.")
             return
 
-        self._current_state = self.convert_flu_to_frd(self._current_state_in_mocap, convert_state)
+        if not self._initialized:
+            self._current_state = self.convert_flu_to_frd(self._current_state_in_mocap, convert_state)
+            self._initialized = True
+
+
         self._current_control = self._dive_sub.get_control_input()
 
-        if not self._initialized:
-            self.initialize_mpc()
+        if self.i % 100 == 0:
+            self._current_state = self.convert_flu_to_frd(self._current_state_in_mocap, convert_state)
+
+
 
         x_current = self.get_state_array(self._current_state,
                                          self._current_control,
-                                         is_init_state=self._initialized,
+                                         is_init_state=False,
                                          is_trajectory=self.ref_is_traj)
-        self.get_current_ref_array()
+        # DEBUG
 
-        # Update reference vector
-        # NOTE: we use p bc. we have a custom cost function.
-        # NOTE: This might be on e issue, we don't have a trajectory, just one array.
-        for stage in range(self.N_horizon):
-            if self.ref.shape[0] < self.N_horizon and self.ref.shape[0] != 0:
-                self.ocp_solver.set(stage, "p", self.ref[self.ref.shape[0] - 1, :])
-            else:
-                self.ocp_solver.set(stage, "p", self.ref[stage, :])
+        # States
+        #x_current[3] = 1 
+        #x_current[4:6] = 0 
 
-        # FIXME: We also have a custom cost function for the terminal cost. So this might collide with it?
-        # Set the terminal state reference to the value at N_horizon
-        self.ocp_solver.set(self.N_horizon, "yref", self.ref[-1, :self.nx])
+        # Actuators
+        #x_current[13] = 0
+        #x_current[14] = 100
+        #x_current[15:] = 0
 
-        # Set current state
-        self.ocp_solver.set(0, "lbx", x_current)
-        self.ocp_solver.set(0, "ubx", x_current)
+        #x_current[15] *= -1
 
-        # solve ocp and get next control input
-        start_time = time.time()
-        status = self.ocp_solver.solve()
-        end_time = time.time()
+        sim_res, debug_val = self.rk4(x_current, x_current[13:], self._dt, self.dynamics)
+        debug_array = np.array(debug_val)
 
-        # Get slack variabls
-        sl = []
-        for stage in range(self.N_horizon):
-            sl = self.ocp_solver.get(stage, "sl")
-            if (sl > 1e-6).any():  # tolerance
-                s = f"Stage {stage}: soft constraint violated, slack = {sl}"
-                self._logwarn(s)
-
-        # simulate system:
-        # NOTE: May be possible to use get(0, "x") to acquire the actual control input.
-        self.simU = self.ocp_solver.get(0, "u")
-        simX = self.ocp_solver.get(0, "x")
-
-        self.pred_mpc = []
-        for j in range(self.N_horizon + 1):
-            self.pred_mpc.append(self.ocp_solver.get(j, 'x'))
-
-        # The integrator of the control signal is needed, since u is the control derivative.
-        mpc_solution = self.integrator.simulate(x=x_current, u=self.simU)
-
-        if mpc_solution is None:
-            self._set_actuators_neutral()
-            # return
-        elif status != 0:
-            # self._loginfo(f"Solver status: {status}")
-            self._set_actuators_neutral()
-            # return
-        else:
-            self.set_publishers(mpc_solution)
-
-        # FIXME: Remove all the print statements here. They only should appear in the convenience node
-        s = f"\nNMPC INFO\n"  # {self._dive_sub.current_idx}/{self.traj_len}:\n"
-        s += f"NMPC solver status: {self._acados_status[status]}\n"
+        np.set_printoptions(precision=3)
+        s = f"\nSIM INFO\n"  # {self._dive_sub.current_idx}/{self.traj_len}:\n"
         # s += f"NMPC solve time: {(end_time - start_time)*1000:.1f} ms\n"
         # s += f"Traj. index: {self._dive_sub.current_idx}/{self.traj_len}:\n" if self.ref_is_traj else f""
-        s += f"MPC pred: x: {simX[0]}, y: {simX[1]}, z: {simX[2]}\n"
-        s += f"ref: x: {self.trajectory.shape}\n"
-
+        s += f"position: x: {sim_res[0]:.3f}, y: {sim_res[1]:.3f}, z: {sim_res[2]:.3f}\n"
+        s += f"orientation: x: {sim_res[4]:.3f}, y: {sim_res[5]:.3f}, z: {sim_res[6]:.3f} , w: {sim_res[3]:.3f}\n"
+        s += f"actuators: vbs: {sim_res[13]:.3f}, lcg: {sim_res[14]:.3f}, rpm: {sim_res[17]:.3f}\n"
+        s += f"   rudder: {sim_res[16]:.3f}, stern: {sim_res[15]:.3f}\n"
+        s += f"g: {debug_array}\n"
+            #s += f"W: {debug_array[0]}, B: {debug_array[1]}\n"
 
         self._loginfo(s)
 
-        # Increment trajectory window index
+        self.set_publisher(sim_res)
+
         self.i += 1
-        self._dive_sub.set_current_idx(self.i)
 
         return
+
+    def rk4(self, x, u, dt, fun):
+        k1, J_total = fun(x, u)
+        k2, _ = fun(x+dt/2*k1, u)
+        k3, _ = fun(x+dt/2*k2, u)
+        k4, _ = fun(x+dt*k3, u)
+
+        x_t = x + dt/6 * (k1 + 2*k2 + 2*k3 + k4)
+
+        return x_t.full().flatten(), J_total
+
+    def set_publisher(self, sim_res):
+        state_msg = Odometry()
+        state_msg.header.frame_id = 'mocap'
+        state_msg.pose.pose.position.x = sim_res[0]
+        state_msg.pose.pose.position.y = sim_res[1]
+        state_msg.pose.pose.position.z = sim_res[2]
+        state_msg.pose.pose.orientation.w = sim_res[3]
+        state_msg.pose.pose.orientation.x = sim_res[4]
+        state_msg.pose.pose.orientation.y = sim_res[5]
+        state_msg.pose.pose.orientation.z = sim_res[6]
+        state_msg.twist.twist.linear.x = sim_res[7]
+        state_msg.twist.twist.linear.y = sim_res[8]
+        state_msg.twist.twist.linear.z = sim_res[9]
+        state_msg.twist.twist.angular.x = sim_res[10]
+        state_msg.twist.twist.angular.y = sim_res[11]
+        state_msg.twist.twist.angular.z = sim_res[12]
+
+        self._dive_pub.set_state(state_msg)
+
+        self._current_state = state_msg
+
 
     def get_reference(self):
         # TODO: refactor this if-statement as function.
@@ -409,110 +357,3 @@ class DiveControllerMPC(DiveControllerInterface):
 
         return x
 
-    def get_wp_array(self, waypoint):
-
-        ref = np.zeros(self.nx + self.nu)
-
-        ref[0] = waypoint.pose.pose.position.x
-        ref[1] = waypoint.pose.pose.position.y
-        ref[2] = waypoint.pose.pose.position.z
-        ref[3] = waypoint.pose.pose.orientation.w
-        ref[4] = waypoint.pose.pose.orientation.x
-        ref[5] = waypoint.pose.pose.orientation.y
-        ref[6] = waypoint.pose.pose.orientation.z
-
-        # Neutral actuator reference for VBS and LCG. Rest is 0
-        ref[13] = 50
-        ref[14] = 50
-
-        return ref
-
-    def initialize_mpc(self):
-        """
-        Set the initial state for the MPC
-        """
-        x0 = self.get_state_array(self._current_state,
-                                  self._current_control,
-                                  is_init_state=not self._initialized,
-                                  is_trajectory=self.ref_is_traj)
-
-        # Initialize the state and control vector
-        for stage in range(self.N_horizon + 1):
-            self.ocp_solver.set(stage, "x", x0)
-        for stage in range(self.N_horizon):
-            # u here is the rate of change, that's why we initialize it
-            # with 0
-            self.ocp_solver.set(stage, "u", np.zeros(self.nu, ))
-
-        self._initialized = True
-
-    def get_current_ref_array(self):
-        """
-        Populate reference array depending on whether we have a trajectory or waypoint.
-        """
-        if self.ref_is_traj:
-            if self.i < self.traj_len:
-                # extract the sub-trajectory to track under the prediction horizon
-                if self.i <= (self.traj_len - self.N_horizon):
-                    self.ref = self.trajectory[self.i:self.i + self.N_horizon, :]
-                else:
-                    self.ref = self.trajectory[self.i:, :]
-
-            else:
-                self._loginfo_once("Trajectory Tracking Complete")
-                self._set_actuators_neutral()
-                return
-
-        else:
-            self.ref = np.zeros((self.N_horizon, (self.nx + self.nu)))
-            self.ref[:, :] = self.wp_array
-
-    def set_publishers(self, mpc_solution):
-        """
-        Set the corresponding publishers for the actuators and convenience topics
-        """
-        # Assign the calculated control signal to actuators
-        u_vbs = mpc_solution[13]
-        u_lcg = mpc_solution[14]
-        u_stern = mpc_solution[15]
-        u_rudder = -mpc_solution[16]
-        u_rpm1 = mpc_solution[17]
-        u_rpm2 = mpc_solution[18]
-
-        # Publish the control input
-        self._dive_pub.set_vbs(u_vbs)
-        self._dive_pub.set_lcg(u_lcg)
-        self._dive_pub.set_thrust_vector(u_rudder, u_stern)
-        self._dive_pub.set_rpm(u_rpm1, u_rpm2)
-
-        # Set control input (For convenience topics)
-        self._input = ControlInput()
-        self._input.vbs = u_vbs
-        self._input.lcg = u_lcg
-        self._input.thrustervertical = u_stern
-        self._input.thrusterhorizontal = u_rudder
-        self._input.thrusterrpm = float(u_rpm1)
-
-        # Convenience Topics
-        # FIXME: This if statement is weird.
-        if self.ref is not None:
-            self._ref = ControlReference()
-            self._ref.x = self.ref[0, 0]
-            self._ref.y = self.ref[0, 1]
-            self._ref.z = self.ref[0, 2]
-
-            r = R.from_quat([self.ref[0, 4],  # x
-                             self.ref[0, 5],  # y
-                             self.ref[0, 6],  # z
-                             self.ref[0, 3]])  # w
-            euler_angles = r.as_euler('xyz', degrees=False)
-            self._ref.roll = euler_angles[0]
-            self._ref.pitch = euler_angles[1]
-            self._ref.yaw = euler_angles[2]
-
-    def get_mpc_pred(self):
-        """
-        Get method for the MPC predictions
-        """
-
-        return self.pred_mpc
