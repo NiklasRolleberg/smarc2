@@ -75,7 +75,7 @@ class YOLODetector(Node):
         # timer to simulate tracking
         self.detector_enabled = False
         self.image: Image = None
-        self.classify_timer = self.create_timer(self.model_params['inference_frequency'], self.classify_callback)
+        self.classify_timer = self.create_timer(self.model_params['detection.inference_period'], self.classify_callback)
 
         # create detector services
         self.create_service(Trigger, Topics.ENABLE_ALARS_DETECTOR_SERVICE_TOPIC , self.handle_enable_detector)
@@ -93,7 +93,7 @@ class YOLODetector(Node):
             assert (self.image.width,self.image.height)  == (640, 480), "Image resolution isn't (640,480), YOLO model won't accept it"
             cv_image = self.bridge.imgmsg_to_cv2(self.image, desired_encoding='bgr8')
             results = self.yolo_model.predict(source = cv_image, 
-                            conf = self.model_params['confidence_threshold'],    
+                            conf = self.model_params['detection.confidence_threshold'],    
                             save = False,
                             verbose = False,
                             device = 'cpu')
@@ -148,7 +148,7 @@ class YOLODetector(Node):
             canny_im, c4 = self.slice_image(canny_im, corners_rot.T, thresh/2, length)
 
             # Implement canny edge detector           
-            blur = cv2.GaussianBlur(canny_im, (5, 5), 1.5) #0.01 for not asko, 1.5 for asko
+            blur = cv2.GaussianBlur(canny_im, (5, 5), self.model_params["detection.blur_variance"]) 
             median = np.median(blur)
             lower_threshold = int(max(0, 0.5 * median))
             upper_threshold = int(min(255, 1.5 * median))
@@ -356,9 +356,11 @@ class YOLODetector(Node):
         expected_types = {
             "mode": str,
             "device": str,
-            "inference_frequency": float,
-            "confidence_threshold": float,
             "model_path": str,
+
+            "detection.inference_period": float,
+            "detection.confidence_threshold": float,
+            "detection.blur_variance": (float, int),         
 
             "camera.fov": (int, float),
             "camera.K": list,

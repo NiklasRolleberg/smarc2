@@ -1,11 +1,14 @@
 /**/auv_yolo_detector:
   ros__parameters:
     mode: "sim" #overridden by launch
-    namespace: "Quadrotor"
-    device: 'cpu'
-    inference_frequency: 1.0 #overridden by launch
-    confidence_threshold: 0.2
-    model_path: 'None'
+    namespace: "Quadrotor" #overridden by launch
+    device: 'cpu' #overridden by launch
+    model_path: '/home/fm/KTH_Courses/ResearchProject/RProj_GitRepoFork/colcon_ws/src/smarc2/perception/alars/auv_yolo_detector'
+
+    detection:
+      blur_variance: 1.5 #0.01 for not asko, 1.5 for asko
+      inference_period: 0.1
+      confidence_threshold: 0.2
 
     camera:
       fov: 82.0
