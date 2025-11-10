@@ -9,12 +9,14 @@ def generate_launch_description():
     # ---- frequently changed params as launch arguments ...
     mode_arg = DeclareLaunchArgument('mode', default_value='real')
     namespace_arg = DeclareLaunchArgument('namespace', default_value='Quadrotor')
-    device_arg = DeclareLaunchArgument('namespace', default_value='cpu')
+    device_arg = DeclareLaunchArgument('device', default_value='cpu')
+    use_sim_time_arg = DeclareLaunchArgument('use_sim_time', default_value='false')
 
     # ... and as node params
     mode = LaunchConfiguration('mode')
     namespace = LaunchConfiguration('namespace')
     device = LaunchConfiguration('device')
+    use_sim_time = LaunchConfiguration('use_sim_time')
 
     # ---- rarely changed params from yaml (yaml has every parameter but launch arguments will override)
     config_file = PathJoinSubstitution([
@@ -34,8 +36,8 @@ def generate_launch_description():
                 'mode': mode,
                 'namespace': namespace,
                 'device': device,
-                
-            }
+                'use_sim_time': use_sim_time,
+            },
         ]
     )
 
@@ -43,8 +45,10 @@ def generate_launch_description():
         namespace_arg,
         mode_arg,
         device_arg,
+        use_sim_time_arg,
         LogInfo(msg=["[Launch] mode argument = ", mode]),
         LogInfo(msg=["[Launch] namespace argument = ", namespace]),
         LogInfo(msg=["[Launch] device argument = ", device]),
+        LogInfo(msg=["[Launch] use_sim_time argument = ", use_sim_time]),
         detector_node
     ])
