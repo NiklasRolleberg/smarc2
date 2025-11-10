@@ -19,6 +19,7 @@ from typing import Tuple, Union
 from dji_msgs.msg import Topics
 from dji_msgs.msg import Links
 from std_srvs.srv import Trigger
+import traceback
 
 
 
@@ -66,9 +67,14 @@ class YOLODetector(Node):
         self.tf_buffer = Buffer()
         self.tf_listener = TransformListener(self.tf_buffer, self)
         
-        # models (yolo and camera)
-        self.yolo_model = YOLO(self.model_params['model_path']+'/best_'+self.model_params['mode']+'.pt')
-        self.yolo_model.info()
+        # models (yolo and camera
+        try:
+            self.yolo_model = YOLO(self.model_params['model_path'])
+            self.yolo_model.info()
+        except Exception as e:
+            self.get_logger().warn('YOLO model import failed; check if model path is correct in .yaml file')
+            self.get_logger().warn(str(e))
+            self.get_logger().warn(traceback.format_exc())
         self.camera_model = PinholeCameraModel()
         self.bridge = CvBridge()
 

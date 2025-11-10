@@ -1,5 +1,6 @@
 /images
 /bags
+/models
 record_data.py
 best_real.pt
 best_sim.pt
