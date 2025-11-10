@@ -4,23 +4,21 @@ from rclpy.duration import Duration
 from ultralytics import YOLO
 from ultralytics.engine.results import OBB, Results
 from rclpy.node import Node
-from sensor_msgs.msg import Image, CameraInfo
+from sensor_msgs.msg import Image
 from cv_bridge import CvBridge
 import cv2
 from image_geometry import PinholeCameraModel
 import numpy as np
-from geometry_msgs.msg import PointStamped, Pose, PoseStamped
+from geometry_msgs.msg import PointStamped
 from nav_msgs.msg import Odometry
 from tf2_ros import Buffer, TransformListener
 import tf2_geometry_msgs
 from math import sqrt, cos, sin, tan, pi
 import torch
-from typing import Tuple
+from typing import Tuple, Union
 from dji_msgs.msg import Topics
 from dji_msgs.msg import Links
 from std_srvs.srv import Trigger
-from std_msgs.msg import Float32
-from smarc_msgs.msg import Topics as SMARCTopics
 
 
 
@@ -33,10 +31,8 @@ class YOLODetector(Node):
         self.get_params()
 
         # camera calibration matrix
-        self.K = np.array([[369.5, 0, 320],
-                           [0, 415.69, 240],
-                           [0, 0, 1]])
-        self.invK = np.linalg.inv(self.K)
+        K = np.array(self.model_params["camera.K"]).reshape(3,3)
+        self.invK = np.linalg.inv(K)
 
         # detection filtering params
         lw_ratio_margin = 4.0
@@ -55,9 +51,6 @@ class YOLODetector(Node):
         
         # pubs, subs and tf2
         self.create_subscription(Image, self.model_params["topics.raw_image"], self.image_callback, 10)
-        # self.nf_annotated_img_pub = self.create_publisher(msg_type=Image,
-        #                                     topic="yolo_annotation_nf",
-        #                                     qos_profile=10)
         self.annotated_img_pub = self.create_publisher(Image,
                                             self.model_params["topics.rviz.annotated_image"], 10)
         self.blurred_channel_pub = self.create_publisher(Image,
@@ -68,7 +61,8 @@ class YOLODetector(Node):
                                 self.model_params["topics.predicted_position.sam"], 10)
         self.buoy_position_pub = self.create_publisher(PointStamped, 
                                 self.model_params["topics.predicted_position.buoy"], 10)
-        #self.middle_pub = self.create_publisher(PointStamped, Topics.ESTIMATED_MIDDLE_TOPIC, 10)
+        # self.nf_annotated_img_pub = self.create_publisher(Image,"yolo_annotation_nf", 10)
+
         self.tf_buffer = Buffer()
         self.tf_listener = TransformListener(self.tf_buffer, self)
         
@@ -87,22 +81,6 @@ class YOLODetector(Node):
         self.create_service(Trigger, Topics.ENABLE_ALARS_DETECTOR_SERVICE_TOPIC , self.handle_enable_detector)
         self.create_service(Trigger, Topics.DISABLE_ALARS_DETECTOR_SERVICE_TOPIC , self.handle_disable_detector)
 
-
-    def handle_enable_detector(self, request, response):
-        # Toggle the detector enabled flag
-        self.detector_enabled = True
-        response.success = True
-        response.message = 'detector enabled' if self.detector_enabled else 'detector disabled'
-        self.get_logger().info(f"Service called: detector_enabled = {self.detector_enabled}")
-        return response
-
-    def handle_disable_detector(self, request, response):
-        # Toggle the detector enabled flag
-        self.detector_enabled = False
-        response.success = True
-        response.message = 'detector enabled' if self.detector_enabled else 'detector disabled'
-        self.get_logger().info(f"Service called: detector_enabled = {self.detector_enabled}")
-        return response
     
     def classify_callback(self):
         """ 
@@ -127,8 +105,14 @@ class YOLODetector(Node):
             # self.nf_annotated_img_pub.publish(ros_img)
 
             # filter detections and get head position
-            result.obb, _ = self.filter_detections(result.obb)
+            result.obb, _ , sam_pixels, buoy_pixels = self.filter_detections(result.obb)
             head = self.identify_head(result.obb, cv_image)
+
+            # publish positions (head and buoy)
+            if sam_pixels is not None:
+                self.published_normalized_position(sam_pixels, (self.image.width,self.image.height), "sam")
+            if buoy_pixels is not None:
+                self.published_normalized_position(buoy_pixels, (self.image.width,self.image.height), "buoy")
      
             # publish filtered annotated image as ros msg
             im = result.plot()
@@ -136,6 +120,7 @@ class YOLODetector(Node):
                 cv2.circle(im, center=(head[0], head[1]), radius=5, color=(0, 255, 0), thickness=2)
             ros_img = self.bridge.cv2_to_imgmsg(im, encoding = 'bgr8')
             self.annotated_img_pub.publish(ros_img)
+
 
 
     def identify_head(self, result: OBB, im: np.ndarray) -> tuple:
@@ -255,7 +240,7 @@ class YOLODetector(Node):
 
         return im[corners[3]:corners[1], corners[2]:corners[0]], c4 - corners[2:]
 
-    def filter_detections(self, results: OBB):
+    def filter_detections(self, results: OBB) -> Tuple[Results, torch.Tensor, Union[list, None], Union[list, None]]:
         """
         Filter detections by choosing most likely detection for each class and filter according to 
         box ratio and temporal/velocity constraints
@@ -263,7 +248,7 @@ class YOLODetector(Node):
 
         cls : torch.Tensor = results.cls
         conf: torch.Tensor = results.conf
-        sam_index, buoy_index = None, None
+        sam_index, buoy_index = None, None  
         
         # Keep most likely sam/buoy (sam = 0, buoy = 1)
         sam_mask = cls.numpy() == 0 # cls.numpy() detach().cpu().numpy
@@ -280,12 +265,16 @@ class YOLODetector(Node):
             if lw_ratio < self.filt_params["lw_ratio_lb"] or lw_ratio > self.filt_params["lw_ratio_ub"]: 
                 sam_index = None
 
+        # return objects posiitons as lists
+        sam_pos = results.xywhr[sam_index][0:2] if sam_index is not None else None
+        buoy_pos = results.xywhr[buoy_index][0:2] if buoy_index is not None else None
+
         # Create valid detections mask and return new result.obb object
         final_mask = np.full(cls.numpy().size, False)
         if sam_index is not None: final_mask[sam_index] = True 
         if buoy_index is not None: final_mask[buoy_index] = True 
 
-        return results[torch.from_numpy(final_mask)], torch.from_numpy(final_mask)
+        return results[torch.from_numpy(final_mask)], torch.from_numpy(final_mask), sam_pos, buoy_pos
                    
 
 
@@ -311,6 +300,43 @@ class YOLODetector(Node):
 
         return tf2_geometry_msgs.do_transform_point(pos, t)
     
+    def published_normalized_position(self, p: tuple, wh: tuple, label: str) -> tuple:
+        """
+        Normalize pixels coordinates so the origin is the center of the image, the x axis is horizontal
+        from left to right and y axis is vertical from bottom to top
+        Publishes normalized pixel position in corresponding topics, depending on label
+        Args:
+            p: (horizontal position, vertical position)  (both in pixels)
+            wh: (width, height)
+            label: "sam" or "buoy"
+        """
+        if wh != (640, 480): self.get_logger().warn(f'640*480 resolution was expected (width, height).')
+        point = PointStamped()
+        point.header.stamp = self.get_clock().now().to_msg()
+        point.header.frame_id = self.model_params["frames.camera"]
+        point.point.x = float((p[0]-wh[0]/2)/(wh[0]/2))
+        point.point.y = float(-(p[1]-wh[1]/2)/(wh[1]/2))
+        if label == 'sam': self.sam_position_pub.publish(point)
+        elif label == 'buoy': self.buoy_position_pub.publish(point)
+        else: self.get_logger().error('Position not published, label argument should be "sam" or "buoy"')
+
+    
+    def handle_enable_detector(self, request, response):
+        # Toggle the detector enabled flag
+        self.detector_enabled = True
+        response.success = True
+        response.message = 'detector enabled' if self.detector_enabled else 'detector disabled'
+        self.get_logger().info(f"Service called: detector_enabled = {self.detector_enabled}")
+        return response
+
+    def handle_disable_detector(self, request, response):
+        # Toggle the detector enabled flag
+        self.detector_enabled = False
+        response.success = True
+        response.message = 'detector enabled' if self.detector_enabled else 'detector disabled'
+        self.get_logger().info(f"Service called: detector_enabled = {self.detector_enabled}")
+        return response
+    
     def remove_outliers(self) -> bool:
         """
         TODO: implement simple outlier removel or kalman filter
@@ -335,6 +361,8 @@ class YOLODetector(Node):
             "model_path": str,
 
             "camera.fov": (int, float),
+            "camera.K": list,
+
             "sam.width": (float, int),
             "sam.length": (float, int),
 
@@ -369,6 +397,7 @@ class YOLODetector(Node):
             else frames_topics[k]
             for k in expected_types
         }
+        self.model_params.update({"frame.camera_pixels": "camera_pixels_normalized"})
 
         # check parameter types
         for key, expected in expected_types.items():
