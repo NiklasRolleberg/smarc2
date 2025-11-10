@@ -1,43 +1,37 @@
 /**/auv_yolo_detector:
   ros__parameters:
-    mode: "sim"
-    inference_frequency: 1.0
-    confidence_threshold: 0.4
-    model_path: 'None'
+    mode: "sim" #overridden by launch
+    namespace: "Quadrotor" #overridden by launch
+    device: 'cpu' #overridden by launch
+    model_path: '/home/fm/KTH_Courses/ResearchProject/RProj_GitRepoFork/colcon_ws/src/smarc2/perception/alars/auv_yolo_detector/models/best_real_2.pt'
+
+    detection:
+      blur_variance: 1.5 #0.01 for not asko, 1.5 for asko
+      inference_period: 0.1
+      confidence_threshold: 0.2
 
     camera:
       fov: 82.0
+      K: [369.5, 0.0, 320.0, 0.0, 415.69, 240.0, 0.0, 0.0, 1.0] #row-major order
 
-    real_dimensions:
-      sam:
-        width: 2.0
-        height: 16.0
-    
-    frames:
-      real:
-        map: "map_gt" 
-        quadrotor_odom: "Quadrotor/odom"
-        sam_odom: "sam_auv_v1/odom"
-        camera: "Quadrotor/camera"
-      sim:
-        map: "map_gt" 
-        quadrotor_odom: "Quadrotor/odom"
-        sam_odom: "sam_auv_v1/odom"
-        camera: "Quadrotor/camera"
-    
+    sam:
+      width: 0.2
+      length: 1.5
+
     topics:
-      sub:
-        real:
-          raw_image: '/Quadrotor/gimbal_camera/image_raw'
-          camera_info: '/Quadrotor/gimbal_camera/camera_info'
-          drone_position: '/Quadrotor/smarc/odom' #/Quadrotor/smarc/odom
-        sim:
-          raw_image: /Quadrotor/core/fpcamera/image
-          camera_info: /Quadrotor/core/fpcamera/cam_info
-          drone_position: /Quadrotor/odom_gt #/Quadrotor/smarc/odom
+      rviz:
+        annotated_image: 'yolo_annotation'
+        bw_blurred_sam: 'blurred_sam'
+        edges: 'sam_edges'
+      predicted_position: # only in sim
+        sam: '/Quadrotor/pred_position/sam'
+        buoy: '/Quadrotor/pred_position/buoy'
+      raw_image: /Quadrotor/core/fpcamera/image # only in sim
+    
+    frames: # only in sim
+      map: "Quadrotor/map" # or "map_gt" in sim
+      quadrotor_odom: "Quadrotor/odom"
+      camera: "Quadrotor/camera"
 
-      pub:
-        annotated_image: 'image_annotated'
-        predicted_position:
-          sam: '/Quadrotor/pred_position/sam'
-          buoy: '/Quadrotor/pred_position/buoy'
+
+

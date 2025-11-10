@@ -4,12 +4,12 @@ import rclpy
 from rclpy.node import Node
 import numpy as np
 import scipy.signal as sc
-from math import sin, pi, sqrt, tan, log
-from rclpy.duration import Duration
+from math import pi, sqrt, tan, log
 from nav_msgs.msg import OccupancyGrid, Odometry
-from geometry_msgs.msg import Pose, PoseStamped, PointStamped, Vector3Stamped
+from geometry_msgs.msg import Pose, PointStamped, Vector3Stamped
 import tf2_geometry_msgs
 from tf2_ros import Buffer, TransformListener
+from typing import Tuple
 
 
 class ProbabilisticGridMap(Node):
@@ -55,10 +55,9 @@ class ProbabilisticGridMap(Node):
             self.get_logger().error("No parameters received")
 
         # initialize grid map vars. 
-        self.GPS_ping = GPS_ping
-        self.GPS_ping_odom = None
-        self.drone_pos_odom_gt = None
-        self.prior = None
+        self.GPS_ping: PointStamped = GPS_ping
+        self.GPS_ping_odom: np.ndarray = None
+        self.prior: np.ndarray = None
 
         self.tf_buffer = Buffer()
         self.tf_listener = TransformListener(self.tf_buffer, self)
@@ -140,7 +139,7 @@ class ProbabilisticGridMap(Node):
         return self.map_seen()
     
     
-    def kernel(self):
+    def kernel(self) -> np.ndarray:
         """
         Using SAM's estimated velocity in the correct frame, the kernel is estimated. 
         The kernel is a 3*3 matrix with bigger values on the elements that are aligned with SAM's velocity direction.
@@ -197,7 +196,7 @@ class ProbabilisticGridMap(Node):
 
         return normalized_kernel
     
-    def compute_kernel_coeff(self, sam_vel:float, update_period:float, resol:float, function_string:str) -> tuple[float, float]:
+    def compute_kernel_coeff(self, sam_vel:float, update_period:float, resol:float, function_string:str) -> Tuple[float, float]:
         """ 
         Computes weights q and Q based on the function type provided. This is done by computing the distance SAM ha travelled between
         consecutive Bayes Filter updates. The bigger the distance, the bigger the outer elements of the kernel.
@@ -238,7 +237,7 @@ class ProbabilisticGridMap(Node):
 
     
 
-    def find_cells2update(self):
+    def find_cells2update(self) -> Tuple[np.ndarray, np.ndarray]:
         """ 
         Function that determines the cells that need to be updated based on flight height, camera FOV and time constraint.
         Here, as in the majority of functions of this node, consider the private grid map (self.X and self.Y) indexes, 
@@ -281,7 +280,7 @@ class ProbabilisticGridMap(Node):
 
         return rows, columns
 
-    def find_cell(self, x_coord, y_coord):
+    def find_cell(self, x_coord, y_coord) -> Tuple[float, float]:
         """ Maps (x,y) coordinates to cell coordinates """
         x_cell = int((x_coord - self.X_min) / self.resol) 
         y_cell = int((self.Y_max - y_coord) / self.resol)  
@@ -289,7 +288,7 @@ class ProbabilisticGridMap(Node):
         y_cell = max(0, min(y_cell, self.Ncells_y - 1))
         return x_cell, y_cell
        
-    def pub_max_prob_cell(self):
+    def pub_max_prob_cell(self) -> None:
         """Publishes cell with highest probability for visualization purposes (rviz)"""
         idx = np.unravel_index(np.argmax(self.prior, axis=None), self.prior.shape)
         cell_coord = PointStamped()
@@ -300,13 +299,14 @@ class ProbabilisticGridMap(Node):
         self.cell_pub.publish(cell_coord)
 
 
-    def prior2grid_msg(self):
+    def prior2grid_msg(self) -> None:
         """ Convert 2D array to a row-major order list in order to publish as a ros message"""
         data = self.prior[::-1].reshape(self.prior.shape[0]*self.prior.shape[1], 1).flatten().tolist() #[::-1] or not in prior
         data = self.map_probabilities(np.log10(np.array(data)+sys.float_info.min))
         self.map.data = [int(d) for d in data]
     
-    def transform_point(self, point:PointStamped) -> np.array:
+
+    def transform_point(self, point:PointStamped) -> np.ndarray:
         """Convert points in map frame to odom frame"""
         t = self.tf_buffer.lookup_transform(
             target_frame = self.drone_odom_frame_id,  
@@ -315,7 +315,8 @@ class ProbabilisticGridMap(Node):
         new_point = tf2_geometry_msgs.do_transform_point(point, t)
         return np.array([new_point.point.x, new_point.point.y]), new_point.point.z
     
-    def transform_vector(self, vector:Vector3Stamped) -> np.array:
+
+    def transform_vector(self, vector:Vector3Stamped) -> np.ndarray:
         """Convert points in map frame to odom frame"""
         t = self.tf_buffer.lookup_transform(
             target_frame = self.drone_odom_frame_id,  
@@ -325,7 +326,8 @@ class ProbabilisticGridMap(Node):
         sam_vel_odom = [new_vector.vector.x, new_vector.vector.y]
         return np.array(sam_vel_odom) 
     
-    def initiatePrior(self, GPS_ping_odom:np.array):
+
+    def initiatePrior(self, GPS_ping_odom:np.array) -> np.ndarray:
         """ Initiate Gaussian prior in the odom_gt frame"""
         prior = np.exp(-((self.X - GPS_ping_odom[0]) ** 2 + (self.Y - GPS_ping_odom[1]) ** 2) / self.variance  ** 2)
         prior /= np.sum(prior)
@@ -352,10 +354,9 @@ class ProbabilisticGridMap(Node):
         self.grid_map_translation = [int((self.w/2)/self.resol), int((self.h/2)/self.resol)]
         self.X_min, self.X_max = np.min(self.X) -self.resol/2, np.max(self.X) +self.resol/2
         self.Y_min, self.Y_max = np.min(self.Y) -self.resol/2, np.max(self.Y) +self.resol/2
-        self.origin = Pose() # in /Quadrotor/odom_gt frame
+        self.origin = Pose() 
         self.origin.position.x = gps_ping_odom[0] - self.w/2 
         self.origin.position.y = gps_ping_odom[1] - self.h/2 
-        # TODO: give correct orientation
         self.origin.orientation.x = 0.0
         self.origin.orientation.y = 0.0
         self.origin.orientation.z = 0.0
@@ -370,15 +371,16 @@ class ProbabilisticGridMap(Node):
         self.map.info.resolution = self.resol
         self.map.info.origin = self.origin  
 
-    def map_seen(self):
+
+    def map_seen(self) -> float:
         """ Compute the ratio of the map area already seen by the search planner """
         mask  = self.map_Time !=  self.init_timestamp
         return np.sum(mask,axis = None) / (mask.shape[0]*mask.shape[1])
 
 
-    def map_probabilities(self, data):
+    def map_probabilities(self, data) -> np.ndarray:
         """ Map probabilities to values between 0 and 100, as required by OccupancyGrid message in ros"""
-        min = np.min(data) # or sys.float_info.min ?
+        min = np.min(data) 
         max = 1    
         new_min = 0
         new_max = 100
@@ -386,14 +388,15 @@ class ProbabilisticGridMap(Node):
         return np.int8(slope*(data - max) + new_max)
 
  
-    def sam_odom_callback(self, msg:Odometry):
+    def sam_odom_callback(self, msg:Odometry) -> None:
         """ Retrieve SAM position (map_gt)"""
         self.sam_vel.vector.x = msg.twist.twist.linear.x 
         self.sam_vel.vector.y = msg.twist.twist.linear.y
         self.sam_vel.vector.z = msg.twist.twist.linear.z 
-        self.sam_vel.header = msg.header #np.array([msg.twist.twist.linear.x, msg.twist.twist.linear.y])
+        self.sam_vel.header = msg.header 
 
-    def drone_odom_callback(self, msg: Odometry):
+
+    def drone_odom_callback(self, msg: Odometry) -> None:
         """ Retrieve drone position (map_gt)"""
         self.drone_position.point = msg.pose.pose.position
         self.drone_position.header = msg.header
