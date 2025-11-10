@@ -1,6 +1,6 @@
 # YOLO Detection 
 ## Overview
-This package uses YOLO to independently detect SAM and buoy. It includes two trained models: one for simulation and another for real-world scenarios (*.pt* files). The models can be accessed [here](https://kth-my.sharepoint.com/:f:/g/personal/framir_ug_kth_se/IgD4flS-1Nx9SoAHoldjgDS8AULieuNh-fLqTrC9wWTSeBY?e=PAd1AX).
+This package uses YOLO to independently detect SAM and buoy. It includes two trained models: one for simulation and another for real-world scenarios (*.pt* files). The models can be accessed [here](https://kth-my.sharepoint.com/:f:/g/personal/framir_ug_kth_se/IgD4flS-1Nx9SoAHoldjgDS8AULieuNh-fLqTrC9wWTSeBY?e=PAd1AX). Download the models you want and change the path parameter in the *.yaml* file in config.
 
 Two different datasets were used, with ~450 labelled images in total. Access them [here](https://kth-my.sharepoint.com/:f:/g/personal/framir_ug_kth_se/EpHV7UF6nQVIsYwrSBDlYWkBR-Yv08Lia9hxuD-aqrMTJQ?e=cpmczE). The detection of SAM's head is done with a Canny edge detector, which relies on the existence of a rope attached to it. 
 ### Training
