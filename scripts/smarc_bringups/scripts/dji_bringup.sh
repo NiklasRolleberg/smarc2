@@ -178,6 +178,8 @@ tmux send-keys "ros2 run auv_detector auv_buoy_detector --ros-args \
 
 
 
+
+
 # the cam driver is needed just for the real thing
 # for basic usb webcam
 #tmux send-keys "ros2 run usb_cam usb_cam_node_exe --ros-args -r __ns:=/$ROBOT_NAME/gimbal_camera" C-m
@@ -185,6 +187,7 @@ if [[ $USE_SIM_TIME = "False" ]]; then
     tmux split-window -v -t $SESSION:4.1
     tmux select-pane -t $SESSION:4.1
     # for the dji gimbal cam
+    # requires ros-humble-gscam gstreamer1.0-tools gstreamer1.0-plugins-good
     GSCAM_CONFIG_DJI="v4l2src device=/dev/djipocket3 ! image/jpeg,width=1920,height=1080,framerate=30/1 ! jpegdec ! videoconvert ! video/x-raw,format=BGR"
     tmux send-keys "ros2 run gscam gscam_node --ros-args \
     -p gscam_config:=\"$GSCAM_CONFIG_DJI\" \

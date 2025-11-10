@@ -11,7 +11,7 @@ string CONTROLLER_VIBRATION_TOPIC = 'joy/set_feedback' # JoyFeedback
 string TTS_TOPIC = 'speak' # String
 
 # gimbal camera
-string GIMBAL_CAMERA_RAW_TOPIC = 'gimbal_camera/image_raw' # Image
+string GIMBAL_CAMERA_RAW_TOPIC = 'gimbal_camera/camera/image_raw' # Image
 
 # object detectors, these are in normalized camera pixel coordinates
 string ESTIMATED_BUOY_TOPIC = 'alars_detection/buoy' # PointStamped
