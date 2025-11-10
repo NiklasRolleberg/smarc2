@@ -179,18 +179,30 @@ tmux send-keys "ros2 run auv_detector auv_buoy_detector --ros-args \
 
 
 # the cam driver is needed just for the real thing
+# for basic usb webcam
+#tmux send-keys "ros2 run usb_cam usb_cam_node_exe --ros-args -r __ns:=/$ROBOT_NAME/gimbal_camera" C-m
 if [[ $USE_SIM_TIME = "False" ]]; then
+    tmux split-window -v -t $SESSION:4.1
     tmux select-pane -t $SESSION:4.1
-    # for basic usb webcam
-    #tmux send-keys "ros2 run usb_cam usb_cam_node_exe --ros-args -r __ns:=/$ROBOT_NAME/gimbal_camera" C-m
     # for the dji gimbal cam
-    GSCAM_CONFIG="v4l2src device=/dev/djipocket3 ! image/jpeg,width=1920,height=1080,framerate=30/1 ! jpegdec ! videoconvert ! video/x-raw,format=BGR"
+    GSCAM_CONFIG_DJI="v4l2src device=/dev/djipocket3 ! image/jpeg,width=1920,height=1080,framerate=30/1 ! jpegdec ! videoconvert ! video/x-raw,format=BGR"
     tmux send-keys "ros2 run gscam gscam_node --ros-args \
-    -p gscam_config:=\"$GSCAM_CONFIG\" \
+    -p gscam_config:=\"$GSCAM_CONFIG_DJI\" \
     -p frame_id:=osmo3_optical_frame \
     -p image_encoding:=rgb8 \
     -p sync_sink:=false \
     -r __ns:=/$ROBOT_NAME/gimbal_camera" C-m
+
+    # for the 360 cam
+    tmux select-pane -t $SESSION:4.2
+    # for the dji gimbal cam
+    GSCAM_CONFIG_FISH="v4l2src device=/dev/insta360x4 ! image/jpeg,width=1920,height=1080,framerate=30/1 ! jpegdec ! videoconvert ! video/x-raw,format=BGR"
+    tmux send-keys "ros2 run gscam gscam_node --ros-args \
+    -p gscam_config:=\"$GSCAM_CONFIG_FISH\" \
+    -p frame_id:=fisheye_optical_frame \
+    -p image_encoding:=rgb8 \
+    -p sync_sink:=false \
+    -r __ns:=/$ROBOT_NAME/fisheye_camera" C-m
 fi
 
 

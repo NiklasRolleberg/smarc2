@@ -51,6 +51,15 @@ Bus 001 Device 002: ID 8087:0032 Intel Corp. AX210 Bluetooth
 Bus 001 Device 005: ID 2ca3:0023 DJI Technology Co., Ltd. DJIPocket3
 Bus 001 Device 001: ID 1d6b:0002 Linux Foundat
 
+> v4l2-ctl --list-devices
+HD Pro Webcam C920 (usb-0000:00:14.0-3): 
+    /dev/video0
+
+Logitech Webcam C270 (usb-0000:00:14.0-4): 
+    /dev/video1
+
+
+
 > sudo vim /etc/udev/rules.d/80-djipocket3.rules
 
 # DJIPocket3 (vendor 2ca3, product 0023)
