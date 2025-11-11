@@ -128,13 +128,8 @@ tmux send-keys "ros2 run alars alars_recover_action_server --ros-args -r __ns:=/
 
 
 tmux select-pane -t $SESSION:1.3
-MOVE_TO_SETPOINT_TOLERANCE=0.3
-if [[ $USE_SIM_TIME = "True" ]]; then
-    MOVE_TO_SETPOINT_TOLERANCE=1.0
-fi
-tmux send-keys "ros2 launch go_to_geopoint go_to_geopoint_server.launch robot_name:=$ROBOT_NAME use_sim_time:=$USE_SIM_TIME \
-setpoint_topic:=move_to_setpoint \
-setpoint_tolerance:=$MOVE_TO_SETPOINT_TOLERANCE" C-m
+tmux send-keys "ros2 run alars alars_move_to_action_server --ros-args -r __ns:=/$ROBOT_NAME \
+-p use_sim_time:=$USE_SIM_TIME" C-m
 
 
 # bt
