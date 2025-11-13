@@ -3,7 +3,7 @@
 import rclpy, sys, math, time
 import numpy as np
 from enum import Enum
-
+from typing import Optional
 
 from rclpy.node import Node
 from rclpy.executors import MultiThreadedExecutor
@@ -27,7 +27,7 @@ from dji_msgs.msg import Topics as DjiTopics
 
 
 from smarc_utilities.georef_utils import convert_latlon_to_utm, convert_utm_to_latlon
-from tf_transformations import euler_from_quaternion, quaternion_from_euler
+from tf_transformations import euler_from_quaternion, quaternion_from_euler, quaternion_matrix
 from tf2_geometry_msgs import do_transform_pose_stamped
 
 
@@ -93,20 +93,19 @@ class DjiCaptain():
 
 
         self._node.declare_parameter("robot_name", "M350")
-        self._node.declare_parameter("controller_deadzone", 0.1)
-        self._node.declare_parameter("controller_yawrate_multiplier", 0.3)
-        # give an error-causing default value to force the user to pass this parameter every time
-        # there is no safe assumption that can be made for this.
-        self._node.declare_parameter("home_altitude_above_water", -1.0)
-
         self.ROBOT_NAME : str = self._node.get_parameter("robot_name").get_parameter_value().string_value
         self._TF_NS : str = f"{self.ROBOT_NAME}/"
 
+        self._node.declare_parameter("controller_deadzone", 0.1)
         self._CONTROLLER_DEADZONE : float = self._node.get_parameter("controller_deadzone").get_parameter_value().double_value
+        self._node.declare_parameter("controller_yawrate_multiplier", 0.3)
         self._CONTROLLER_YAWRATE_MULTIPLIER : float = self._node.get_parameter("controller_yawrate_multiplier").get_parameter_value().double_value
         
-        self._HOME_ALT_ABOVE_WATER = self._node.get_parameter("home_altitude_above_water").get_parameter_value().double_value
 
+        # give an error-causing default value to force the user to pass this parameter every time
+        # there is no safe assumption that can be made for this.
+        self._node.declare_parameter("home_altitude_above_water", -1.0)
+        self._HOME_ALT_ABOVE_WATER = self._node.get_parameter("home_altitude_above_water").get_parameter_value().double_value
         if self._HOME_ALT_ABOVE_WATER <= 0:
             self.log(f"Warning: home_altitude_above_water parameter not set or invalid! It is {self._HOME_ALT_ABOVE_WATER}")
             self.log("YOU MUST PASS THIS PARAMETER AND MAKE SURE IT IS CORRECT!")
@@ -114,7 +113,7 @@ class DjiCaptain():
             sys.exit(1)
 
         
-        
+
         self._control_mode = ControlModes.FLUvel
         self._move_to_setpoint : PoseStamped | None = None
         self._joy_timer : None | Timer = None
@@ -216,7 +215,7 @@ class DjiCaptain():
         self._tf_buffer = Buffer()
         self._tf_listener = TransformListener(self._tf_buffer, self._node, spin_thread=True)
 
-
+        self._last_pubbed_fluvel_joy : Joy | None = None
 
         node.create_subscription(
             NavSatFix,
@@ -440,6 +439,13 @@ class DjiCaptain():
             s += f"  Current target setpoint: {format_pose_stamped(self._move_to_setpoint)} ({self.now_time - self.setpoint_received_at:.2f}s ago)\n"
         s += f"  Flying: {self._flying}\n"
 
+        if self._last_pubbed_fluvel_joy is not None:
+            a = self._last_pubbed_fluvel_joy.axes
+            t = self._last_pubbed_fluvel_joy.header.stamp.sec + self._last_pubbed_fluvel_joy.header.stamp.nanosec * 1e-9
+            s += f"  Last FLUVel Joy (XYZ): [{a[0]:.2f}, {a[1]:.2f}, {a[2]:.2f}, {a[3]:.2f}] ({self.now_time - t:.2f}s ago)\n"
+        else:
+            s += f"  Last FLUVel Joy: None\n"
+
         if self._vehicle_health.data == SmarcTopics.VEHICLE_HEALTH_READY:
             s += f"  Vehicle Health: READY\n"
         elif self._vehicle_health.data == SmarcTopics.VEHICLE_HEALTH_ERROR:
@@ -598,6 +604,7 @@ class DjiCaptain():
         joy_msg.header.stamp = self.now_stamp
         joy_msg.axes = joy
         self._FLU_vel_joy_pub.publish(joy_msg)
+        self._last_pubbed_fluvel_joy = joy_msg
 
     def _controller_callback(self, msg: Joy):
         if msg.header.stamp.sec == 0 and msg.header.stamp.nanosec == 0:
@@ -755,20 +762,16 @@ class DjiCaptain():
             self._cancel_joy_timer()
             return
         
-        tf = self._tf_buffer.lookup_transform(
-            target_frame = self.BASE_FLAT_FRAME,
-            source_frame = self._velocity_ground.header.frame_id,
-            time=Time(seconds=0),
-            timeout=Duration(seconds=1))
         
-        vel_pose = PoseStamped()
-        vel_pose.pose.position.x = self._velocity_ground.vector.x
-        vel_pose.pose.position.y = self._velocity_ground.vector.y
-        vel_pose.pose.position.z = self._velocity_ground.vector.z
-        FLU_vel = do_transform_pose_stamped(vel_pose, tf)
 
         if (self._prev_joy_output is None):
-            self._prev_joy_output = np.array([FLU_vel.pose.position.x, FLU_vel.pose.position.y, FLU_vel.pose.position.z])
+            FLU_vel = transform_velocity_vector(
+                tf_buffer =    self._tf_buffer,
+                vel_src =      self._velocity_ground,
+                target_frame = self.BASE_FLAT_FRAME,      
+                time=Time(seconds=0),                     
+                timeout=Duration(seconds=1))
+            self._prev_joy_output = np.array([FLU_vel.vector.x, FLU_vel.vector.y, FLU_vel.vector.z])
 
         try:
             tf_diff = self._tf_buffer.lookup_transform(
@@ -783,8 +786,10 @@ class DjiCaptain():
             return
         
         
-        k_pose = self._k_pose
-        r_sigma = self._r_sigma
+        # k_pose = self._k_pose
+        # r_sigma = self._r_sigma
+        k_pose = 0.5
+        r_sigma = 0.9
 
         e_forw = target_in_base.pose.position.x # error about each axis
         e_left = target_in_base.pose.position.y
@@ -795,15 +800,16 @@ class DjiCaptain():
         joy_updn = k_pose * e_updn
 
         # limit the velocity to the maximum joy value
-        joy_net = np.array([joy_forw, joy_left, joy_updn])
+        joy_err = np.array([joy_forw, joy_left, joy_updn])
+        joy_err = self._normalize_max_speed(joy_err)
+
+        joy_net = (1 - r_sigma) * joy_err + r_sigma * self._prev_joy_output
         joy_net = self._normalize_max_speed(joy_net)
 
-        joy_net = (1 - r_sigma) * joy_net + r_sigma * self._prev_joy_output
-        joy_net = self._normalize_max_speed(joy_net)
+        self.log(f"\njoy_err: {joy_err}\njoy_pre: {self._prev_joy_output}\njoy_net: {joy_net}")
 
         J = [joy_net[0], joy_net[1], joy_net[2], 0.0]
         self._pub_flu_vel_joy(J)
-        self.log(f"Moving towards setpoint with FLUvel joy: {J}")
         self._prev_joy_output = np.array([joy_net[0], joy_net[1], joy_net[2]])
 
 
@@ -1135,6 +1141,8 @@ class DjiCaptain():
         # until we have a better idea of where the gimbal is...
         # and we do this in the _flat_ frame, so roll and pitch are zeroed out
         # like the gimbal in theory does.
+        # this ignores the change in position due to drone attitude, but that is small
+        # and uncontrollable by us, so we'll ignore until that little bit matters.
         gimbal_in_base = TransformStamped()
         gimbal_in_base.header.stamp = now
         gimbal_in_base.header.frame_id = self.BASE_FLAT_FRAME
@@ -1144,12 +1152,14 @@ class DjiCaptain():
         # same as above, winch in base_link
         winch_in_base = TransformStamped()
         winch_in_base.header.stamp = now
-        winch_in_base.header.frame_id = self.BASE_FLAT_FRAME
+        winch_in_base.header.frame_id = self.BASE_FRAME
         winch_in_base.child_frame_id = self.WINCH_FRAME
-        # Set offset for winch_link (example, not correct values):
-        winch_in_base.transform.translation.x = 0.0  # example values
-        winch_in_base.transform.translation.y = 0.0
-        winch_in_base.transform.translation.z = 0.5
+        # Set offset for winch_link
+        # roughly measured in cad model, from the center of the battery lock to right leg T junction, 
+        # assuming the T junction is in-line with base_link origin
+        winch_in_base.transform.translation.x = 0.0 
+        winch_in_base.transform.translation.y = -0.194 
+        winch_in_base.transform.translation.z = -0.322
         winch_in_base.transform.rotation.x = 0.0
         winch_in_base.transform.rotation.y = 0.0
         winch_in_base.transform.rotation.z = 0.0
@@ -1341,6 +1351,81 @@ def format_vector3_stamped(vec: Vector3Stamped|None) -> str:
         if( vec is None):
             return "None"
         return f"(x={vec.vector.x:.3f}, y={vec.vector.y:.3f}, z={vec.vector.z:.3f}, frame_id={vec.header.frame_id})"
+
+
+
+# thanks chat?
+def transform_velocity_vector(
+    tf_buffer: Buffer,
+    vel_src: Vector3Stamped,
+    target_frame: str,
+    *,
+    time: Optional[Time] = None,
+    timeout: Duration = Duration(seconds=0, nanoseconds=5_000_000),  # 5ms = 5,000,000ns
+) -> Vector3Stamped:
+    """
+    Rotate a velocity Vector3Stamped from vel_src.header.frame_id -> target_frame.
+
+    Notes
+    -----
+    - Velocity is a *pure vector*: only the rotation from the TF transform is applied.
+    - Translation is ignored (as it should be for vectors).
+    - If source and target frames match, the input is returned (header updated).
+    """
+    if not vel_src.header.frame_id:
+        raise ValueError("vel_src.header.frame_id must be set")
+
+    if vel_src.header.frame_id == target_frame:
+        out = Vector3Stamped()
+        out.header.stamp = vel_src.header.stamp
+        out.header.frame_id = target_frame
+        out.vector = vel_src.vector  # shallow copy is fine for geometry_msgs
+        return out
+
+    # Default to "latest available transform" time if not provided
+    if time is None:
+        time = Time(seconds=0)
+
+    try:
+        # Transform that maps vectors from source_frame -> target_frame
+        tf = tf_buffer.lookup_transform(
+            target_frame=target_frame,
+            source_frame=vel_src.header.frame_id,
+            time=time,
+            timeout=timeout,
+        )
+    except :
+        raise RuntimeError(f"TF lookup failed from {vel_src.header.frame_id} to {target_frame}") 
+
+    # Extract and (defensively) normalize quaternion
+    qx, qy, qz, qw = (
+        tf.transform.rotation.x,
+        tf.transform.rotation.y,
+        tf.transform.rotation.z,
+        tf.transform.rotation.w,
+    )
+    q = np.array([qx, qy, qz, qw], dtype=float)
+    n = np.linalg.norm(q)
+    if n == 0.0:
+        raise RuntimeError("TF rotation quaternion has zero norm")
+    q /= n
+
+    # 3x3 rotation matrix
+    R = quaternion_matrix(q)[0:3, 0:3]
+
+    v_src = np.array(
+        [vel_src.vector.x, vel_src.vector.y, vel_src.vector.z],
+        dtype=float,
+    )
+    v_tgt = R @ v_src
+
+    vel_out = Vector3Stamped()
+    # Keep the original measurement time; you can also choose tf.header.stamp
+    vel_out.header.stamp = vel_src.header.stamp
+    vel_out.header.frame_id = target_frame
+    vel_out.vector.x, vel_out.vector.y, vel_out.vector.z = v_tgt.tolist()
+    return vel_out
+
     
     
 def main():
