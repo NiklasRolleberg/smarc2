@@ -161,15 +161,15 @@ tmux split-window -h -t $SESSION:4.0
 tmux select-pane -t $SESSION:4.0
 
 # auv buoy detector
-AUV_DETECTOR_CONFIG_FILENAME=auv_detector_field_calibration.yaml
-if [[ $USE_SIM_TIME = "True" ]]; then
-    AUV_DETECTOR_CONFIG_FILENAME=auv_detector_sim_calibration.yaml
-fi
-AUV_DETECTOR_CONFIG_FILE=$(ros2 pkg prefix auv_detector --share)/config/$AUV_DETECTOR_CONFIG_FILENAME
+# AUV_DETECTOR_CONFIG_FILENAME=auv_detector_field_calibration.yaml
+# if [[ $USE_SIM_TIME = "True" ]]; then
+    # AUV_DETECTOR_CONFIG_FILENAME=auv_detector_sim_calibration.yaml
+# fi
+# AUV_DETECTOR_CONFIG_FILE=$(ros2 pkg prefix auv_detector --share)/config/$AUV_DETECTOR_CONFIG_FILENAME
 
-tmux send-keys "ros2 run auv_detector auv_buoy_detector --ros-args \
--r __ns:=/$ROBOT_NAME -p use_sim_time:=$USE_SIM_TIME \
---params-file $AUV_DETECTOR_CONFIG_FILE" C-m
+# tmux send-keys "ros2 run auv_detector auv_buoy_detector --ros-args \
+# -r __ns:=/$ROBOT_NAME -p use_sim_time:=$USE_SIM_TIME \
+# --params-file $AUV_DETECTOR_CONFIG_FILE" C-m
 
 
 

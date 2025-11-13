@@ -765,13 +765,7 @@ class DjiCaptain():
         
 
         if (self._prev_joy_output is None):
-            FLU_vel = transform_velocity_vector(
-                tf_buffer =    self._tf_buffer,
-                vel_src =      self._velocity_ground,
-                target_frame = self.BASE_FLAT_FRAME,      
-                time=Time(seconds=0),                     
-                timeout=Duration(seconds=1))
-            self._prev_joy_output = np.array([FLU_vel.vector.x, FLU_vel.vector.y, FLU_vel.vector.z])
+            self._prev_joy_output = np.array([0.0,0.0,0.0])
 
         try:
             tf_diff = self._tf_buffer.lookup_transform(
@@ -786,10 +780,8 @@ class DjiCaptain():
             return
         
         
-        # k_pose = self._k_pose
-        # r_sigma = self._r_sigma
-        k_pose = 0.5
-        r_sigma = 0.9
+        k_pose = self._k_pose
+        r_sigma = self._r_sigma
 
         e_forw = target_in_base.pose.position.x # error about each axis
         e_left = target_in_base.pose.position.y
