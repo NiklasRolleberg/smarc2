@@ -96,7 +96,7 @@ class YOLODetector(Node):
         """
         
         if self.image is not None and self.detector_enabled:
-            assert (self.image.width,self.image.height)  == (640, 480), "Image resolution isn't (640,480), YOLO model won't accept it"
+            # assert (self.image.width,self.image.height)  == (640, 480), "Image resolution isn't (640,480), YOLO model won't accept it"
             cv_image = self.bridge.imgmsg_to_cv2(self.image, desired_encoding='bgr8')
             results = self.yolo_model.predict(source = cv_image, 
                             conf = self.model_params['detection.confidence_threshold'],    

@@ -163,7 +163,7 @@ tmux select-pane -t $SESSION:4.0
 # auv buoy detector
 # AUV_DETECTOR_CONFIG_FILENAME=auv_detector_field_calibration.yaml
 # if [[ $USE_SIM_TIME = "True" ]]; then
-#     AUV_DETECTOR_CONFIG_FILENAME=auv_detector_sim_calibration.yaml
+# AUV_DETECTOR_CONFIG_FILENAME=auv_detector_sim_calibration.yaml
 # fi
 # AUV_DETECTOR_CONFIG_FILE=$(ros2 pkg prefix auv_detector --share)/config/$AUV_DETECTOR_CONFIG_FILENAME
 
@@ -175,9 +175,6 @@ tmux send-keys "ros2 launch auv_yolo_detector yolo_detector_launch.py \
 namespace:=$ROBOT_NAME \
 device:=cpu \
 use_sim_time:=$USE_SIM_TIME" C-m
-
-
-
 
 
 # the cam driver is needed just for the real thing
