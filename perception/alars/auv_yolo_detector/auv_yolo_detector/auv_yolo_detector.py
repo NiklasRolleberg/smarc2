@@ -24,6 +24,7 @@ import traceback
 
 
 
+
 class YOLODetector(Node):
     def __init__(self, name = 'auv_yolo_detector'):
         super().__init__(name,
@@ -47,11 +48,12 @@ class YOLODetector(Node):
             "last_buoy": [],
             "horizon": 8
         }
-        self.direc_count = np.array([0,0])
+        self.dircount = []
+        self.horizon = 10
  
         
         # pubs, subs and tf2
-        self.create_subscription(Image, self.model_params["topics.raw_image"], self.image_callback, 10)
+        self.create_subscription(Image, self.model_params["topics.raw_image"], self.image_callback, 10) # '/M350/gimbal_camera/camera/image_raw'
         self.annotated_img_pub = self.create_publisher(Image,
                                             self.model_params["topics.rviz.annotated_image"], 10)
         self.blurred_channel_pub = self.create_publisher(Image,
@@ -96,7 +98,7 @@ class YOLODetector(Node):
         """
         
         if self.image is not None and self.detector_enabled:
-            assert (self.image.width,self.image.height)  == (640, 480), "Image resolution isn't (640,480), YOLO model won't accept it"
+            #assert (self.image.width,self.image.height)  == (640, 480), "Image resolution isn't (640,480), YOLO model won't accept it"
             cv_image = self.bridge.imgmsg_to_cv2(self.image, desired_encoding='bgr8')
             results = self.yolo_model.predict(source = cv_image, 
                             conf = self.model_params['detection.confidence_threshold'],    
@@ -137,7 +139,7 @@ class YOLODetector(Node):
         c4: list = result.xyxyxyxy
         head, headc = None, None
         sam_index = np.nonzero(cls == 0).flatten()
-        thresh = 0.4
+        thresh = 0.8
 
         if sam_index.numel() == 1:
             xywhr: torch.Tensor = xywhr[sam_index[0]]
@@ -151,7 +153,7 @@ class YOLODetector(Node):
             # rotate image and slice again
             rgb_sliced_im = cv2.cvtColor(sliced_im, cv2.COLOR_BGR2RGB)
             canny_im, corners_rot = self.rotate_image(rgb_sliced_im[:,:,0], c4.T, (180/pi)*float(xywhr[4]))
-            canny_im, c4 = self.slice_image(canny_im, corners_rot.T, thresh/2, length)
+            canny_im, c4 = self.slice_image(canny_im, corners_rot.T, thresh, length, 'uneven')
 
             # Implement canny edge detector           
             blur = cv2.GaussianBlur(canny_im, (5, 5), self.model_params["detection.blur_variance"]) 
@@ -165,32 +167,27 @@ class YOLODetector(Node):
             # otherwise, we choose a corner with xmax and i = 1;
 
             fdim = {0: np.min, 1: np.max}
-            if float(xywhr[2]) > float(xywhr[3]): # bounding box is aligned with horizontal axis
-                # determine if there's more edges on left or right side
-                xmin, xmax = int(np.min(c4, axis = 0)[0]), int(np.max(c4, axis = 0)[0])
-                sums = (np.sum(edges[:, 0:xmin]), np.sum(edges[:, xmax:]))
-                argsum = np.argmax(np.array(sums))
+            axis = int((float(xywhr[2]) < float(xywhr[3])))
+            coord_min, coord_max = int(np.min(c4, axis = 0)[axis]), int(np.max(c4, axis = 0)[axis])
+            if axis == 0: # bounding box is aligned with horizontal axis
+                sums = (np.sum(edges[:, 0:coord_min]), np.sum(edges[:, coord_max:])) 
+            else:
+                sums = (np.sum(edges[0:coord_min, :]), np.sum(edges[coord_max:, :]))
+   
+            # determine where are more edges on (left/bottom or right/top, respectively)
+            argsum = np.argmax(np.array(sums))
 
-                #update cumulative variable to get chosen side (left - 0; right - 1)
-                self.direc_count[argsum] += 1
-                idx_headc = np.argmax(self.direc_count)
-
-                # map the obtained side (left or right) to the two corresponding corners of the original image
-                # and get head position as middle point
-                i = np.nonzero(c4[:,0].astype(int) == int(fdim[idx_headc](c4, axis = 0)[0]))[0]
-                head = np.mean(original_c4[i,:], axis = 0).astype(int)
-
-            else: # bounding box is aligned with vertical axis
-                ymin, ymax = int(np.min(c4, axis = 0)[1]), int(np.max(c4, axis = 0)[1])
-                sums = (np.sum(edges[0:ymin, :]), np.sum(edges[ymax:, :]))
-                argsum = np.argmax(np.array(sums))
-                self.direc_count[argsum] += 1
-                idx_headc = np.argmax(self.direc_count)
-                i = np.nonzero(c4[:,1].astype(int) == int(fdim[idx_headc](c4, axis = 0)[1]))[0]
-                head = np.mean(original_c4[i,:], axis = 0).astype(int)
-                pass
-
-              
+            #update cumulative variable to get chosen side (left/bottom - 0; right/top - 1)
+            if len(self.dircount) >= self.horizon:
+                self.dircount.pop(0)
+            self.dircount.append(argsum)
+            idx_headc = 0 if len(list(np.flatnonzero(np.array(self.dircount) == 0))) > len(self.dircount) // 2 else 1 #count left detections
+                    
+            # map the obtained side (left or right) to the two corresponding corners of the original image
+            # and get head position as middle point
+            i = np.nonzero(c4[:,axis].astype(int) == int(fdim[idx_headc](c4, axis = 0)[axis]))[0]
+            head = np.mean(original_c4[i,:], axis = 0).astype(int)
+            
             # publish images
             self.head_detection_view_pub.publish(self.bridge.cv2_to_imgmsg(edges, encoding = 'passthrough'))
             self.blurred_channel_pub.publish(self.bridge.cv2_to_imgmsg(blur, encoding = 'passthrough'))   
@@ -219,7 +216,7 @@ class YOLODetector(Node):
     
     
     def slice_image(self, im: np.ndarray, c4: np.ndarray, thresh: float, 
-                    length: float) -> Tuple[np.ndarray, np.ndarray]: 
+                    length: float, mode: str = 'even') -> Tuple[np.ndarray, np.ndarray]: 
         """ 
         Slice image by taking the max and min (x,y) coordinates (corners) and return
         the c4' new position
@@ -236,9 +233,14 @@ class YOLODetector(Node):
                 
         """
         assert c4.shape == (4,2), 'shape of corners array is not (4,2)'
-        # get two corners (xmax, ymax, xmin, ymin)
+
+        slack = np.ones((1,4)).flatten()*thresh
+        # get two corners (xmax, ymax, xmin, ymin); add slack unevenly (bigger slack to longer dimension)
         corners = (*np.max(c4, axis = 0), *np.min(c4, axis = 0)) 
-        corners = np.array(corners) + np.array([1,1,-1,-1])*float(length)*thresh
+        if mode != 'even':
+            argmax_dim = np.argmax([corners[0]-corners[2], corners[1]-corners[3]])
+            slack[[not argmax_dim, (not argmax_dim)+2]] = thresh/4
+        corners = np.array(corners) + np.array([1,1,-1,-1])*float(length)*slack
 
         # apply limits on each coordinate
         f = lambda x, t: min(max(round(x), 0), t)
@@ -316,7 +318,7 @@ class YOLODetector(Node):
             wh: (width, height)
             label: "sam" or "buoy"
         """
-        if wh != (640, 480): self.get_logger().warn(f'640*480 resolution was expected (width, height).')
+        #if wh != (640, 480): self.get_logger().warn(f'640*480 resolution was expected (width, height).')
         point = PointStamped()
         point.header.stamp = self.get_clock().now().to_msg()
         point.header.frame_id = self.model_params["frames.camera"]
