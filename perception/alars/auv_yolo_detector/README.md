@@ -9,6 +9,9 @@ The sim model was trained with the sim dataset, which was later used to train th
 ## Dependencies (dev versions)
 - ROS2 Humble
 - Ultralytics: 8.3.160
+- Numpt: 1.23.5
+- OpenCV: 4.11.0
+- Torch: 2.6.0
   
 When installing *Ultralytics*, corresponding dependencies (*eg*: torch, opencv, etc) will be installed (check [here](https://docs.ultralytics.com/quickstart/) for more info)
 
