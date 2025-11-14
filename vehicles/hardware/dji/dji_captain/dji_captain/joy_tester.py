@@ -40,14 +40,20 @@ class JoyTester():
         FLUvel_JOY          = WRAPPER_NS + "flight_control_setpoint_FLUvelocity_yawrate"
         ENUvel_JOY          = WRAPPER_NS + "flight_control_setpoint_ENUvelocity_yawrate"
         ENUpos_JOY          = WRAPPER_NS + "flight_control_setpoint_ENUposition_yaw"
+        TAKE_CONTROL_SRV    = WRAPPER_NS + "obtain_ctrl_authority"
+        RELEASE_CONTROL_SRV = WRAPPER_NS + "release_ctrl_authority"
+
         self.log(f"FLUvel_JOY topic: {FLUvel_JOY}")    
         self.FLU_vel_joy_pub = node.create_publisher(Joy, FLUvel_JOY, qos_profile=10)
         self.ENU_vel_joy_pub = node.create_publisher(Joy, ENUvel_JOY, qos_profile=10)
         self.ENU_pos_joy_pub = node.create_publisher(Joy, ENUpos_JOY, qos_profile=10)
 
+        self.take_control_srv = node.create_client(Trigger, TAKE_CONTROL_SRV)
+
+
         try:
             parts = pattern.split(',')
-            mode = parts[0].lower()
+            self.mode = parts[0].lower()
             move_duration = float(parts[1].split('=')[1])
             move_speed = float(parts[2].split('=')[1])
             pause_duration = float(parts[3].split('=')[1])
@@ -57,16 +63,23 @@ class JoyTester():
             self.log("Enter motion pattern like: [fluvel/enuvel/enupos],d=1.0,s=0.5,p=1.0,r=3 for fluvel, duration 1s, speed 0.5m/s, pause 1s, repeat 3 times.")
             sys.exit(1)
 
-        if mode not in ['fluvel', 'enuvel', 'enupos']:
+        if self.mode not in ['fluvel', 'enuvel', 'enupos']:
             self.log("Invalid mode. Choose from [fluvel, enuvel, enupos].")
             sys.exit(1)
 
-        if mode == 'fluvel':
+        if self.mode == 'fluvel':
             pub = self.FLU_vel_joy_pub
-        elif mode == 'enuvel':
+        elif self.mode == 'enuvel':
             pub = self.ENU_vel_joy_pub
-        elif mode == 'enupos':
+        elif self.mode == 'enupos':
             pub = self.ENU_pos_joy_pub
+
+        self.got_control = False
+        self._take_control()
+
+        while not self.got_control:
+            self.log("Waiting to obtain control...")
+            rclpy.spin_once(self.node, timeout_sec=0.1)
 
         for i in range(repeat_count):
             self.log(f"Iteration {i+1} of {repeat_count}")
@@ -86,6 +99,18 @@ class JoyTester():
 
     def log(self, msg: str):
         self.node.get_logger().info(msg)
+
+    def _take_control(self):
+        def on_result(f):
+            self.log(f"Take control service called, success: {f.result().success}, message: {f.result().message}")
+            self.got_control = f.result().success
+
+        self.log("Taking control.")
+        if not self.take_control_srv.wait_for_service(timeout_sec=5.0):
+            self.log("Take control service not available...")
+            return
+        future = self.take_control_srv.call_async(Trigger.Request())
+        future.add_done_callback(on_result)
 
 
     def send_joy(self, pub, vx: float, vy: float, vz: float, duration: float):

@@ -762,10 +762,7 @@ class DjiCaptain():
             self._cancel_joy_timer()
             return
         
-        
 
-        if (self._prev_joy_output is None):
-            self._prev_joy_output = np.array([0.0,0.0,0.0])
 
         try:
             tf_diff = self._tf_buffer.lookup_transform(
@@ -791,12 +788,20 @@ class DjiCaptain():
         joy_left = k_pose * e_left
         joy_updn = k_pose * e_updn
 
+        if (self._prev_joy_output is None):
+            max_speed = 0.1
+            self._prev_joy_output = np.array([0.0, 0.0, 0.0])
+            self.log("No previous joy output, initializing to zero.")
+            self.log(f"Using low initial max speed of {max_speed} m/s for smooth start.")
+        else:
+            max_speed = self.JOY_PUB_MAX
+
         # limit the velocity to the maximum joy value
         joy_err = np.array([joy_forw, joy_left, joy_updn])
-        joy_err = self._normalize_max_speed(joy_err)
+        joy_err = self._normalize_max_speed(joy_err, max_speed)
 
         joy_net = (1 - r_sigma) * joy_err + r_sigma * self._prev_joy_output
-        joy_net = self._normalize_max_speed(joy_net)
+        joy_net = self._normalize_max_speed(joy_net, max_speed)
 
         self.log(f"\njoy_err: {joy_err}\njoy_pre: {self._prev_joy_output}\njoy_net: {joy_net}")
 
@@ -805,10 +810,10 @@ class DjiCaptain():
         self._prev_joy_output = np.array([joy_net[0], joy_net[1], joy_net[2]])
 
 
-    def _normalize_max_speed(self, joy_net):
+    def _normalize_max_speed(self, joy_net, max_speed):
         joy_norm = np.linalg.norm(joy_net)
-        if joy_norm > self.JOY_PUB_MAX:
-            joy_net = joy_net / joy_norm * self.JOY_PUB_MAX
+        if joy_norm > max_speed:
+            joy_net = joy_net / joy_norm * max_speed
         return joy_net
     
 

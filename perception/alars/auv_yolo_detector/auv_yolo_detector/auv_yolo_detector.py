@@ -104,7 +104,7 @@ class YOLODetector(Node):
                             conf = self.model_params['detection.confidence_threshold'],    
                             save = False,
                             verbose = False,
-                            device = 'cpu')
+                            device = self.model_params['device'])
             result: Results = results[0]
             
             ## publish non-filtered annotated image as ros msg
@@ -118,7 +118,7 @@ class YOLODetector(Node):
 
             # publish positions (head and buoy)
             if sam_pixels is not None:
-                self.published_normalized_position(sam_pixels, (self.image.width,self.image.height), "sam")
+                self.published_normalized_position(head, (self.image.width,self.image.height), "sam")
             if buoy_pixels is not None:
                 self.published_normalized_position(buoy_pixels, (self.image.width,self.image.height), "buoy")
      
@@ -143,7 +143,7 @@ class YOLODetector(Node):
 
         if sam_index.numel() == 1:
             xywhr: torch.Tensor = xywhr[sam_index[0]]
-            c4: np.ndarray = c4[sam_index[0]].numpy() # 4 corners of bounding box, shape = (4,2)
+            c4: np.ndarray = c4[sam_index[0]].cpu().numpy() # 4 corners of bounding box, shape = (4,2)
             original_c4 = c4.copy()
             length = max(xywhr[2:4])*0.5
 
@@ -259,13 +259,13 @@ class YOLODetector(Node):
         sam_index, buoy_index = None, None  
         
         # Keep most likely sam/buoy (sam = 0, buoy = 1)
-        sam_mask = cls.numpy() == 0 # cls.numpy() detach().cpu().numpy
-        if len(cls.numpy()) != 0:
-            sam_index = np.argmax(np.multiply(conf, sam_mask))
-            sam_index = None if cls.numpy()[sam_index] != 0  else sam_index
+        sam_mask = cls.cpu().numpy() == 0 # cls.numpy() detach().cpu().numpy
+        if len(cls.cpu().numpy() ) != 0:
+            sam_index = np.argmax(np.multiply(conf.cpu().numpy(), sam_mask))
+            sam_index = None if cls.cpu().numpy()[sam_index] != 0  else sam_index
 
-            buoy_index = np.argmax(np.multiply(conf, ~sam_mask))
-            buoy_index = None if cls.numpy()[buoy_index] != 1  else buoy_index
+            buoy_index = np.argmax(np.multiply(conf.cpu().numpy(), ~sam_mask))
+            buoy_index = None if cls.cpu().numpy()[buoy_index] != 1  else buoy_index
 
         # Check length/width ratio of sam bounding box
         if sam_index is not None:
@@ -278,7 +278,7 @@ class YOLODetector(Node):
         buoy_pos = results.xywhr[buoy_index][0:2] if buoy_index is not None else None
 
         # Create valid detections mask and return new result.obb object
-        final_mask = np.full(cls.numpy().size, False)
+        final_mask = np.full(cls.cpu().numpy().size, False)
         if sam_index is not None: final_mask[sam_index] = True 
         if buoy_index is not None: final_mask[buoy_index] = True 
 
@@ -363,7 +363,7 @@ class YOLODetector(Node):
         namespace = "/"+self.get_parameter("namespace").value
         expected_types = {
             "mode": str,
-            "device": str,
+            "device": (str, int),
             "model_path": str,
 
             "detection.inference_period": float,
