@@ -107,8 +107,13 @@ tmux split-window -v -t $SESSION:1.1      # Split right pane into top-right (0.1
 tmux select-layout -t $SESSION:1 tiled    # Arrange as a 2x2 grid
 
 tmux select-pane -t $SESSION:1.0
-tmux send-keys "ros2 launch alars_auv_search_planner search_planning_launch.py  mode:=\"'as'\" namespace:=\"'$ROBOT_NAME'\" use_sim_time:=$USE_SIM_TIME" C-m
-# the line above with all the quotes is annyoing but it works...
+tmux send-keys "ros2 run alars alars_search_action_server --ros-args -r __ns:=/$ROBOT_NAME \
+-p use_sim_time:=$USE_SIM_TIME \
+-p setpoint_threshold:=0.5 \
+-p spiral_arm_distance:=2.0 \
+-p min_setpoint_distance_to_drone:=1.0 \
+-p detection_freshness_threshold:=1.0" C-m
+
 
 tmux select-pane -t $SESSION:1.1
 tmux send-keys "ros2 run alars alars_localize_action_server --ros-args -r __ns:=/$ROBOT_NAME \

@@ -40,6 +40,12 @@ class RecoverAction():
         self.ODOM_FRAME : str = self._robot_name + '/' + DJILinks.ODOM
         self._drone_in_odom : None | PoseStamped = None
 
+        self._node.declare_parameter('max_rope_length', 3.0)
+        self.MAX_ROPE_LENGTH = self._node.get_parameter('max_rope_length').get_parameter_value().double_value
+
+        self._node.declare_parameter('setpoint_tolerance', 0.5)
+        self.SETPOINT_TOLERANCE : float = self._node.get_parameter('setpoint_tolerance').get_parameter_value().double_value
+
         self._reset()
         
         self._setpoint_pub = self._node.create_publisher(
@@ -186,11 +192,8 @@ class RecoverAction():
             self._loginfo("Could not successfully compute distance between obj and buoy in odom frame. Rejecting goal!\n")
             return False
 
-        # TODO rosparam  
-        expected_rope_length = 3.0  # meters
-
-        if obj_buoy_dist > expected_rope_length:
-            self._loginfo(f"Rejecting. Criteria: obj-buoy dist=={obj_buoy_dist:.1f} <= {expected_rope_length:.1f}")
+        if obj_buoy_dist > self.MAX_ROPE_LENGTH:
+            self._loginfo(f"Rejecting. Criteria: obj-buoy dist=={obj_buoy_dist:.1f} <= {self.MAX_ROPE_LENGTH:.1f}")
             return False
         
         self._loginfo(f"Accepted recover action goal. Obj-Buoy dist={obj_buoy_dist:.2f}m")
@@ -265,32 +268,33 @@ class RecoverAction():
         if self._phase == RecoveryPhases.IDLE:
             self._phase = RecoveryPhases.MOVING_TO_DIPPING_POSITION
             self._loginfo(f"Starting recovery, moving to dipping position at {str_posestamp(self._points[self._phase])}")
-            return None
         
         target_point = self._points[self._phase]
         distance_to_target = self.compute_distance(self._drone_in_odom, target_point)
         
-        # TODO rosparam
-        distance_tolerance = 0.5  # meters
-
-        if distance_to_target <= distance_tolerance:
+        if distance_to_target <= self.SETPOINT_TOLERANCE:
             # reached current phase target, move to next phase
             if self._phase == RecoveryPhases.MOVING_TO_DIPPING_POSITION:
                 self._phase = RecoveryPhases.DIPPING
-                self._loginfo(f"Reached dipping position, lowering to dipping altitude at {str_posestamp(self._points[self._phase])}")
+                self._loginfo(f"MOVING_TO_DIPPING_POSITION -> DIPPING")
                 return None
             elif self._phase == RecoveryPhases.DIPPING:
                 self._phase = RecoveryPhases.FORWARD
-                self._loginfo(f"Dipped successfully, moving forward to raising position at {str_posestamp(self._points[self._phase])}")
+                self._loginfo(f"DIPPING -> FORWARD")
                 return None
             elif self._phase == RecoveryPhases.FORWARD:
                 self._phase = RecoveryPhases.RAISING
-                self._loginfo(f"Moved forward successfully, raising to safe altitude at {str_posestamp(self._points[self._phase])}")
+                self._loginfo(f"FORWARD -> RAISING")
                 return None
             elif self._phase == RecoveryPhases.RAISING:
                 self._loginfo("Recovery completed successfully.")
                 self._reset()
                 return True
+            
+        # still en route to current phase target, publish setpoint
+        target_point.header.stamp = self._node.get_clock().now().to_msg()
+        self._setpoint_pub.publish(target_point)
+        return None
 
         
     def _give_feedback(self) -> str:

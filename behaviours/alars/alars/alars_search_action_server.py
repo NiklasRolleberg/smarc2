@@ -32,6 +32,18 @@ class SearchAction():
         self.ODOM_FRAME : str = self._robot_name + '/' + DJILinks.ODOM
         self._drone_in_odom : None | PoseStamped = None
 
+        self._node.declare_parameter('setpoint_threshold', 2.0)
+        self.SETPOINT_THRESHOLD : float = self._node.get_parameter('setpoint_threshold').get_parameter_value().double_value
+
+        self._node.declare_parameter('spiral_arm_distance', 5.0)
+        self.SPIRAL_ARM_DISTANCE : float = self._node.get_parameter('spiral_arm_distance').get_parameter_value().double_value
+        
+        self._node.declare_parameter('min_setpoint_distance_to_drone', 2.0)
+        self.MIN_SETPOINT_DISTANCE_TO_DRONE : float = self._node.get_parameter('min_setpoint_distance_to_drone').get_parameter_value().double_value
+
+        self._node.declare_parameter('detection_freshness_threshold', 2.0)
+        self.DETECTION_FRESHNESS_THRESHOLD : float = self._node.get_parameter('detection_freshness_threshold').get_parameter_value().double_value
+
         self._reset()
         
         self._setpoint_pub = self._node.create_publisher(
@@ -75,6 +87,7 @@ class SearchAction():
         self._search_center_odom : PoseStamped = PoseStamped()
         self._search_radius : float = 0.0
         self._radius_progress : float = -1.0
+        self._current_setpoint : PoseStamped | None = None
 
     @property
     def _now_float(self) -> float:
@@ -182,29 +195,41 @@ class SearchAction():
             return False
         
         # if both the auv and buoy are detected, we are done too
-        detection_freshness_threshold = 2.0  # seconds
-        auv_fresh = not self._msg_is_older_than(self._auv_detection, detection_freshness_threshold)
-        buoy_fresh = not self._msg_is_older_than(self._buoy_detection, detection_freshness_threshold)
+        auv_fresh = not self._msg_is_older_than(self._auv_detection, self.DETECTION_FRESHNESS_THRESHOLD)
+        buoy_fresh = not self._msg_is_older_than(self._buoy_detection, self.DETECTION_FRESHNESS_THRESHOLD)
         if auv_fresh and buoy_fresh:
             self._loginfo("Both AUV and Buoy detected, finishing search action successfully.")
             return True
-
         
+
+        # if there is a current setpoint, check if we are close enough to it
+        if self._current_setpoint is not None:
+            drone_pos = np.array([self._drone_in_odom.pose.position.x, self._drone_in_odom.pose.position.y])
+            setpoint_pos = np.array([self._current_setpoint.pose.position.x, self._current_setpoint.pose.position.y])
+            distance_to_setpoint = np.linalg.norm(drone_pos - setpoint_pos)
+            if distance_to_setpoint < self.SETPOINT_THRESHOLD:
+                self._loginfo(f"Reached current setpoint within {self.SETPOINT_THRESHOLD}m (distance: {distance_to_setpoint:.2f}m), computing next spiral point.")
+                self._current_setpoint = None
+            else:
+                self._loginfo(f"Distance to active setpoint: {distance_to_setpoint:.2f}m.")
+                self._current_setpoint.header.stamp = self._node.get_clock().now().to_msg()
+                self._setpoint_pub.publish(self._current_setpoint)
+                return None
+
+        # either reached, or the first point
         # compute next spiral point
         drone_pos = np.array([self._drone_in_odom.pose.position.x, self._drone_in_odom.pose.position.y])
         search_center = np.array([self._search_center_odom.pose.position.x, self._search_center_odom.pose.position.y])
         
-        # TODO rosparams
-        spiral_arm_distance = 5.0
-        min_distance_to_drone = 2.0
 
         # if the drone is far, at 0 progress, we'll break from the loop
         # if the drone is in-progress, this will advance the spiral until a far enough point is found
         # and if during advancement, we run out of spiral (exceeding search radius), we finish the action
         distance_to_drone = -1
-        while distance_to_drone < min_distance_to_drone:
-            dP = spiral(spiral_arm_distance, self._spiral_progress)
+        while distance_to_drone < self.MIN_SETPOINT_DISTANCE_TO_DRONE:
+            dP = spiral(self.SPIRAL_ARM_DISTANCE, self._spiral_progress)
             self._radius_progress = np.linalg.norm(dP)
+            self._loginfo(f"Spiral progress: {self._radius_progress:.2f}m / {self._search_radius:.2f}m, distance to drone: {distance_to_drone:.2f}m")
             if self._radius_progress > self._search_radius:
                 self._loginfo("Completed search spiral, finishing action successfully.")
                 return True
@@ -221,7 +246,9 @@ class SearchAction():
         setpoint_msg.pose.position.z = self._search_center_odom.pose.position.z
         setpoint_msg.pose.orientation.w = 1.0  # neutral orientation
         self._setpoint_pub.publish(setpoint_msg)
-        return None
+        self._current_setpoint = setpoint_msg
+        self._loginfo(f"New setpoint: {setpoint_msg.pose.position}")
+        return None 
 
 
 
