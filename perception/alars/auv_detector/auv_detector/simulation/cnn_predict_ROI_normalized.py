@@ -16,9 +16,6 @@ from std_msgs.msg import Float32MultiArray
 from std_msgs.msg import Int32MultiArray
 from collections import deque
 
-from sensor_msgs.msg import CameraInfo
-import math
-
 # ==== CNN Definition (same as in training file) ====
 class AnchorPointCNN(nn.Module):
     def __init__(self):
@@ -54,23 +51,11 @@ class AnchorPointPredictor(Node):
             self.listener_callback,
             10
         )
-        # /Quadrotor/core/fpcamera/image
-        # /M350/gimbal_camera/image_raw
-
-
-
-        # Subscribe once to camera info to get FOV
-        self.cam_info_sub = self.create_subscription(
-            CameraInfo,
-            '/M350/gimbal_camera/cam_info',
-            self.cam_info_callback,
-            1)
-        self.cam_info_received = False
-
-
         self.bridge = CvBridge()
         self.model = AnchorPointCNN()
-        self.model.load_state_dict(torch.load('anchor_point_cnn.pth', map_location=torch.device('cpu')))
+        #self.model.load_state_dict(torch.load('anchor_point_cnn_dynamic_roi_20251006_230047.pth', map_location=torch.device('cpu')))
+        self.model.load_state_dict(torch.load('anchor_point_cnn_dynamic_roi_validate_20251007_163547.pth', map_location=torch.device('cpu')))
+
         self.model.eval()
 
         self.input_size = (224, 224)
@@ -80,24 +65,7 @@ class AnchorPointPredictor(Node):
             transforms.ToTensor()
         ])
         self.rope_img_buffer = deque(maxlen=10)
-
-    def cam_info_callback(self, msg: CameraInfo):
-        # Only subscribe once
-        if not self.cam_info_received:
-            fx = msg.k[0]
-            fy = msg.k[4]
-            width = msg.width
-            height = msg.height
-
-            # Compute horizontal and vertical FOV
-            self.fov_x = 2 * math.atan(width / (2 * fx))
-            self.fov_y = 2 * math.atan(height / (2 * fy))
-            self.get_logger().info(f"Camera FOV received: FOV_x={math.degrees(self.fov_x):.1f}°, FOV_y={math.degrees(self.fov_y):.1f}°")
-            self.cam_info_received = True
-
-            # Unsubscribe after receiving
-            self.destroy_subscription(self.cam_info_sub)
-
+        self.imshow_debug = False
 
     def listener_callback(self, msg):
         try:
@@ -111,11 +79,10 @@ class AnchorPointPredictor(Node):
             #########################################################################################  buoy
             imghsv = cv2.cvtColor(image, cv2.COLOR_BGR2HSV).astype("float32")
             # HSV filter for buoy
-            #lower_orange = np.array([16, 0, 255])  # manual hsv detector
-            #upper_orange = np.array([25, 152, 255])
-
-            lower_orange = np.array([6, 148, 0])  # manual hsv detector
-            upper_orange = np.array([67, 255, 250])
+            # lower_orange = np.array([16, 0, 255])  # manual hsv detector
+            # upper_orange = np.array([25, 152, 255])
+            lower_orange = np.array([0, 0, 255])  # manual hsv detector
+            upper_orange = np.array([255, 255, 255])
 
             hsv_thresh_buoy = cv2.inRange(imghsv, lower_orange, upper_orange)
             preview_buoy = cv2.bitwise_and(image, image, mask=hsv_thresh_buoy)
@@ -158,18 +125,14 @@ class AnchorPointPredictor(Node):
 
                     # Put area text
                     #cv2.putText(preview_buoy, f"Area: {int(max_area)}", (cx + 10, cy - 10), cv2.FONT_HERSHEY_SIMPLEX, 0.6, (255, 255, 255), 1)
-            
-            cv2.imshow('HSV_buoy', preview_buoy)  
+            if self.imshow_debug:
+                cv2.imshow('HSV_buoy', preview_buoy)  
 
             #########################################################################################  auv
 
             # HSV filter for sam auv
-            lower_yellow = np.array([25, 31, 0])  # manual hsv detector
-            upper_yellow = np.array([51, 255, 255])
-
-
-            # lower_yellow = np.array([0, 55, 153])  # manual hsv detector
-            # upper_yellow = np.array([195, 97, 254])
+            lower_yellow = np.array([25, 60, 0])  # manual hsv detector
+            upper_yellow = np.array([70, 255, 255])
             hsv_thresh_auv = cv2.inRange(imghsv, lower_yellow, upper_yellow)
             preview_auv = cv2.bitwise_and(image, image, mask=hsv_thresh_auv)
             preview_auv_2 = preview_auv.copy()
@@ -208,8 +171,8 @@ class AnchorPointPredictor(Node):
 
                     # Put area text
                     #cv2.putText(preview_auv, f"AUV Area: {int(max_area)}", (cx + 10, cy - 10), cv2.FONT_HERSHEY_SIMPLEX, 0.6, (255, 255, 255), 1)
-
-            cv2.imshow('HSV_auv', preview_auv)
+            if self.imshow_debug:
+                cv2.imshow('HSV_auv', preview_auv)
 
 
 
@@ -257,12 +220,8 @@ class AnchorPointPredictor(Node):
             #########################################################################################   rope
 
             # HSV filter for rope
-            #lower_rope = np.array([3, 146, 82])  # manual hsv detector
-            #upper_rope = np.array([13, 255, 245])
-
-            lower_rope = np.array([9, 105, 200])  # manual hsv detector
-            upper_rope = np.array([23, 176, 255])
-
+            lower_rope = np.array([0, 92, 242])  # manual hsv detector
+            upper_rope = np.array([86, 255, 255])
             hsv_thresh_rope = cv2.inRange(imghsv, lower_rope, upper_rope)
             preview_rope = cv2.bitwise_and(image, image, mask=hsv_thresh_rope)
             preview_rope_2 = preview_rope.copy()
@@ -273,7 +232,9 @@ class AnchorPointPredictor(Node):
             self.rope_img_buffer.append(preview_rope_3)
             for img_tmp in self.rope_img_buffer:
                 preview_rope_3 = cv2.add(preview_rope_3, img_tmp)
-            cv2.imshow("N frames rope detect", preview_rope_3)
+
+            if self.imshow_debug:
+                cv2.imshow("N frames rope detect", preview_rope_3)
 
 
         
@@ -313,7 +274,8 @@ class AnchorPointPredictor(Node):
 
                 # cv2.putText(preview_rope_2, "Heading Point", (center_x_rope + 10, center_y_rope - 10),
                 #                     cv2.FONT_HERSHEY_SIMPLEX, 0.6, (255, 255, 255), 1)
-                cv2.imshow("Curve Fitting", preview_rope_2)
+                if self.imshow_debug:
+                    cv2.imshow("Curve Fitting", preview_rope_2)
 
 
             ######################################################################################### 
@@ -330,9 +292,37 @@ class AnchorPointPredictor(Node):
             ######################################################################################### 
             original_image = cv_image.copy()
 
+            # --- Convert to numpy for ROI detection ---
+            np_img = combined_preview.copy()
+            gray = np_img.mean(axis=2)  # average intensity
+            mask = gray > 30  # brightness threshold
+
+            if not mask.any():
+                # fallback to full image if object not found
+                left, top, right, bottom = 0, 0, np_img.shape[1], np_img.shape[0]
+            else:
+                ys, xs = np.where(mask)
+                top, bottom = ys.min(), ys.max()
+                left, right = xs.min(), xs.max()
+                pad = 10  # optional padding
+                left = max(0, left - pad)
+                top = max(0, top - pad)
+                right = min(np_img.shape[1], right + pad)
+                bottom = min(np_img.shape[0], bottom + pad)
+
+            # --- Crop the image to ROI ---
+            roi_img = np_img[top:bottom, left:right, :]
+
+            # --- Save top-left pixel coordinates ---
+            x0, y0 = left, top
+
+
             # Preprocess for CNN
             #pil_image = PILImage.fromarray(cv2.cvtColor(cv_image, cv2.COLOR_BGR2RGB))
-            pil_image = PILImage.fromarray(cv2.cvtColor(combined_preview, cv2.COLOR_BGR2RGB))
+            #pil_image = PILImage.fromarray(cv2.cvtColor(combined_preview, cv2.COLOR_BGR2RGB))
+            # --- Prepare ROI image for CNN ---
+            #cv2.imshow("roi_img", roi_img)
+            pil_image = PILImage.fromarray(cv2.cvtColor(roi_img, cv2.COLOR_BGR2RGB))
             input_tensor = self.transform(pil_image).unsqueeze(0)
 
             # Inference
@@ -340,11 +330,44 @@ class AnchorPointPredictor(Node):
                 output = self.model(input_tensor).squeeze().numpy()
 
             # Rescale to original image size
-            x_scale = self.orig_size[0] / self.input_size[0]
-            y_scale = self.orig_size[1] / self.input_size[1]
-            x1, y1, x2, y2 = output
-            x1, y1 = int(x1 * x_scale), int(y1 * y_scale)
-            x2, y2 = int(x2 * x_scale), int(y2 * y_scale)
+            # x_scale = self.orig_size[0] / self.input_size[0]
+            # y_scale = self.orig_size[1] / self.input_size[1]
+            # x1, y1, x2, y2 = output
+            # x1, y1 = int(x1 * x_scale), int(y1 * y_scale)
+            # x2, y2 = int(x2 * x_scale), int(y2 * y_scale)
+
+
+            # --- Rescale prediction to ROI size ---
+            roi_width, roi_height = right - left, bottom - top
+            # x1, y1, x2, y2 = output
+
+            # Restore coordinates to original ROI size
+            # x1 = int(x1 / self.input_size[0] * roi_width)
+            # y1 = int(y1 / self.input_size[1] * roi_height)
+            # x2 = int(x2 / self.input_size[0] * roi_width)
+            # y2 = int(y2 / self.input_size[1] * roi_height)
+
+
+            # --- Rescale prediction to ROI size ---
+            x1_norm, y1_norm, x2_norm, y2_norm = output  # normalized [0,1]
+
+            x1 = int(x1_norm * roi_width)
+            y1 = int(y1_norm * roi_height)
+            x2 = int(x2_norm * roi_width)
+            y2 = int(y2_norm * roi_height)
+
+
+            # --- Add top-left pixel offset to restore to original image ---
+            x1 += x0
+            y1 += y0
+            x2 += x0
+            y2 += y0
+
+            # Clamp to original image
+            x1 = int(np.clip(x1, 0, cv_image.shape[1]-1))
+            y1 = int(np.clip(y1, 0, cv_image.shape[0]-1))
+            x2 = int(np.clip(x2, 0, cv_image.shape[1]-1))
+            y2 = int(np.clip(y2, 0, cv_image.shape[0]-1))
 
             # Draw predicted points
             cv2.circle(original_image, (x1, y1), 6, (0, 255, 0), -1)  # P1: Green
