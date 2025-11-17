@@ -803,7 +803,7 @@ class DjiCaptain():
         joy_net = (1 - r_sigma) * joy_err + r_sigma * self._prev_joy_output
         joy_net = self._normalize_max_speed(joy_net, max_speed)
 
-        self.log(f"\njoy_err: {joy_err}\njoy_pre: {self._prev_joy_output}\njoy_net: {joy_net}")
+        #self.log(f"\njoy_err: {joy_err}\njoy_pre: {self._prev_joy_output}\njoy_net: {joy_net}")
 
         J = [joy_net[0], joy_net[1], joy_net[2], 0.0]
         self._pub_flu_vel_joy(J)
@@ -1117,7 +1117,7 @@ class DjiCaptain():
         tf_msg.transforms = []
         now = self.now_stamp
 
-        self._tf_pub_status = f"Published at {now.sec}.{now.nanosec} sec"
+        self._tf_pub_status = f"Publishing"
 
         # 0 transforms for home -> map, home -> odom, utm_z_b -> utm
         # for compatibility with other systems
@@ -1261,7 +1261,7 @@ class DjiCaptain():
         if self._base_pose_in_home is None or self._home_point_in_utm is None or self._gps_point_in_home is None:
             return
         
-        self._smarc_pub_status = f"Published at {self.now_stamp.sec}.{self.now_stamp.nanosec} sec"
+        self._smarc_pub_status = f"Published: "
 
         odom = Odometry()
         odom.header.stamp = self.now_stamp
@@ -1284,6 +1284,7 @@ class DjiCaptain():
             odom.twist.twist.angular.z = self._angular_rate_ground.vector.z
 
         self._odom_pub.publish(odom)
+        self._smarc_pub_status += "odom "
 
         # we need current position in latlon
         # so we first need to convert our odom-frame position to UTM
@@ -1303,13 +1304,16 @@ class DjiCaptain():
         self._pos_latlon_pub.publish(base_in_geopoint)
 
         self._altitude_pub.publish(Float32(data = alt_above_water))
+        self._smarc_pub_status += "latlon altitude "
 
 
         if self._heading_deg is not None:
             self._heading_pub.publish(Float32(data=self._heading_deg))
+            self._smarc_pub_status += "heading "
 
         if self._course_deg is not None:
             self._course_pub.publish(Float32(data=self._course_deg))
+            self._smarc_pub_status += "course "
 
         if self._velocity_ground is not None:
             speed = math.sqrt(
@@ -1317,12 +1321,15 @@ class DjiCaptain():
                 self._velocity_ground.vector.y ** 2
             )
             self._speed_pub.publish(Float32(data=speed))
+            self._smarc_pub_status += "speed "
 
         if self._battery_percent is not None:
             self._battery_percent_pub.publish(Float32(data=self._battery_percent))
+            self._smarc_pub_status += "battery_percent "
 
         if self._utm_labeled_frame is not None:
             self._labeled_utm_frame_pub.publish(String(data=self._utm_labeled_frame))
+            self._smarc_pub_status += "labeled_utm_frame "
                         
         
 
