@@ -194,6 +194,7 @@ class SearchAction():
         drone_pos = np.array([self._drone_in_odom.pose.position.x, self._drone_in_odom.pose.position.y])
         search_center = np.array([self._search_center_odom.pose.position.x, self._search_center_odom.pose.position.y])
         
+        # TODO rosparams
         spiral_arm_distance = 5.0
         min_distance_to_drone = 2.0
 

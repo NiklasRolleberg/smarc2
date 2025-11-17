@@ -1,0 +1,324 @@
+#!/usr/bin/python
+
+import enum
+import numpy as np
+import rclpy
+from rclpy.node import Node
+from rclpy.executors import MultiThreadedExecutor
+from rclpy.time import Time, Duration
+
+import traceback
+
+from geometry_msgs.msg import  PointStamped, PoseStamped, Quaternion
+from geographic_msgs.msg import GeoPoint
+from geometry_msgs.msg import PointStamped
+from std_msgs.msg import Float32
+from nav_msgs.msg import Odometry
+from tf2_geometry_msgs import do_transform_pose_stamped
+from tf2_ros import Buffer, TransformListener
+
+from smarc_action_base.gentler_action_server import GentlerActionServer
+from smarc_utilities.georef_utils import convert_latlon_to_utm
+from dji_msgs.msg import Topics as DJITopics
+from dji_msgs.msg import Links as DJILinks
+from smarc_msgs.msg import Topics as SmarcTopics
+
+class RecoveryPhases(enum.Enum):
+    IDLE = 0
+    MOVING_TO_DIPPING_POSITION = 1
+    DIPPING = 2
+    FORWARD = 3
+    RAISING = 4
+
+class RecoverAction():
+    def __init__(self,
+                 node: Node):
+        self._node : Node = node
+
+        self._node.declare_parameter('robot_name', 'M350')
+        self._robot_name : str = self._node.get_parameter('robot_name').get_parameter_value().string_value
+        self.ODOM_FRAME : str = self._robot_name + '/' + DJILinks.ODOM
+        self._drone_in_odom : None | PoseStamped = None
+
+        self._reset()
+        
+        self._setpoint_pub = self._node.create_publisher(
+            msg_type = PoseStamped,
+            topic = DJITopics.MOVE_TO_SETPOINT_TOPIC,
+            qos_profile= 10)
+        
+        self._node.create_subscription(Odometry,
+                                       SmarcTopics.ODOM_TOPIC,
+                                       self._odom_cb,
+                                       10)
+        
+
+
+        self._tf_buffer = Buffer()
+        self._tf_listener = TransformListener(self._tf_buffer, self._node, spin_thread=True)
+        
+        self._as = GentlerActionServer(
+            node,
+            "alars_recover",
+            self._on_goal_received,
+            self._on_cancel_received,
+            self._prepare_loop,
+            self._loop_inner,
+            self._give_feedback,
+            loop_frequency = 10
+        )
+            
+    def _reset(self):
+        self._obj_in_odom : PoseStamped = PoseStamped()
+        self._buoy_in_odom : PoseStamped = PoseStamped()
+        self._phase : RecoveryPhases = RecoveryPhases.IDLE
+        self._points : dict[RecoveryPhases, PoseStamped] = {}
+
+
+    @property
+    def _now_float(self) -> float:
+        now_stamp = self._node.get_clock().now().to_msg()
+        return now_stamp.sec + now_stamp.nanosec * 1e-9
+    
+    def _msg_is_older_than(self, msg, age_s: float) -> bool:
+        if msg is None: return True
+        if msg.header is None: return True
+        if msg.header.stamp is None: return True
+        if msg.header.stamp.sec == 0 and msg.header.stamp.nanosec == 0:
+            return True
+        return self._now_float - (msg.header.stamp.sec + msg.header.stamp.nanosec * 1e-9) > age_s
+    
+    def in_odom_frame(self, pose_stamped: PoseStamped) -> PoseStamped:
+        try:
+            t = self._tf_buffer.lookup_transform(
+                target_frame=self.ODOM_FRAME,
+                source_frame=pose_stamped.header.frame_id,
+                time=Time(seconds=0),
+                timeout=Duration(seconds=1),
+            )
+            return do_transform_pose_stamped(pose_stamped, t)
+        except Exception as e:
+            self._loginfo(f"TF lookup failed when transforming {pose_stamped.header.frame_id} to {self.ODOM_FRAME}: {str(e)}")
+            raise e
+
+    
+    def compute_distance(self, pose1 : PoseStamped, pose2 : PoseStamped) -> float:
+        if pose1.header.frame_id != self.ODOM_FRAME:
+            p1o = self.in_odom_frame(pose1)
+            p1 = np.array([p1o.pose.position.x, p1o.pose.position.y, p1o.pose.position.z])
+        else:
+            p1 = np.array([pose1.pose.position.x, pose1.pose.position.y, pose1.pose.position.z])
+        
+        if pose2.header.frame_id != self.ODOM_FRAME:
+            p2o = self.in_odom_frame(pose2)
+            p2 = np.array([p2o.pose.position.x, p2o.pose.position.y, p2o.pose.position.z])
+        else:
+            p2 = np.array([pose2.pose.position.x, pose2.pose.position.y, pose2.pose.position.z])
+
+        return np.linalg.norm(p1 - p2)
+
+    def _loginfo(self, msg: str):
+        self._node.get_logger().info(f"[RecoverAction] {msg}")
+
+
+    def _odom_cb(self, msg: Odometry):
+        if self._drone_in_odom is None:
+            self._drone_in_odom = PoseStamped()
+            self._drone_in_odom.header.frame_id = self.ODOM_FRAME
+        self._drone_in_odom.header.stamp = msg.header.stamp
+        self._drone_in_odom.pose = msg.pose.pose
+
+
+    def _on_goal_received(self, goal_request: dict) -> bool:
+        # goal: {
+        #   "object_position": GeoPoint,
+        #   "buoy_position": GeoPoint,
+        #   "forward_distance": float,
+        #   "forward_altitude": float,
+        #   "dipping_altitude" : float,
+        #   "raising_altitude" : float
+        # }
+        #            D
+        # A          |
+        # |          |
+        # |          |
+        # B----O-----C 
+        # A-B = dipping altitude
+        # B-C = forward distance
+        # C-D = raising altitude
+        # O = where the object and buoy are, perpendicular to screen
+        
+        try:
+            geopoint_obj = GeoPoint()
+            geopoint_obj.latitude = goal_request['object_position']['latitude']
+            geopoint_obj.longitude = goal_request['object_position']['longitude']
+            geopoint_obj.altitude = float(goal_request['object_position']['altitude'])
+
+            geopoint_buoy = GeoPoint()
+            geopoint_buoy.latitude = goal_request['buoy_position']['latitude']
+            geopoint_buoy.longitude = goal_request['buoy_position']['longitude']
+            geopoint_buoy.altitude = float(goal_request['buoy_position']['altitude'])
+
+            self.forward_distance = float(goal_request['forward_distance'])
+            self.forward_altitude = float(goal_request['forward_altitude'])
+            self.dipping_altitude = float(goal_request['dipping_altitude'])
+            self.raising_altitude = float(goal_request['raising_altitude'])
+        except KeyError:
+            self._loginfo(f"Goal request is missing a required field, received:\n {goal_request}")
+            return False
+
+        try:
+            obj_pose_utm = convert_latlon_to_utm(geopoint_obj)
+            buoy_pose_utm = convert_latlon_to_utm(geopoint_buoy)
+        except:
+            self._loginfo(f"Failed to convert geopoint to UTM, received:\n obj: {geopoint_obj}\n buoy: {geopoint_buoy}")
+            return False
+        
+        try:
+            self._obj_in_odom = self.in_odom_frame(point_to_pose(obj_pose_utm))
+            self._buoy_in_odom = self.in_odom_frame(point_to_pose(buoy_pose_utm))
+        except:
+            return False
+
+        try:
+            obj_buoy_dist = self.compute_distance(self._obj_in_odom, self._buoy_in_odom)
+        except:
+            self._loginfo("Could not successfully compute distance between obj and buoy in odom frame. Rejecting goal!\n")
+            return False
+
+        # TODO rosparam  
+        expected_rope_length = 3.0  # meters
+
+        if obj_buoy_dist > expected_rope_length:
+            self._loginfo(f"Rejecting. Criteria: obj-buoy dist=={obj_buoy_dist:.1f} <= {expected_rope_length:.1f}")
+            return False
+        
+        self._loginfo(f"Accepted recover action goal. Obj-Buoy dist={obj_buoy_dist:.2f}m")
+        return True
+    
+
+    def _on_cancel_received(self) -> bool:
+        self._loginfo("Cancelled.")
+        self._reset()
+        return True
+
+
+    def _prepare_loop(self) -> None:
+        # pre-compute all the points
+        # see diagram in _on_goal_received
+        # everything in odom frame
+        obj_pos = np.array([self._obj_in_odom.pose.position.x, self._obj_in_odom.pose.position.y])
+        buoy_pos = np.array([self._buoy_in_odom.pose.position.x, self._buoy_in_odom.pose.position.y])
+        middle_pos = (obj_pos + buoy_pos) / 2.0
+        # line perpendicular to obj-buoy line
+        rope_direction = buoy_pos - obj_pos
+        motion_direction = np.array([-rope_direction[1], rope_direction[0]])
+        motion_direction = motion_direction / np.linalg.norm(motion_direction)
+        dipping_pos = middle_pos - motion_direction * self.forward_distance/2
+        raising_pos = dipping_pos + motion_direction * self.forward_distance 
+
+        # A
+        self._dipping_high = PoseStamped()
+        self._dipping_high.header.frame_id = self.ODOM_FRAME
+        self._dipping_high.pose.position.x = dipping_pos[0]
+        self._dipping_high.pose.position.y = dipping_pos[1]
+        self._dipping_high.pose.position.z = self.dipping_altitude
+        self._dipping_high.pose.orientation = Quaternion(x=0.0, y=0.0, z=0.0, w=1.0)
+        self._points[RecoveryPhases.MOVING_TO_DIPPING_POSITION] = self._dipping_high
+
+        # B
+        self._dipping_low = PoseStamped()
+        self._dipping_low.header.frame_id = self.ODOM_FRAME
+        self._dipping_low.pose.position.x = dipping_pos[0]
+        self._dipping_low.pose.position.y = dipping_pos[1]
+        self._dipping_low.pose.position.z = self.forward_altitude
+        self._dipping_low.pose.orientation = Quaternion(x=0.0, y=0.0, z=0.0, w=1.0)
+        self._points[RecoveryPhases.DIPPING] = self._dipping_low
+
+        # C
+        self._raising_low = PoseStamped()
+        self._raising_low.header.frame_id = self.ODOM_FRAME
+        self._raising_low.pose.position.x = raising_pos[0]
+        self._raising_low.pose.position.y = raising_pos[1]
+        self._raising_low.pose.position.z = self.forward_altitude
+        self._raising_low.pose.orientation = Quaternion(x=0.0, y=0.0, z=0.0, w=1.0)
+        self._points[RecoveryPhases.FORWARD] = self._raising_low
+
+        # D
+        self._raising_high = PoseStamped()
+        self._raising_high.header.frame_id = self.ODOM_FRAME
+        self._raising_high.pose.position.x = raising_pos[0]
+        self._raising_high.pose.position.y = raising_pos[1]
+        self._raising_high.pose.position.z = self.raising_altitude
+        self._raising_high.pose.orientation = Quaternion(x=0.0, y=0.0, z=0.0, w=1.0)
+        self._points[RecoveryPhases.RAISING] = self._raising_high
+
+        
+    def _loop_inner(self) -> bool|None:
+        """
+        Return True to indicate success, False for failure, or None to continue
+        """
+        if self._drone_in_odom is None:
+            self._loginfo("No odom received yet, cannot perform recovery...")
+            return False
+        
+        if self._phase == RecoveryPhases.IDLE:
+            self._phase = RecoveryPhases.MOVING_TO_DIPPING_POSITION
+            self._loginfo(f"Starting recovery, moving to dipping position at {str_posestamp(self._points[self._phase])}")
+            return None
+        
+        target_point = self._points[self._phase]
+        distance_to_target = self.compute_distance(self._drone_in_odom, target_point)
+        
+        # TODO rosparam
+        distance_tolerance = 0.5  # meters
+
+        if distance_to_target <= distance_tolerance:
+            # reached current phase target, move to next phase
+            if self._phase == RecoveryPhases.MOVING_TO_DIPPING_POSITION:
+                self._phase = RecoveryPhases.DIPPING
+                self._loginfo(f"Reached dipping position, lowering to dipping altitude at {str_posestamp(self._points[self._phase])}")
+                return None
+            elif self._phase == RecoveryPhases.DIPPING:
+                self._phase = RecoveryPhases.FORWARD
+                self._loginfo(f"Dipped successfully, moving forward to raising position at {str_posestamp(self._points[self._phase])}")
+                return None
+            elif self._phase == RecoveryPhases.FORWARD:
+                self._phase = RecoveryPhases.RAISING
+                self._loginfo(f"Moved forward successfully, raising to safe altitude at {str_posestamp(self._points[self._phase])}")
+                return None
+            elif self._phase == RecoveryPhases.RAISING:
+                self._loginfo("Recovery completed successfully.")
+                self._reset()
+                return True
+
+        
+    def _give_feedback(self) -> str:
+        return f"Phase: {self._phase.name}"
+
+
+def point_to_pose(ps_in: PointStamped) -> PoseStamped:
+    ps = PoseStamped()
+    ps.header = ps_in.header
+    ps.pose.position = ps_in.point
+    ps.pose.orientation = Quaternion(x=0.0, y=0.0, z=0.0, w=1.0)
+    return ps
+
+def str_posestamp(pose: PoseStamped):
+    """Helper function to print PoseStamped Messages nicely."""
+    pos = pose.pose.position
+    return (f"Pos:[{pos.x:.2f},{pos.y:.2f},{pos.z:.2f}] in {pose.header.frame_id}")
+        
+
+def main(args=None):
+    rclpy.init(args=args)
+
+    node = Node("alars_recover_action_server")
+
+    recover_action = RecoverAction(node)
+
+    executor = MultiThreadedExecutor()
+    rclpy.spin(node, executor=executor)
+
+    node.destroy_node()
+    rclpy.shutdown()
