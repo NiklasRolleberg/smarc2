@@ -1,7 +1,7 @@
 #! /bin/bash
 ROBOT_NAME=lolo
 SESSION=${ROBOT_NAME}_bringup
-USE_SIM_TIME=False
+USE_SIM_TIME=True
 
 # New variables for wasp_bt.launch and wasp_mqtt_agent.launch
 AGENT_TYPE=subsurface
@@ -13,6 +13,7 @@ BT_LOG_MODE=compact # can be 'compact' or 'verbose'
 if [ "$USE_SIM_TIME" = "True" ]; then
     REALSIM=simulation
     LINK_SUFFIX="_gt"
+    ROBOT_NAME=lolo_auv_v1
 else
     REALSIM=real
     LINK_SUFFIX=""
@@ -104,7 +105,7 @@ if [ "$REALSIM" = "real" ]; then
     tmux send-keys "sleep 5; ros2 launch lolo_health_checker lolo_health_checker.launch robot_name:=$ROBOT_NAME" C-m
     #Geofence checker
     tmux select-pane -t $SESSION:9.1
-    tmux send-keys "sleep 5; ros2 launch lolo_drivers lolo_geofence_check.launch robot_name:=$ROBOT_NAME" C-m
+    tmux send-keys "sleep 5; ros2 launch lolo_drivers lolo_geofence_check.launch robot_name:=$ROBOT_NAME"
     
 else
     # new window just publishing int8 0 to /lolo/smarc/vehicle_health
@@ -121,7 +122,7 @@ tmux select-window -t $SESSION:10
 #Lolo prox ops action
 tmux new-window -t $SESSION:11 -n 'proxops'
 tmux select-window -t $SESSION:11
-tmux send-keys "sleep 4; ros2 launch lolo_prox_ops lolo_prox_ops.launch" C-m
+tmux send-keys "sleep 4; ros2 launch lolo_prox_ops lolo_prox_ops.launch robot_name:=$ROBOT_NAME use_sim_time:=$USE_SIM_TIME" C-m
 
 #Lolo menu
 if [ "$REALSIM" = "real" ]; then
