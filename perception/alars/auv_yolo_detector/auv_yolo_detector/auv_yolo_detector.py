@@ -74,7 +74,7 @@ class YOLODetector(Node):
             self.yolo_model = YOLO(self.model_params['model_path'])
             self.yolo_model.info()
         except Exception as e:
-            self.get_logger().warn('YOLO model import failed; check if model path is correct in .yaml file')
+            self.get_logger().warn(f'\n\nYOLO model import failed; check if the model_path rosparam is pointing to a valid model file! Readme has more details.\nGiven path:{self.model_params["model_path"]}\n\n')
             self.get_logger().warn(str(e))
             self.get_logger().warn(traceback.format_exc())
         self.camera_model = PinholeCameraModel()

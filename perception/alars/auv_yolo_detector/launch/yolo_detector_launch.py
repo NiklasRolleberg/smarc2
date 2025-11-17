@@ -11,18 +11,26 @@ def generate_launch_description():
     namespace_arg = DeclareLaunchArgument('namespace', default_value='Quadrotor')
     device_arg = DeclareLaunchArgument('device', default_value='cpu')
     use_sim_time_arg = DeclareLaunchArgument('use_sim_time', default_value='false')
+    model_file_arg = DeclareLaunchArgument('model_file', default_value='yolo_model.pt')
 
     # ... and as node params
     mode = LaunchConfiguration('mode')
     namespace = LaunchConfiguration('namespace')
     device = LaunchConfiguration('device')
     use_sim_time = LaunchConfiguration('use_sim_time')
+    model_file = LaunchConfiguration('model_file')
 
     # ---- rarely changed params from yaml (yaml has every parameter but launch arguments will override)
     config_file = PathJoinSubstitution([
         FindPackageShare('auv_yolo_detector'),
         'config',
         'params.yaml'
+    ])
+
+    model_path = PathJoinSubstitution([
+        FindPackageShare('auv_yolo_detector'),
+        'config',
+        model_file
     ])
 
     detector_node = Node(
@@ -37,6 +45,7 @@ def generate_launch_description():
                 'namespace': namespace,
                 'device': device,
                 'use_sim_time': use_sim_time,
+                'model_path': model_path
             },
         ]
     )
@@ -46,9 +55,11 @@ def generate_launch_description():
         mode_arg,
         device_arg,
         use_sim_time_arg,
+        model_file_arg,
         LogInfo(msg=["[Launch] mode argument = ", mode]),
         LogInfo(msg=["[Launch] namespace argument = ", namespace]),
         LogInfo(msg=["[Launch] device argument = ", device]),
         LogInfo(msg=["[Launch] use_sim_time argument = ", use_sim_time]),
+        LogInfo(msg=["[Launch] yolo model path = ", model_path]),
         detector_node
     ])
