@@ -1,8 +1,0 @@
-# goal message
-std_msgs/String goal
----
-# result message
-bool success
----
-# feedback message
-std_msgs/String feedback

@@ -11,9 +11,10 @@ from smarc_action_base.smarc_action_base import (
     SMARCActionClient,
     ActionClientState,
 )
-from smarc_mission_msgs.action import BaseAction
+from smarc_msgs.action import BaseAction
 from geometry_msgs.msg import Pose, PoseStamped
 from smarc_control_msgs.msg import Topics as ControlTopics
+from std_msgs.msg import String
 
 from go_to_hydrobaticpoint.hydrobaticpoint_action import ActionComponent as ActC
 from go_to_hydrobaticpoint.hydrobaticpoint_action import HydrobaticPointAction
@@ -50,11 +51,14 @@ class HydropointClient(SMARCActionClient):
     def run(self):
         self.logger.info("Subscribing to mocap hydro point topic")
         self.mocap_goal_sub = self._node.create_subscription(PoseStamped, 
-                                                             ControlTopics.MOCAP_HYDROPOINT,
-                                                             self.mocap_hydro_cb, 1)
+                                                            ControlTopics.MOCAP_HYDROPOINT,
+                                                            self.mocap_hydro_cb, 1)
+        #    self.mocap_goal_sub = self._node.create_subscription(PoseStamped, 
+        #                                                         '/mqtt/hula/pose',
+        #                                                         self.mqtt_hydro_cb, 1)
 
 
-    def mocap_hydro_cb(self, mocap_goal: PoseStamped):
+    def mqtt_hydro_cb(self, mqtt_goal: String):
 
         if not self.goal_processed:
 
@@ -65,10 +69,28 @@ class HydropointClient(SMARCActionClient):
                     self._node.destroy_subscription(self.mocap_goal_sub)
                     return
 
-                self.logger.info(f"Sending goal {mocap_goal}")
+                self.logger.info(f"Sending goal {mqtt_goal}")
+                goal_msg = BaseAction.Goal()
+                goal_msg.goal = self._json_ops.encode(mqtt_goal)
+                self.send_goal(goal_msg)
+
+
+    def mocap_hydro_cb(self, mocap_goal: PoseStamped):
+
+        if self.state != ActionClientState.SENT:
+
+            # if not self.goal_processed:
+            if self.state == ActionClientState.RUNNING:
+            #    self.goal_processed = True
+                self._node.destroy_subscription(self.mocap_goal_sub)
+                return
+
+            else:
+                # self.logger.info(f"Sending goal {mocap_goal}")
                 goal_msg = BaseAction.Goal()
                 goal_msg.goal = self._json_ops.encode(mocap_goal)
                 self.send_goal(goal_msg)
+
 
     def declare_parameters(self):
         """Location to declare parameters."""
@@ -85,10 +107,10 @@ class HydropointClient(SMARCActionClient):
     def feedback_callback(self, feedback_msg: ActionFeedback):
         """Result when a goal is sent to the server."""
         self.logger.debug(f"Received feedback {feedback_msg.feedback}")
-        self.dist_rem = self._json_ops.decode(
-            feedback_msg.feedback,
-            ActC.FEEDBACK,
-        )
+        # self.dist_rem = self._json_ops.decode(
+        #     feedback_msg.feedback,
+        #     2
+        # )
 
     def result_callback(self, result: ActionResult, status: GoalStatus):
         """Result when a goal is sent to the server."""

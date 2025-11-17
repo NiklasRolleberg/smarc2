@@ -1,3 +1,6 @@
+import csv
+import numpy as np
+
 import rclpy
 from action_msgs.msg import GoalStatus
 from geographic_msgs.msg import GeoPoint
@@ -11,9 +14,10 @@ from smarc_action_base.smarc_action_base import (
     SMARCActionClient,
     ActionClientState,
 )
-from smarc_mission_msgs.action import BaseAction
+from smarc_msgs.action import BaseAction
 from geometry_msgs.msg import Pose, PoseStamped
 from smarc_control_msgs.msg import Topics as ControlTopics
+from smarc_control_msgs.msg import WpMPC, TrajectoryMPC
 from nav_msgs.msg import Path
 
 from sam_path_following.path_action import ActionComponent as ActC
@@ -53,11 +57,69 @@ class PathClient(SMARCActionClient):
 
 
     def run(self):
+        # DEBUGGING the trajectory tracking                                                                                                  
+        file_path = "/home/parallels/ros2_ws/src/smarc2/behaviours/sam/sam_diving_controller/sam_diving_controller/trajectoryComplexity3.csv"
+        np_path = self.read_csv_to_array(file_path)
+        
+        path = self.convert_np_path_to_trajectory(np_path)
+
+        self.send_path(path)
+
         pass
         #self.logger.info("Subscribing to mocap hydro point topic")
         #self.mocap_goal_sub = self._node.create_subscription(PoseStamped, 
         #                                                     ControlTopics.MOCAP_HYDROPOINT,
         #                                                     self.mocap_hydro_cb, 1)
+
+    def read_csv_to_array(self, file_path: str):                    
+        """                                                         
+        Reads a CSV file and converts the elements to a NumPy array.
+                                                                    
+        Parameters:                                                 
+        file_path (str): The path to the CSV file.                  
+                                                                    
+        Returns:                                                    
+        np.array: A NumPy array containing the CSV data.            
+        """                                                         
+        data = []                                                   
+        with open(file_path, 'r') as csvfile:                       
+            csvreader = csv.reader(csvfile)                         
+            next(csvreader)                                         
+            for row in csvreader:                                   
+                data.append([float(element) for element in row])    
+                                                                    
+        print(f"data: {np.array(data).shape}")
+        return np.array(data)
+
+    def convert_np_path_to_trajectory(self, np_path):
+        path = TrajectoryMPC()
+        path.header.frame_id = '/mocap'
+        for i in range(0,np_path.shape[0]):
+            i_wp = WpMPC()
+            i_wp.wp.pose.position.x = np_path[i,0]
+            i_wp.wp.pose.position.y = np_path[i,1]
+            i_wp.wp.pose.position.z = np_path[i,2]
+            i_wp.wp.pose.orientation.w = np_path[i,3]
+            i_wp.wp.pose.orientation.x = np_path[i,4]
+            i_wp.wp.pose.orientation.y = np_path[i,5]
+            i_wp.wp.pose.orientation.z = np_path[i,6]
+            i_wp.velocities.linear.x = np_path[i,7]  
+            i_wp.velocities.linear.y = np_path[i,8]  
+            i_wp.velocities.linear.z = np_path[i,9]  
+            i_wp.velocities.angular.x = np_path[i,10]
+            i_wp.velocities.angular.y = np_path[i,11]
+            i_wp.velocities.angular.z = np_path[i,12]
+            i_wp.nominal_control.vbs.value = np_path[i,13]
+            i_wp.nominal_control.lcg.value = np_path[i,14]
+            i_wp.nominal_control.rpms.thruster_1_rpm = int(np_path[i,17])
+            i_wp.nominal_control.rpms.thruster_2_rpm = int(np_path[i,18])
+            i_wp.nominal_control.thruster_angles.thruster_vertical_radians = np_path[i,15]
+            i_wp.nominal_control.thruster_angles.thruster_horizontal_radians = np_path[i,16]
+
+            path.trajectory.append(i_wp)
+
+        print(f"path: {type(path)}")
+        return path
 
 
     def send_path(self, path: Path):
@@ -125,12 +187,11 @@ class PathClient(SMARCActionClient):
 
 def main(args=None):
     rclpy.init(args=args)
-    node_name = "mocap_hydropoint_client"
+    node_name = "path_client"
     node = Node(node_name)
     action_type = ActionType(BaseAction)
-    setpoint = HydropointClient(node, "go_to_hydropoint", action_type)
-    setpoint.run()
-    # setpoint._test_geopoint()
+    path_client = PathClient(node, "sam/auv_trajectory_tracking", action_type)
+    path_client.run()
     rclpy.spin(node)
 
 

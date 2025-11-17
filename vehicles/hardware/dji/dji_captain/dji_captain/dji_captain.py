@@ -3,7 +3,7 @@
 import rclpy, sys, math, time
 import numpy as np
 from enum import Enum
-
+from typing import Optional
 
 from rclpy.node import Node
 from rclpy.executors import MultiThreadedExecutor
@@ -27,7 +27,7 @@ from dji_msgs.msg import Topics as DjiTopics
 
 
 from smarc_utilities.georef_utils import convert_latlon_to_utm, convert_utm_to_latlon
-from tf_transformations import euler_from_quaternion, quaternion_from_euler
+from tf_transformations import euler_from_quaternion, quaternion_from_euler, quaternion_matrix
 from tf2_geometry_msgs import do_transform_pose_stamped
 
 
@@ -68,41 +68,62 @@ class ControlModes(Enum):
 class DjiCaptain():
     def __init__(self, node: Node):
         self._prev_log_msg = ""
-
         self._node = node
-        self._node.declare_parameter("robot_name", "M350")
-        self._node.declare_parameter("controller_deadzone", 0.1)
-        self._node.declare_parameter("controller_yawrate_multiplier", 0.3)
-        # give an error-causing default value to force the user to pass this parameter every time
-        # there is no safe assumption that can be made for this.
-        self._node.declare_parameter("home_altitude_above_water", -1.0)
 
+
+        try:
+            self._RUNNING_IN_SIM : bool = self._node.get_parameter("use_sim_time").get_parameter_value().bool_value
+        except:
+            self._RUNNING_IN_SIM : bool = False
+
+        # Velocity controller parameters
+        #Tuning: For large movements, k_pose will have essentially no impact on the startup. r_sigma dominates in this range, with a larger r_sigma producing a smoother 
+        #start and a smaller r_sigma producing a faster start. When stopping, both variables matter. A larger r_sigma will produce more overshoot in the target position.
+        #A smaller k_pose will cause this to behave more like a normal proportional controller, reducing overshoot by making the deceleration happen over a greater 
+        #distance. A larger k_pose will decrease the time spent decelerating, which could either increase or decrease overshoot, depending on how large it is. The best 
+        #choice for these values is also dependent on JOY_PUB_MAX and even more so on JOY_PUB_PERIOD, so make sure to be very careful and retune after adjusting these.
+
+        if self._RUNNING_IN_SIM:
+            self._k_pose = .4
+            self._r_sigma = 0.8
+        else:
+            # these are tested and liked for the real M350 as of writing this (Oct 1st, 2025)
+            self._k_pose = .5 #proportional gain
+            self._r_sigma = .9 #"gain" on previous output, between 0 and 1 (kind of, the "desired output" is multiplied by 1 - r_sigma and the previous output is multiplied by r_sigma).
+
+
+        self._node.declare_parameter("robot_name", "M350")
         self.ROBOT_NAME : str = self._node.get_parameter("robot_name").get_parameter_value().string_value
         self._TF_NS : str = f"{self.ROBOT_NAME}/"
 
+        self._node.declare_parameter("controller_deadzone", 0.1)
         self._CONTROLLER_DEADZONE : float = self._node.get_parameter("controller_deadzone").get_parameter_value().double_value
+        self._node.declare_parameter("controller_yawrate_multiplier", 0.3)
         self._CONTROLLER_YAWRATE_MULTIPLIER : float = self._node.get_parameter("controller_yawrate_multiplier").get_parameter_value().double_value
         
-        self._HOME_ALT_ABOVE_WATER = self._node.get_parameter("home_altitude_above_water").get_parameter_value().double_value
 
+        # give an error-causing default value to force the user to pass this parameter every time
+        # there is no safe assumption that can be made for this.
+        self._node.declare_parameter("home_altitude_above_water", -1.0)
+        self._HOME_ALT_ABOVE_WATER = self._node.get_parameter("home_altitude_above_water").get_parameter_value().double_value
         if self._HOME_ALT_ABOVE_WATER <= 0:
-            self.log("Warning: home_altitude_above_water parameter not set or invalid! It is {self._HOME_ALT_ABOVE_WATER}")
+            self.log(f"Warning: home_altitude_above_water parameter not set or invalid! It is {self._HOME_ALT_ABOVE_WATER}")
             self.log("YOU MUST PASS THIS PARAMETER AND MAKE SURE IT IS CORRECT!")
             self.log("Captain will not run. Exiting.")
             sys.exit(1)
 
         
-        
+
         self._control_mode = ControlModes.FLUvel
         self._move_to_setpoint : PoseStamped | None = None
         self._joy_timer : None | Timer = None
         self._FLU_vel_joy_pub = node.create_publisher(Joy, PSDKTopics.FLUvel_JOY.value, qos_profile=10)
         self._ENU_vel_joy_pub = node.create_publisher(Joy, PSDKTopics.ENUvel_JOY.value, qos_profile=10)
         self._ENU_pos_joy_pub = node.create_publisher(Joy, PSDKTopics.ENUpos_JOY.value, qos_profile=10)
-        self._setpoint_received_at : float|None = None
         
         self.MOVE_TO_SETPOINT_MAX_AGE : float = 1.0 #Usually .5, set to 1 for sim testing seconds, how long we keep the move to setpoint before we consider it stale
-        self.JOY_PUB_MAX = 0.8
+        self._MAX_SETPOINT_DISTANCE : float = 50.0 # meters, max distance from current position to accept a move to setpoint
+        self.JOY_PUB_MAX = 1.5
         self.JOY_PUB_PERIOD = .1
 
         self._prev_joy_output : None | np.ndarray = None
@@ -124,6 +145,8 @@ class DjiCaptain():
         self.BASE_ENU_FRAME = self._TF_NS + DjiLinks.BASE_ENU
         self.HOME_FRAME = self._TF_NS + DjiLinks.HOME_POINT
         self._utm_labeled_frame : str | None = None
+        self.GIMBAL_FRAME = self._TF_NS + DjiLinks.GIMBAL_CAMERA_LINK
+        self.WINCH_FRAME = self._TF_NS + DjiLinks.WINCH_LINK
 
 
         self._base_pose_in_home : PoseStamped | None = None
@@ -148,6 +171,13 @@ class DjiCaptain():
         self._flying : bool = False
         self._carrying_payload : bool = False
         self._battery_percent : float | None = None
+        
+        # this could be a param, but really we likely will never run this on anything except
+        # the M350 which has a nominal 3kg max payload, so hardcoding it here is fine.
+        # I set it to 4kg to have some momentary overshoot margins due to motion etc.
+        self._MAX_LOAD_KG : float = 4.0 # kg, max payload we consider safe to carry
+        self._load_cell_weight : float | None = None
+
 
 
         topics = [PSDKTopics.__dict__[t].value for t in PSDKTopics.__members__.keys()]
@@ -175,6 +205,8 @@ class DjiCaptain():
         self._tf_pub_status = "Not published yet"
         self._smarc_pub_status = "Not published yet"
 
+        self._labeled_utm_frame_pub = node.create_publisher(String, DjiTopics.LABELED_UTM_TOPIC, qos_profile=10)
+
         # a simple TTS node should be listening to this (robot_name/speak)
         self._speak_pub = node.create_publisher(String, DjiTopics.TTS_TOPIC, qos_profile=10)
         self._controller_vibrator_pub = node.create_publisher(JoyFeedback, DjiTopics.CONTROLLER_VIBRATION_TOPIC, qos_profile=10)
@@ -183,7 +215,7 @@ class DjiCaptain():
         self._tf_buffer = Buffer()
         self._tf_listener = TransformListener(self._tf_buffer, self._node, spin_thread=True)
 
-
+        self._last_pubbed_fluvel_joy : Joy | None = None
 
         node.create_subscription(
             NavSatFix,
@@ -268,6 +300,13 @@ class DjiCaptain():
             DjiTopics.MOVE_TO_SETPOINT_TOPIC,
             self._move_to_setpoint_callback,
             qos_profile=10)
+        
+        node.create_subscription(
+            Float32,
+            DjiTopics.LOAD_CELL_WEIGHT_TOPIC,
+            self._load_cell_callback,
+            qos_profile=10)
+        
 
         
         # services to take and give-up control + take-off and land
@@ -348,17 +387,42 @@ class DjiCaptain():
     def now_stamp(self):
         return self._node.get_clock().now().to_msg()
     
+    @property
+    def now_time(self):
+        return self.now_stamp.sec + self.now_stamp.nanosec * 1e-9
+    
+    @property
+    def setpoint_received_at(self) -> float|None:
+        return self._move_to_setpoint.header.stamp.sec + self._move_to_setpoint.header.stamp.nanosec * 1e-9 if self._move_to_setpoint is not None else None
+    
     
     @property
     def status_str(self) -> str:
         s = "\nDjiCaptain Status:\n"
-        s += f"  UTM Frame: {self._utm_labeled_frame}\n"
-        s += f"  Home in UTM: {format_point_stamped(self._home_point_in_utm)}\n"
-
+        s += f"  Home in UTM: {format_point_stamped(self._home_point_in_utm)} ({self._utm_labeled_frame})\n"
         s += f"\n  Position in Home: {format_pose_stamped(self._base_pose_in_home)}\n"
-        s += f"  Heading: {self._heading_deg}\n"
-        s += f"  Course: {self._course_deg}\n"
-        s += f"  Battery Percent: {self._battery_percent} (ready:{self.READY_BATTERY_PERCENTAGE}, error:{self.ERROR_BATTERY_PERCENTAGE})\n"
+        
+        if self._battery_percent is not None:
+            s += f"  Battery Percent: {self._battery_percent:.2f} (ready:{self.READY_BATTERY_PERCENTAGE}, error:{self.ERROR_BATTERY_PERCENTAGE})\n"
+        else:
+            s += f"  Battery Percent: N/A\n"
+        
+        if self._load_cell_weight is not None:
+            s += f"  Load Cell Weight: {self._load_cell_weight:.2f} kg (max: {self._MAX_LOAD_KG} kg)\n"
+        else:
+            s += f"  Load Cell Weight: N/A\n"
+        
+        if self._base_pose_in_home is not None:
+            s += f"  Altitude from water: {self._base_pose_in_home.pose.position.z + self._HOME_ALT_ABOVE_WATER:.2f} m\n"
+        else:
+            s += f"  Altitude from water: N/A, base pose in home not known!\n"
+
+        if self._heading_deg is not None: s += f"  Heading: {self._heading_deg:.2f}\n"
+        else: s += f"  Heading: N/A\n"
+
+        if self._course_deg is not None: s += f"  Course: {self._course_deg:.2f}\n"
+        else: s += f"  Course: N/A\n"
+
         s += f"  Velocity Ground: {format_vector3_stamped(self._velocity_ground)}\n"
         s += f"  Angular Rate Ground: {format_vector3_stamped(self._angular_rate_ground)}\n"
         
@@ -367,8 +431,20 @@ class DjiCaptain():
 
         s += f"\n  Got Control: {self._got_control}\n"
         s += f"  Control Mode: {self._control_mode.value}\n"
-        s += f"  Current target setpoint: {format_pose_stamped(self._move_to_setpoint)}\n"
+        if self.setpoint_received_at is None and self._move_to_setpoint is None:
+            s += f"  No setpoint set.\n"
+        elif self.setpoint_received_at is None and self._move_to_setpoint is not None:
+            s += f"  Setpoint received time unknown, this is a bug! FIX THIS\n"
+        elif self.setpoint_received_at is not None and self._move_to_setpoint is not None:
+            s += f"  Current target setpoint: {format_pose_stamped(self._move_to_setpoint)} ({self.now_time - self.setpoint_received_at:.2f}s ago)\n"
         s += f"  Flying: {self._flying}\n"
+
+        if self._last_pubbed_fluvel_joy is not None:
+            a = self._last_pubbed_fluvel_joy.axes
+            t = self._last_pubbed_fluvel_joy.header.stamp.sec + self._last_pubbed_fluvel_joy.header.stamp.nanosec * 1e-9
+            s += f"  Last FLUVel Joy (XYZ): [{a[0]:.2f}, {a[1]:.2f}, {a[2]:.2f}, {a[3]:.2f}] ({self.now_time - t:.2f}s ago)\n"
+        else:
+            s += f"  Last FLUVel Joy: None\n"
 
         if self._vehicle_health.data == SmarcTopics.VEHICLE_HEALTH_READY:
             s += f"  Vehicle Health: READY\n"
@@ -426,26 +502,34 @@ class DjiCaptain():
     def _geo_alt_cb(self, msg: Float32):
         self._geo_altitude = msg.data
 
+    def _load_cell_callback(self, msg: Float32):
+        self._load_cell_weight = msg.data
+
 
     def _move_to_setpoint_callback(self, msg: PoseStamped):
-        # check if the message is too old
-        if (self.now_stamp.sec - msg.header.stamp.sec) + \
-           (self.now_stamp.nanosec - msg.header.stamp.nanosec) * 1e-9 > self.MOVE_TO_SETPOINT_MAX_AGE:
-            self.log(f"Move to setpoint message is older than {self.MOVE_TO_SETPOINT_MAX_AGE}s, ignoring it.")
-            self.log(f"Current time: {self.now_stamp.sec}.{self.now_stamp.nanosec}\nSetpoint Time: {msg.header.stamp.sec}.{msg.header.stamp.nanosec}")
+        # check if the message even has anything in it
+        if msg.pose.position.x == 0 and msg.pose.position.y == 0 and msg.pose.position.z == 0:
+            self.log(f"Move to setpoint message is all zeros, ignoring it.\nSetpoint msg:\n{msg}")
             self._move_to_setpoint = None
             return
         
-        # Check if the new setpoint is the same as the current one
-        if self._move_to_setpoint is not None:
-            curr = self._move_to_setpoint.pose.position
-            new = msg.pose.position
-            if abs(curr.x - new.x) > 1e-6 and \
-               abs(curr.y - new.y) > 1e-6 and \
-               abs(curr.z - new.z) > 1e-6:
-                self.log(f"New move to setpoint received: {format_pose_stamped(msg)}")
-                self._setpoint_received_at = time.time()
-                
+        msg_time = msg.header.stamp.sec + msg.header.stamp.nanosec * 1e-9
+        
+        # check if message time makes sense. sim time vs real time etc
+        if msg_time > self.now_time + 2.0:
+            s = f"Move to setpoint message time is >2s in the future, ignoring it. Probably because the publisher and captain have different time sources."
+            s += f"\nCurrent time: {self.now_time}\nSetpoint Time: {msg_time}"
+            self.log(s)
+            self._move_to_setpoint = None
+            return
+        
+        # check if the message is too old
+        if self.now_time - msg_time > self.MOVE_TO_SETPOINT_MAX_AGE:
+            s = f"Move to setpoint message is older than {self.MOVE_TO_SETPOINT_MAX_AGE}s, ignoring it."
+            s += f"\nCurrent time: {self.now_time}\nSetpoint Time: {msg_time}"
+            self.log(s)
+            self._move_to_setpoint = None
+            return
 
         if msg.header.frame_id != self.ODOM_FRAME:
             try:
@@ -457,11 +541,37 @@ class DjiCaptain():
                 )
                 self._move_to_setpoint = do_transform_pose_stamped(msg, tf)
             except Exception as e:
-                self.log(f"Failed to transform move to setpoint from {msg.header.frame_id} to {self.ODOM_FRAME}: {e}")
+                s = f"Could not transform move to setpoint from {msg.header.frame_id} to {self.ODOM_FRAME}: {e}"
+                s+= f"\nIgnoring this setpoint:\n{msg}"
+                self.log(s)
                 self._move_to_setpoint = None
                 return
         else:
             self._move_to_setpoint = msg
+
+
+        # At this point, the setpoint is in ODOM=HOME frame.
+
+        # Check if the new setpoint is the same as the current one
+        if self._move_to_setpoint is not None:
+            curr = self._move_to_setpoint.pose.position
+            new = msg.pose.position
+            if abs(curr.x - new.x) > 1e-6 and \
+               abs(curr.y - new.y) > 1e-6 and \
+               abs(curr.z - new.z) > 1e-6:
+                self.log(f"New move to setpoint received: {format_pose_stamped(msg)}")
+
+        # Check if it is too far
+        if self._base_pose_in_home is not None and self._move_to_setpoint is not None:
+            dx = self._move_to_setpoint.pose.position.x - self._base_pose_in_home.pose.position.x
+            dy = self._move_to_setpoint.pose.position.y - self._base_pose_in_home.pose.position.y
+            dz = self._move_to_setpoint.pose.position.z - self._base_pose_in_home.pose.position.z
+            dist = math.sqrt(dx*dx + dy*dy + dz*dz)
+            if dist > self._MAX_SETPOINT_DISTANCE:
+                self.log(f"Move to setpoint is too far away ({dist:.1f}m), ignoring it.")
+                self._speak("Setpoint too far away, ignoring it.")
+                self._move_to_setpoint = None
+                return
 
         # self.log(f"Move to setpoint received: {format_pose_stamped(self._move_to_setpoint)}")
         
@@ -473,7 +583,6 @@ class DjiCaptain():
             elif self._control_mode == ControlModes.ENUpos:
                 self._joy_timer = self._node.create_timer(self.JOY_PUB_PERIOD, self._move_towards_setpoint_ENUpos)
 
-            self._setpoint_received_at = time.time()
             self.log("Joy timer started to move with joy.")
 
 
@@ -485,6 +594,17 @@ class DjiCaptain():
         
     def _speak(self, msg: str):
         self._speak_pub.publish(String(data=msg))
+
+    def _pub_flu_vel_joy(self, joy: list[float]):
+        if abs(joy[0]) < 1e-5 and abs(joy[1]) < 1e-5 and abs(joy[2]) < 1e-5:
+            # publishing 0s on F,L,U axes crashes the PSDK bridge...
+            self.log("Not publishing zero joy on FLU velocity, ignoring.")
+            return
+        joy_msg = Joy()
+        joy_msg.header.stamp = self.now_stamp
+        joy_msg.axes = joy
+        self._FLU_vel_joy_pub.publish(joy_msg)
+        self._last_pubbed_fluvel_joy = joy_msg
 
     def _controller_callback(self, msg: Joy):
         if msg.header.stamp.sec == 0 and msg.header.stamp.nanosec == 0:
@@ -581,8 +701,7 @@ class DjiCaptain():
             joy_msg.header.stamp = self.now_stamp
             if self._control_mode == ControlModes.FLUvel:
                 # DJI expects Axes: [forward, left, up, yawrate]
-                joy_msg.axes = [RV, RH, LV, LH]
-                self._FLU_vel_joy_pub.publish(joy_msg)
+                self._pub_flu_vel_joy([RV, RH, LV, LH])
 
             elif self._control_mode == ControlModes.ENUvel:
                 self.log("Moving with ENU velocity control mode, be careful! Right stick is real East/North!")
@@ -612,7 +731,6 @@ class DjiCaptain():
         
         
     def _cancel_joy_timer(self):
-        self._setpoint_received_at = None
         self._move_to_setpoint = None
         self._prev_joy_output = None
         self.log("Setpoint discarded.")
@@ -622,20 +740,15 @@ class DjiCaptain():
             self.log("Joy timer cancelled.")
 
 
-      
-
-
     def _move_towards_setpoint_FLUvel(self):
 
-        if self._move_to_setpoint is None or self._setpoint_received_at is None:
+        if self._move_to_setpoint is None or self.setpoint_received_at is None:
             self.log("No move to setpoint set, cannot move with joy.")
             self._cancel_joy_timer()
             return
-        
-        if (self.now_stamp.sec - self._move_to_setpoint.header.stamp.sec) + \
-           (self.now_stamp.nanosec - self._move_to_setpoint.header.stamp.nanosec) * 1e-9 > self.MOVE_TO_SETPOINT_MAX_AGE:
+
+        if self.now_time - self.setpoint_received_at > self.MOVE_TO_SETPOINT_MAX_AGE:
             self.log(f"Move to setpoint message is older than {self.MOVE_TO_SETPOINT_MAX_AGE}s, cancelling joy timer.")
-            self._move_to_setpoint = None
             self._cancel_joy_timer()
             return
         
@@ -646,24 +759,10 @@ class DjiCaptain():
         
         if(self._velocity_ground == None):
             self.log(f"Ground Velocity not defined, cancelling Joy")
-            self._move_to_setpoint = None
             self._cancel_joy_timer()
             return
         
-        tf = self._tf_buffer.lookup_transform(
-            target_frame = self.BASE_FLAT_FRAME,
-            source_frame = self._velocity_ground.header.frame_id,
-            time=Time(seconds=0),
-            timeout=Duration(seconds=1))
-        
-        vel_pose = PoseStamped()
-        vel_pose.pose.position.x = self._velocity_ground.vector.x
-        vel_pose.pose.position.y = self._velocity_ground.vector.y
-        vel_pose.pose.position.z = self._velocity_ground.vector.z
-        FLU_vel = do_transform_pose_stamped(vel_pose, tf)
 
-        if (self._prev_joy_output is None):
-            self._prev_joy_output = np.array([FLU_vel.pose.position.x, FLU_vel.pose.position.y, FLU_vel.pose.position.z])
 
         try:
             tf_diff = self._tf_buffer.lookup_transform(
@@ -677,13 +776,9 @@ class DjiCaptain():
             self._cancel_joy_timer()
             return
         
-        #Tuning: For large movements, k_pose will have essentially no impact on the startup. r_sigma dominates in this range, with a larger r_sigma producing a smoother 
-        #start and a smaller r_sigma producing a faster start. When stopping, both variables matter. A larger r_sigma will produce more overshoot in the target position.
-        #A smaller k_pose will cause this to behave more like a normal proportional controller, reducing overshoot by making the deceleration happen over a greater 
-        #distance. A larger k_pose will decrease the time spent decelerating, which could either increase or decrease overshoot, depending on how large it is. The best 
-        #choice for these values is also dependent on JOY_PUB_MAX and even more so on JOY_PUB_PERIOD, so make sure to be very careful and retune after adjusting these.
-        k_pose = .5 #proportional gain
-        r_sigma = .9 #"gain" on previous output, between 0 and 1 (kind of, the "desired output" is multiplied by 1 - r_sigma and the previous output is multiplied by r_sigma).
+        
+        k_pose = self._k_pose
+        r_sigma = self._r_sigma
 
         e_forw = target_in_base.pose.position.x # error about each axis
         e_left = target_in_base.pose.position.y
@@ -693,29 +788,37 @@ class DjiCaptain():
         joy_left = k_pose * e_left
         joy_updn = k_pose * e_updn
 
+        if (self._prev_joy_output is None):
+            max_speed = 0.1
+            self._prev_joy_output = np.array([0.0, 0.0, 0.0])
+            self.log("No previous joy output, initializing to zero.")
+            self.log(f"Using low initial max speed of {max_speed} m/s for smooth start.")
+        else:
+            max_speed = self.JOY_PUB_MAX
+
         # limit the velocity to the maximum joy value
-        joy_net = np.array([joy_forw, joy_left, joy_updn])
-        joy_net = self._normalize_max_speed(joy_net)
+        joy_err = np.array([joy_forw, joy_left, joy_updn])
+        joy_err = self._normalize_max_speed(joy_err, max_speed)
 
-        joy_net = (1 - r_sigma) * joy_net + r_sigma * self._prev_joy_output
-        joy_net = self._normalize_max_speed(joy_net)
+        joy_net = (1 - r_sigma) * joy_err + r_sigma * self._prev_joy_output
+        joy_net = self._normalize_max_speed(joy_net, max_speed)
 
-        joy_msg = Joy()
-        joy_msg.header.stamp = self.now_stamp
-        joy_msg.axes = [joy_net[0], joy_net[1], joy_net[2], 0.0]  # Axes: [forward, left, up/down, yaw]
-        joy_msg.buttons = []
+        #self.log(f"\njoy_err: {joy_err}\njoy_pre: {self._prev_joy_output}\njoy_net: {joy_net}")
 
-        self._FLU_vel_joy_pub.publish(joy_msg)
+        J = [joy_net[0], joy_net[1], joy_net[2], 0.0]
+        self._pub_flu_vel_joy(J)
         self._prev_joy_output = np.array([joy_net[0], joy_net[1], joy_net[2]])
 
-    def _normalize_max_speed(self, joy_net):
+
+    def _normalize_max_speed(self, joy_net, max_speed):
         joy_norm = np.linalg.norm(joy_net)
-        if joy_norm > self.JOY_PUB_MAX:
-            joy_net = joy_net / joy_norm * self.JOY_PUB_MAX
+        if joy_norm > max_speed:
+            joy_net = joy_net / joy_norm * max_speed
         return joy_net
     
+
     def _move_towards_setpoint_ENUpos(self):
-        if self._move_to_setpoint is None or self._setpoint_received_at is None:
+        if self._move_to_setpoint is None or self.setpoint_received_at is None:
             self.log("No move to setpoint set, cannot move with joy.")
             self._cancel_joy_timer()
             return
@@ -725,8 +828,7 @@ class DjiCaptain():
             self._cancel_joy_timer()
             return
         
-        if (self.now_stamp.sec - self._move_to_setpoint.header.stamp.sec) + \
-           (self.now_stamp.nanosec - self._move_to_setpoint.header.stamp.nanosec) * 1e-9 > self.MOVE_TO_SETPOINT_MAX_AGE:
+        if self.now_time - self.setpoint_received_at > self.MOVE_TO_SETPOINT_MAX_AGE:
             self.log(f"Move to setpoint message is older than {self.MOVE_TO_SETPOINT_MAX_AGE}s, cancelling joy timer.")
             self._move_to_setpoint = None
             self._cancel_joy_timer()
@@ -981,8 +1083,9 @@ class DjiCaptain():
         gps_ok = self._gps_point_in_home is not None and self._home_point_in_utm is not None
         battery_ok = self._battery_percent is not None and self._battery_percent > self.READY_BATTERY_PERCENTAGE
         control_ok = self._got_control
+        weight_ok = self._load_cell_weight is None or self._load_cell_weight < self._MAX_LOAD_KG
 
-        if all([position_ok, gps_ok, battery_ok, control_ok]):
+        if all([position_ok, gps_ok, battery_ok, control_ok, weight_ok]):
             self._vehicle_health.data = SmarcTopics.VEHICLE_HEALTH_READY
 
 
@@ -994,13 +1097,16 @@ class DjiCaptain():
         self._flying = all(rpm > self.ESC_IDLE_RPM for rpm in speeds)
 
 
-
         if self._flying:
             battery_error = self._battery_percent is not None and self._battery_percent < self.ERROR_BATTERY_PERCENTAGE
-
             if battery_error:
                 self._vehicle_health.data = SmarcTopics.VEHICLE_HEALTH_ERROR
                 self.log(f"BATTERY BELOW LIMIT: {self._battery_percent:.2f} < {self.ERROR_BATTERY_PERCENTAGE:.2f}")
+
+            weight_error = self._load_cell_weight is not None and self._load_cell_weight > self._MAX_LOAD_KG
+            if weight_error:
+                self._vehicle_health.data = SmarcTopics.VEHICLE_HEALTH_ERROR
+                self.log(f"WEIGHT ABOVE LIMIT: {self._load_cell_weight:.2f} > {self._MAX_LOAD_KG:.2f}")
 
 
         self._vehicle_health_pub.publish(self._vehicle_health)
@@ -1011,7 +1117,7 @@ class DjiCaptain():
         tf_msg.transforms = []
         now = self.now_stamp
 
-        self._tf_pub_status = f"Published at {now.sec}.{now.nanosec} sec"
+        self._tf_pub_status = f"Publishing"
 
         # 0 transforms for home -> map, home -> odom, utm_z_b -> utm
         # for compatibility with other systems
@@ -1027,6 +1133,35 @@ class DjiCaptain():
         odom_in_home.header.frame_id = self.HOME_FRAME
         odom_in_home.child_frame_id = self.ODOM_FRAME
         tf_msg.transforms.append(odom_in_home)
+
+        # 0-transform for base_link -> gimbal_camera_link as well, for now
+        # until we have a better idea of where the gimbal is...
+        # and we do this in the _flat_ frame, so roll and pitch are zeroed out
+        # like the gimbal in theory does.
+        # this ignores the change in position due to drone attitude, but that is small
+        # and uncontrollable by us, so we'll ignore until that little bit matters.
+        gimbal_in_base = TransformStamped()
+        gimbal_in_base.header.stamp = now
+        gimbal_in_base.header.frame_id = self.BASE_FLAT_FRAME
+        gimbal_in_base.child_frame_id = self.GIMBAL_FRAME
+        tf_msg.transforms.append(gimbal_in_base)
+
+        # same as above, winch in base_link
+        winch_in_base = TransformStamped()
+        winch_in_base.header.stamp = now
+        winch_in_base.header.frame_id = self.BASE_FRAME
+        winch_in_base.child_frame_id = self.WINCH_FRAME
+        # Set offset for winch_link
+        # roughly measured in cad model, from the center of the battery lock to right leg T junction, 
+        # assuming the T junction is in-line with base_link origin
+        winch_in_base.transform.translation.x = 0.0 
+        winch_in_base.transform.translation.y = -0.194 
+        winch_in_base.transform.translation.z = -0.322
+        winch_in_base.transform.rotation.x = 0.0
+        winch_in_base.transform.rotation.y = 0.0
+        winch_in_base.transform.rotation.z = 0.0
+        winch_in_base.transform.rotation.w = 1.0
+        tf_msg.transforms.append(winch_in_base)
 
         if self._utm_labeled_frame is not None: 
             utms = TransformStamped()
@@ -1126,7 +1261,7 @@ class DjiCaptain():
         if self._base_pose_in_home is None or self._home_point_in_utm is None or self._gps_point_in_home is None:
             return
         
-        self._smarc_pub_status = f"Published at {self.now_stamp.sec}.{self.now_stamp.nanosec} sec"
+        self._smarc_pub_status = f"Published: "
 
         odom = Odometry()
         odom.header.stamp = self.now_stamp
@@ -1149,6 +1284,7 @@ class DjiCaptain():
             odom.twist.twist.angular.z = self._angular_rate_ground.vector.z
 
         self._odom_pub.publish(odom)
+        self._smarc_pub_status += "odom "
 
         # we need current position in latlon
         # so we first need to convert our odom-frame position to UTM
@@ -1168,13 +1304,16 @@ class DjiCaptain():
         self._pos_latlon_pub.publish(base_in_geopoint)
 
         self._altitude_pub.publish(Float32(data = alt_above_water))
+        self._smarc_pub_status += "latlon altitude "
 
 
         if self._heading_deg is not None:
             self._heading_pub.publish(Float32(data=self._heading_deg))
+            self._smarc_pub_status += "heading "
 
         if self._course_deg is not None:
             self._course_pub.publish(Float32(data=self._course_deg))
+            self._smarc_pub_status += "course "
 
         if self._velocity_ground is not None:
             speed = math.sqrt(
@@ -1182,9 +1321,15 @@ class DjiCaptain():
                 self._velocity_ground.vector.y ** 2
             )
             self._speed_pub.publish(Float32(data=speed))
+            self._smarc_pub_status += "speed "
 
         if self._battery_percent is not None:
             self._battery_percent_pub.publish(Float32(data=self._battery_percent))
+            self._smarc_pub_status += "battery_percent "
+
+        if self._utm_labeled_frame is not None:
+            self._labeled_utm_frame_pub.publish(String(data=self._utm_labeled_frame))
+            self._smarc_pub_status += "labeled_utm_frame "
                         
         
 
@@ -1210,6 +1355,81 @@ def format_vector3_stamped(vec: Vector3Stamped|None) -> str:
         if( vec is None):
             return "None"
         return f"(x={vec.vector.x:.3f}, y={vec.vector.y:.3f}, z={vec.vector.z:.3f}, frame_id={vec.header.frame_id})"
+
+
+
+# thanks chat?
+def transform_velocity_vector(
+    tf_buffer: Buffer,
+    vel_src: Vector3Stamped,
+    target_frame: str,
+    *,
+    time: Optional[Time] = None,
+    timeout: Duration = Duration(seconds=0, nanoseconds=5_000_000),  # 5ms = 5,000,000ns
+) -> Vector3Stamped:
+    """
+    Rotate a velocity Vector3Stamped from vel_src.header.frame_id -> target_frame.
+
+    Notes
+    -----
+    - Velocity is a *pure vector*: only the rotation from the TF transform is applied.
+    - Translation is ignored (as it should be for vectors).
+    - If source and target frames match, the input is returned (header updated).
+    """
+    if not vel_src.header.frame_id:
+        raise ValueError("vel_src.header.frame_id must be set")
+
+    if vel_src.header.frame_id == target_frame:
+        out = Vector3Stamped()
+        out.header.stamp = vel_src.header.stamp
+        out.header.frame_id = target_frame
+        out.vector = vel_src.vector  # shallow copy is fine for geometry_msgs
+        return out
+
+    # Default to "latest available transform" time if not provided
+    if time is None:
+        time = Time(seconds=0)
+
+    try:
+        # Transform that maps vectors from source_frame -> target_frame
+        tf = tf_buffer.lookup_transform(
+            target_frame=target_frame,
+            source_frame=vel_src.header.frame_id,
+            time=time,
+            timeout=timeout,
+        )
+    except :
+        raise RuntimeError(f"TF lookup failed from {vel_src.header.frame_id} to {target_frame}") 
+
+    # Extract and (defensively) normalize quaternion
+    qx, qy, qz, qw = (
+        tf.transform.rotation.x,
+        tf.transform.rotation.y,
+        tf.transform.rotation.z,
+        tf.transform.rotation.w,
+    )
+    q = np.array([qx, qy, qz, qw], dtype=float)
+    n = np.linalg.norm(q)
+    if n == 0.0:
+        raise RuntimeError("TF rotation quaternion has zero norm")
+    q /= n
+
+    # 3x3 rotation matrix
+    R = quaternion_matrix(q)[0:3, 0:3]
+
+    v_src = np.array(
+        [vel_src.vector.x, vel_src.vector.y, vel_src.vector.z],
+        dtype=float,
+    )
+    v_tgt = R @ v_src
+
+    vel_out = Vector3Stamped()
+    # Keep the original measurement time; you can also choose tf.header.stamp
+    vel_out.header.stamp = vel_src.header.stamp
+    vel_out.header.frame_id = target_frame
+    vel_out.vector.x, vel_out.vector.y, vel_out.vector.z = v_tgt.tolist()
+    return vel_out
+
     
     
 def main():

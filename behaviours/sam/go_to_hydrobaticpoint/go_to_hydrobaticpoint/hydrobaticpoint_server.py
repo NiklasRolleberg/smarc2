@@ -15,7 +15,7 @@ from smarc_action_base.smarc_action_base import (
     ActionType,
     SMARCActionServer,
 )
-from smarc_mission_msgs.action import BaseAction
+from smarc_msgs.action import BaseAction
 from smarc_msgs.msg import Topics as SmarcTopics
 from smarc_control_msgs.msg import Topics as ControlTopics
 
@@ -24,6 +24,7 @@ from tf2_ros import Buffer, TransformException, TransformListener
 
 from go_to_hydrobaticpoint.hydrobaticpoint_action import ActionComponent as ActC
 from go_to_hydrobaticpoint.hydrobaticpoint_action import HydrobaticPointAction
+import json
 
 KM_TO_METER = 1000
 
@@ -57,44 +58,46 @@ class HydropointServer(SMARCActionServer):
         )
         self.logger.set_level(rclpy.logging.LoggingSeverity.INFO)
         self._json_ops: HydrobaticPointAction = HydrobaticPointAction()
+        self._received_waypoint = False
+
 
     def declare_parameters(self):
         """Declares all of node's parameters in a single location."""
         node = self._node
-        self.robot_name = node.declare_parameter("robot_name", "Quadrotor").value
-        self._target_frame_param = node.declare_parameter("target_frame", "odom").value
+        # self.robot_name = node.declare_parameter("robot_name", "sam").value
+        # self._target_frame_param = node.declare_parameter("target_frame", "odom").value
 
-        self._distance_frame_param = node.declare_parameter(
-            "distance_frame",
-            "base_link",
-            ParameterDescriptor(
-                description="Frame for which the distance to target will be computed (usually base_link)"
-            ),
-        ).value
+        # self._distance_frame_param = node.declare_parameter(
+        #     "distance_frame",
+        #     "base_link",
+        #     ParameterDescriptor(
+        #         description="Frame for which the distance to target will be computed (usually base_link)"
+        #     ),
+        # ).value
 
-        self._distance_frame_suffix = node.declare_parameter(
-            "distance_frame_suffix",
-            "_gt",
-            ParameterDescriptor(
-                description="Frame suffix for distance frame. Commonly is '_gt' for ground truth if applicable"
-            ),
-        ).value
+        # self._distance_frame_suffix = node.declare_parameter(
+        #     "distance_frame_suffix",
+        #     "_gt",
+        #     ParameterDescriptor(
+        #         description="Frame suffix for distance frame. Commonly is '_gt' for ground truth if applicable"
+        #     ),
+        # ).value
 
-        self._frame_suffix = node.declare_parameter(
-            "frame_suffix",
-            "_gt",
-            ParameterDescriptor(
-                description="Frame suffix for transform. Commonly is '_gt' for ground truth if applicable"
-            ),
-        ).value
+        # self._frame_suffix = node.declare_parameter(
+        #     "frame_suffix",
+        #     "_gt",
+        #     ParameterDescriptor(
+        #         description="Frame suffix for transform. Commonly is '_gt' for ground truth if applicable"
+        #     ),
+        # ).value
 
-        self._setpoint_tol: float = node.declare_parameter(
-            "setpoint_tolerance",
-            0.25,
-            ParameterDescriptor(
-                description="Setpoint tolerance for when the goal is considered achieved (Euclidean norm)."
-            ),
-        ).value
+        # self._setpoint_tol: float = node.declare_parameter(
+        #     "setpoint_tolerance",
+        #     0.25,
+        #     ParameterDescriptor(
+        #         description="Setpoint tolerance for when the goal is considered achieved (Euclidean norm)."
+        #     ),
+        # ).value
 
         # self._setpoint_topic = node.declare_parameter(
         #     "setpoint_topic",
@@ -104,23 +107,24 @@ class HydropointServer(SMARCActionServer):
         #     ),
         # ).value
 
-        self._goal_threshold = (
-            node.declare_parameter(
-                "goal_threshold",
-                10,
-                ParameterDescriptor(
-                    description="Distance threshold in meters where a goal should be rejected. (Euclidean Norm)"
-                ),
-            ).value
-        )
+        # if not node.has_parameter("goal_threshold"):
+        #     self._goal_threshold = (
+        #         node.declare_parameter(
+        #             "goal_threshold",
+        #             10,
+        #             ParameterDescriptor(
+        #                 description="Distance threshold in meters where a goal should be rejected. (Euclidean Norm)"
+        #             )
+        #         ).value
+        #     )
 
-        self.target_frame = (
-            f"{self.robot_name}/{self._target_frame_param}{self._frame_suffix}"
-        )
-        self.logger.info(f"Target frame {self.target_frame}")
+        # self.target_frame = (
+        #     f"{self.robot_name}/{self._target_frame_param}{self._frame_suffix}"
+        # )
+        # self.logger.info(f"Target frame {self.target_frame}")
 
-        self.distance_frame = f"{self.robot_name}/{self._distance_frame_param}{self._distance_frame_suffix}"
-        self.logger.info(f"Distance frame {self.distance_frame}")
+        # self.distance_frame = f"{self.robot_name}/{self._distance_frame_param}{self._distance_frame_suffix}"
+        # self.logger.info(f"Distance frame {self.distance_frame}")
 
     @staticmethod
     def _str_posestamp(pose: PoseStamped):
@@ -235,7 +239,7 @@ class HydropointServer(SMARCActionServer):
             A populated ActionResult message
         """
         result_msg = self.action_type.Result
-        hydropoint = self._json_ops.decode(goal_handle.request.goal, ActC.GOAL)
+        hydropoint = self._json_ops.decode(goal_handle.request.goal, 0)
         self.logger.info(f"Hydropoint sent: {hydropoint}")
         # rate = self._node.create_rate()
 
@@ -266,9 +270,26 @@ class HydropointServer(SMARCActionServer):
 
         """
         goal_request = goal_request.goal
-        hydro_setpoint = self._json_ops.decode(goal_request, ActC.GOAL)
-        self.logger.info(f"Recieved setpoint at {hydro_setpoint}")
-        pose_stamped = hydro_setpoint
+        self.logger.info(f"Goal request {goal_request.data}")
+
+        fmt_dict = json.loads(goal_request.data)
+        # if component is 0: #ActionComponent.GOAL:
+        hydropoint = PoseStamped()
+        hydropoint.header.frame_id = str(fmt_dict["hydropoint"]["frame_id"])
+        hydropoint.pose.position.x = float(fmt_dict["hydropoint"]["position"]["x"])
+        hydropoint.pose.position.y = float(fmt_dict["hydropoint"]["position"]["y"])
+        hydropoint.pose.position.z = float(fmt_dict["hydropoint"]["position"]["z"])
+        hydropoint.pose.orientation.x = float(fmt_dict["hydropoint"]["orientation"]["x"])
+        hydropoint.pose.orientation.y = float(fmt_dict["hydropoint"]["orientation"]["y"])
+        hydropoint.pose.orientation.z = float(fmt_dict["hydropoint"]["orientation"]["z"])
+        hydropoint.pose.orientation.w = float(fmt_dict["hydropoint"]["orientation"]["w"])
+        # hydro_setpoint = self._json_ops.decode(goal_request, 0)
+
+        self.logger.info(f"Recieved setpoint at {hydropoint}")
+        if hydropoint == None:
+            return GoalResponse.REJECT
+        
+        pose_stamped = hydropoint
         try:
             dist = self.compute_distance(pose_stamped)
         except TransformException as err:
@@ -293,6 +314,7 @@ class HydropointServer(SMARCActionServer):
                 pass
             return GoalResponse.REJECT
         # Accepts as all criteria fulfilled
+        self._received_waypoint = True
         return GoalResponse.ACCEPT
 
     def cancel_callback(self, goal_handle: ServerGoalHandle) -> CancelResponse:

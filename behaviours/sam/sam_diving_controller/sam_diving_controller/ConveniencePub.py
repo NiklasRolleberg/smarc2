@@ -33,7 +33,8 @@ class ConveniencePub(IDivePub):
         self._error_pub = node.create_publisher(ControlError, ControlTopics.CONTROL_ERROR_CONV, 10)
         self._input_pub = node.create_publisher(ControlInput, ControlTopics.CONTROL_INPUT_CONV, 10)
         self._waypoint_pub = node.create_publisher(Odometry, ControlTopics.WAYPOINT_CONV, 10)
-        self._mpc_pred_pub = node.create_publisher(Path, ControlTopics.MPC_PRED, 10)
+        #self._mpc_pred_pub = node.create_publisher(Path, ControlTopics.MPC_PRED, 10)
+        self._mpc_pred_pub = node.create_publisher(Path, 'ctrl/mpc_pred', 10)
 
         self._state_msg = None
         self._ref_msg = None
