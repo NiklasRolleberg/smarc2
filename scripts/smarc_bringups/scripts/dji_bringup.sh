@@ -129,7 +129,8 @@ if [[ $USE_SIM_TIME = "True" ]]; then
 fi
 tmux send-keys "ros2 run alars alars_recover_action_server --ros-args -r __ns:=/$ROBOT_NAME \
 -p use_sim_time:=$USE_SIM_TIME \
--p setpoint_tolerance:=$ALARS_RECOVER_SETPOINT_TOLERANCE" C-m
+-p setpoint_tolerance:=$ALARS_RECOVER_SETPOINT_TOLERANCE \
+-p max_rope_length:=5.0" C-m
 
 
 tmux select-pane -t $SESSION:1.3
@@ -154,8 +155,16 @@ LOADED_WEIGHT_KG=1.2 # real empty sam + hook + rope weight is 1.78kg, just the h
 tmux new-window -t $SESSION:3 -n 'alars-bt'
 tmux rename-window "alars-bt"
 tmux select-window -t $SESSION:3
-tmux send-keys "ros2 run alars alars_bt --ros-args -r __ns:=/$ROBOT_NAME -p use_sim_time:=$USE_SIM_TIME \
--p loaded_weight_kg:=$LOADED_WEIGHT_KG" C-m
+
+tmux split-window -h -t $SESSION:3.0
+tmux select-pane -t $SESSION:3.0
+tmux send-keys "ros2 run alars alars_bt --ros-args -r __ns:=/$ROBOT_NAME \
+-p use_sim_time:=$USE_SIM_TIME \
+-p loaded_weight_kg:=$LOADED_WEIGHT_KG \
+-p max_detection_age:=15.0" C-m
+
+tmux select-pane -t $SESSION:3.1
+tmux send-keys "ros2 topic echo ${ROBOT_NAME}/alars_bt/status std_msgs/msg/String --field data" C-m
 
 
 # camera and detection node

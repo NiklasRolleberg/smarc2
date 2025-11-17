@@ -212,6 +212,7 @@ class SearchAction():
                 self._current_setpoint = None
             else:
                 self._loginfo(f"Distance to active setpoint: {distance_to_setpoint:.2f}m.")
+                if self._current_setpoint.header is None: return None
                 self._current_setpoint.header.stamp = self._node.get_clock().now().to_msg()
                 self._setpoint_pub.publish(self._current_setpoint)
                 return None
