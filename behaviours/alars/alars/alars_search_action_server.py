@@ -1,28 +1,74 @@
 #!/usr/bin/python
+
+import numpy as np
 import rclpy
 from rclpy.node import Node
 from rclpy.executors import MultiThreadedExecutor
-from geometry_msgs.msg import  PointStamped, PoseStamped
-from smarc_utilities.georef_utils import convert_latlon_to_utm
-from alars_auv_search_planner.search_planner_controller import SearchPlannerController
-from geographic_msgs.msg import GeoPoint
-from geometry_msgs.msg import PointStamped
-from smarc_action_base.gentler_action_server import GentlerActionServer
+from rclpy.time import Time, Duration
+
 import traceback
 
-class SearchPlannerAction():
-    def __init__(self,
-                 node: Node,
-                 action_name: str):
-        self._node = node
-        self.spcontroller = SearchPlannerController()
-        self.point_publisher = self._node.create_publisher(
-            msg_type = PoseStamped,
-            topic = self.spcontroller.model_params['topics.move_drone'], 
-            qos_profile= 10)
+from geometry_msgs.msg import  PointStamped, PoseStamped
+from geographic_msgs.msg import GeoPoint
+from geometry_msgs.msg import PointStamped
+from std_msgs.msg import Float32
+from nav_msgs.msg import Odometry
+from tf2_geometry_msgs import do_transform_pose_stamped
+from tf2_ros import Buffer, TransformListener
 
-        # Initialize the action server with the node and action name
-        # Give it all the necessary callbacks
+from smarc_action_base.gentler_action_server import GentlerActionServer
+from smarc_utilities.georef_utils import convert_latlon_to_utm
+from dji_msgs.msg import Topics as DJITopics
+from dji_msgs.msg import Links as DJILinks
+from smarc_msgs.msg import Topics as SmarcTopics
+
+class SearchAction():
+    def __init__(self,
+                 node: Node):
+        self._node : Node = node
+
+        self._node.declare_parameter('robot_name', 'M350')
+        self._robot_name : str = self._node.get_parameter('robot_name').get_parameter_value().string_value
+        self.ODOM_FRAME : str = self._robot_name + '/' + DJILinks.ODOM
+        self._drone_in_odom : None | PoseStamped = None
+
+        self._node.declare_parameter('setpoint_threshold', 2.0)
+        self.SETPOINT_THRESHOLD : float = self._node.get_parameter('setpoint_threshold').get_parameter_value().double_value
+
+        self._node.declare_parameter('spiral_arm_distance', 5.0)
+        self.SPIRAL_ARM_DISTANCE : float = self._node.get_parameter('spiral_arm_distance').get_parameter_value().double_value
+        
+        self._node.declare_parameter('min_setpoint_distance_to_drone', 2.0)
+        self.MIN_SETPOINT_DISTANCE_TO_DRONE : float = self._node.get_parameter('min_setpoint_distance_to_drone').get_parameter_value().double_value
+
+        self._node.declare_parameter('detection_freshness_threshold', 2.0)
+        self.DETECTION_FRESHNESS_THRESHOLD : float = self._node.get_parameter('detection_freshness_threshold').get_parameter_value().double_value
+
+        self._reset()
+        
+        self._setpoint_pub = self._node.create_publisher(
+            msg_type = PoseStamped,
+            topic = DJITopics.MOVE_TO_SETPOINT_TOPIC,
+            qos_profile= 10)
+        
+        self._node.create_subscription(Odometry,
+                                       SmarcTopics.ODOM_TOPIC,
+                                       self._odom_cb,
+                                       10)
+        
+        self._node.create_subscription(PointStamped, 
+                                       DJITopics.ESTIMATED_AUV_TOPIC,
+                                       self._auv_detection_cb,
+                                       10)
+        
+        self._node.create_subscription(PointStamped,
+                                       DJITopics.ESTIMATED_BUOY_TOPIC,
+                                       self._buoy_detection_cb,
+                                       10)
+
+        self._tf_buffer = Buffer()
+        self._tf_listener = TransformListener(self._tf_buffer, self._node, spin_thread=True)
+        
         self._as = GentlerActionServer(
             node,
             "alars_search",
@@ -31,178 +77,195 @@ class SearchPlannerAction():
             self._prepare_loop,
             self._loop_inner,
             self._give_feedback,
-            loop_frequency = 1/self.spcontroller.model_params['grid_map.update.rate'] # loop frequency defined by grid map update frequency
+            loop_frequency = 10
         )
+            
+    def _reset(self):
+        self._auv_detection : PointStamped = PointStamped()
+        self._buoy_detection : PointStamped = PointStamped()
+        self._spiral_progress : float = 0.0
+        self._search_center_odom : PoseStamped = PoseStamped()
+        self._search_radius : float = 0.0
+        self._radius_progress : float = -1.0
+        self._current_setpoint : PoseStamped | None = None
 
-        # Subscribe from detection topic to know when to stop search
-        try:
-            self._node.create_subscription(PointStamped, 
-                                        self.spcontroller.model_params["topics.sam_detection"],
-                                        self._sam_detection_callback,
-                                        10)
-        except:
-            self._node.get_logger().error("Sam detection topic wasn't updated on search_planner_controller.py (check TODO). Waiting for dji_msgs.Topics.msg to be updated.")
+    @property
+    def _now_float(self) -> float:
+        now_stamp = self._node.get_clock().now().to_msg()
+        return now_stamp.sec + now_stamp.nanosec * 1e-9
+    
+    def _msg_is_older_than(self, msg, age_s: float) -> bool:
+        if msg is None: return True
+        if msg.header is None: return True
+        if msg.header.stamp is None: return True
+        if msg.header.stamp.sec == 0 and msg.header.stamp.nanosec == 0:
+            return True
+        return self._now_float - (msg.header.stamp.sec + msg.header.stamp.nanosec * 1e-9) > age_s
 
-        # Initialize any necessary state for your specific action
-        # These have nothing to do with the action server itself
-        self.MAP_SEEN_MAX = 80
-        self._radius = 0
-        self._gps = None
-        self._reset_search()
+    def _loginfo(self, msg: str):
+        self._node.get_logger().info(f"[SearchAction] {msg}")
 
-    def _reset_search(self):
-        self.sam_position = None
-        self.map_seen = 0
-        self.spcontroller.init_done = False
+    def _auv_detection_cb(self, msg: PointStamped):
+        self._auv_detection = msg
+
+    def _buoy_detection_cb(self, msg: PointStamped):
+        self._buoy_detection = msg
+
+    def _odom_cb(self, msg: Odometry):
+        if self._drone_in_odom is None:
+            self._drone_in_odom = PoseStamped()
+            self._drone_in_odom.header.frame_id = self.ODOM_FRAME
+        self._drone_in_odom.header.stamp = msg.header.stamp
+        self._drone_in_odom.pose = msg.pose.pose
+
 
     def _on_goal_received(self, goal_request: dict) -> bool:
         """
         Here you would typically validate the goal request
         Return True to accept the goal, False to reject it
         """ 
-        self._node.get_logger().info(f"Received goal request: {goal_request}")
-        self._gps = GeoPoint()
-        self._radius = 0
+        self._loginfo(f"Received goal request: {goal_request}")
+        search_center_gp = GeoPoint()
 
         try:
             p = goal_request['search_position']
-            self._gps.latitude = p['latitude']
-            self._gps.longitude = p['longitude']
-            self._gps.altitude = float(p['altitude'])
-            self._radius = float(p['tolerance'])
-            if self._radius <= 0:
-                self._node.get_logger().error('Action goal had invalid radius(tolerance) value!')
+            search_center_gp.latitude = p['latitude']
+            search_center_gp.longitude = p['longitude']
+            search_center_gp.altitude = float(p['altitude'])
+            self._search_radius = float(p['tolerance'])
+            if self._search_radius <= 0:
+                self._loginfo('Action goal had invalid radius(tolerance) value!')
                 return False
-            if self._gps.altitude <= 0:
-                self._node.get_logger().error('Action goal had negative altitude value!')
+            if search_center_gp.altitude <= 0:
+                self._loginfo('Action goal had negative altitude value!')
                 return False
 
         except:
-            self._node.get_logger().error('Action goal could not be parsed?') 
+            self._loginfo('Action goal could not be parsed?') 
+            return False
+        
+        try:
+            # transform search center into ODOM frame
+            center_in_utm : PointStamped = convert_latlon_to_utm(search_center_gp)
+            tf = self._tf_buffer.lookup_transform(
+                target_frame = self.ODOM_FRAME,
+                source_frame = center_in_utm.header.frame_id,
+                time = Time(seconds=0),
+                timeout = Duration(seconds=1)
+            )
+            center_in_utm_ps = PoseStamped()
+            center_in_utm_ps.header = center_in_utm.header
+            center_in_utm_ps.pose.position = center_in_utm.point
+
+            self._search_center_odom = do_transform_pose_stamped(center_in_utm_ps, tf)
+            self._search_center_odom.pose.position.z = search_center_gp.altitude
+            
+        except:
+            self._loginfo('Could not transform search center into ODOM frame!')
+            traceback.print_exc()
             return False
 
-        self._node.get_logger().info(f"Accepted goal request with search position: {self._gps} and radius: {self._radius} m")
+        self._loginfo(f"Accepted goal request with search position: {self._search_center_odom} and radius: {self._search_radius} m")
         return True
+    
 
-    
-    
     def _on_cancel_received(self) -> bool:
-        """
-        Here you would typically handle the cancel request
-        Return True to accept the cancel, False to reject it
-        """
-        self._node.get_logger().warn("Received cancel request, cancelling search")
-        self._reset_search()
+        self._loginfo("Cancelled.")
+        self._reset()
         return True
 
-    
+
     def _prepare_loop(self) -> None:
+        return
+    
+
+    def _loop_inner(self) -> bool|None:
         """
-        Here you would typically set up any necessary state or resources
-        This is run once before the loop starts, after you accept the goal
-        """
-        self._node.get_logger().info("Preparing loop for search action execution")
-        if self._gps is None:
-            self._node.get_logger().error("Search position (self._gps) was None at _prepare_loop!")
-            return
-
-        self._reset_search()
-
-        # if activated by client, quadrotor doesn't perform initial movement (assigning purposes only)
-        self.spcontroller.drone_init_pos = PointStamped()
-        self.spcontroller.drone_init_pos.header.frame_id = self.spcontroller.model_params['frames.id.quadrotor_odom']      
-
-        # get search radius (range) and altitude 
-        self.spcontroller.grid_map.w = self.spcontroller.grid_map.h = 2*self._radius
-        self.spcontroller.planner.flight_height = self.spcontroller.planner.grid_map.flight_height = self._gps.altitude
-        GPS_ping_utm = convert_latlon_to_utm(self._gps)
-        self.spcontroller.GPS_ping = self.spcontroller.planner.transform_point(GPS_ping_utm, self.spcontroller.model_params['frames.id.map'])
-
-        # (re)initialize planner (including grid map)
-        self.spcontroller.grid_map.GPS_ping = self.spcontroller.GPS_ping
-        self.spcontroller.reinitialize_search()
-
-    def _loop_inner(self) -> bool | None:
-        """ 
-        Here you would typically perform the main logic of the action
         Return True to indicate success, False for failure, or None to continue
-        This is run after _prepare_loop call at "loop_frequency" Hz
         """
-
-        if round(self.map_seen*100,2) >= self.MAP_SEEN_MAX :
-            self._node.get_logger().warn(f"{self.MAP_SEEN_MAX} % of the map was seen without finding auv, failing search!")
-            self._reset_search()
+        # Sample the spiral until the point is X meters away from drone position
+        def spiral(b: float, theta: float, a:float = 0.0) -> np.ndarray:
+            r = a + b * theta
+            x = r * np.cos(theta)
+            y = r * np.sin(theta)
+            return np.array([x,y])
+        
+        if self._drone_in_odom is None:
+            self._loginfo("No odom received yet, cannot perform search...")
             return False
-        elif self.sam_position is not None:
-            self._node.get_logger().warn("SAM was detected, search success!")
-            self._reset_search()
+        
+        # if both the auv and buoy are detected, we are done too
+        auv_fresh = not self._msg_is_older_than(self._auv_detection, self.DETECTION_FRESHNESS_THRESHOLD)
+        buoy_fresh = not self._msg_is_older_than(self._buoy_detection, self.DETECTION_FRESHNESS_THRESHOLD)
+        if auv_fresh and buoy_fresh:
+            self._loginfo("Both AUV and Buoy detected, finishing search action successfully.")
             return True
         
-        # Update planner and grid map ()
-        try:
-            self.map_seen = self.spcontroller.update_grid_map()
-        except Exception as e:
-            self._node.get_logger().warn("### update_grid_map failed, failing action")
-            self._node.get_logger().warn(str(e))
-            self._node.get_logger().warn(traceback.format_exc())
-            self._reset_search()
-            return False
-        
-        try:
-            pose2pub = self.spcontroller.update_path()
-        except Exception as e:
-            self._node.get_logger().warn("### update_path failed, failing action")
-            self._node.get_logger().warn(str(e))
-            self._node.get_logger().warn(traceback.format_exc())
-            self._reset_search()
-            return False
-        
-        try:
-            if pose2pub is not None: 
-                if pose2pub.header.stamp.sec == 0 and pose2pub.header.stamp.nanosec == 0:
-                    pose2pub.header.stamp = self._node.get_clock().now().to_msg()
-                self.point_publisher.publish(pose2pub)
-        except Exception as e:
-            self._node.get_logger().warn("### point_publisher failed, failing action")
-            self._node.get_logger().warn(str(e))
-            self._node.get_logger().warn(traceback.format_exc())
-            self._reset_search()
-            return False
 
-        # everything went well, continue search
-        return None
+        # if there is a current setpoint, check if we are close enough to it
+        if self._current_setpoint is not None:
+            drone_pos = np.array([self._drone_in_odom.pose.position.x, self._drone_in_odom.pose.position.y])
+            setpoint_pos = np.array([self._current_setpoint.pose.position.x, self._current_setpoint.pose.position.y])
+            distance_to_setpoint = np.linalg.norm(drone_pos - setpoint_pos)
+            if distance_to_setpoint < self.SETPOINT_THRESHOLD:
+                self._loginfo(f"Reached current setpoint within {self.SETPOINT_THRESHOLD}m (distance: {distance_to_setpoint:.2f}m), computing next spiral point.")
+                self._current_setpoint = None
+            else:
+                self._loginfo(f"Distance to active setpoint: {distance_to_setpoint:.2f}m.")
+                if self._current_setpoint.header is None: return None
+                self._current_setpoint.header.stamp = self._node.get_clock().now().to_msg()
+                self._setpoint_pub.publish(self._current_setpoint)
+                return None
+
+        # either reached, or the first point
+        # compute next spiral point
+        drone_pos = np.array([self._drone_in_odom.pose.position.x, self._drone_in_odom.pose.position.y])
+        search_center = np.array([self._search_center_odom.pose.position.x, self._search_center_odom.pose.position.y])
         
-    
+
+        # if the drone is far, at 0 progress, we'll break from the loop
+        # if the drone is in-progress, this will advance the spiral until a far enough point is found
+        # and if during advancement, we run out of spiral (exceeding search radius), we finish the action
+        distance_to_drone = -1
+        while distance_to_drone < self.MIN_SETPOINT_DISTANCE_TO_DRONE:
+            dP = spiral(self.SPIRAL_ARM_DISTANCE, self._spiral_progress)
+            self._radius_progress = np.linalg.norm(dP)
+            self._loginfo(f"Spiral progress: {self._radius_progress:.2f}m / {self._search_radius:.2f}m, distance to drone: {distance_to_drone:.2f}m")
+            if self._radius_progress > self._search_radius:
+                self._loginfo("Completed search spiral, finishing action successfully.")
+                return True
+            spiral_point = search_center + dP
+            distance_to_drone = np.linalg.norm(spiral_point - drone_pos)
+            self._spiral_progress += 0.5
+
+        # publish setpoint
+        setpoint_msg = PoseStamped()
+        setpoint_msg.header.frame_id = self.ODOM_FRAME
+        setpoint_msg.header.stamp = self._node.get_clock().now().to_msg()
+        setpoint_msg.pose.position.x = float(spiral_point[0])
+        setpoint_msg.pose.position.y = float(spiral_point[1])
+        setpoint_msg.pose.position.z = self._search_center_odom.pose.position.z
+        setpoint_msg.pose.orientation.w = 1.0  # neutral orientation
+        self._setpoint_pub.publish(setpoint_msg)
+        self._current_setpoint = setpoint_msg
+        self._loginfo(f"New setpoint: {setpoint_msg.pose.position}")
+        return None 
+
+
+
     def _give_feedback(self) -> str:
-        feedback = f"{round(self.map_seen*100,2)} % of the map was seen"
-        self._node.get_logger().info(feedback)
-        # Here you would typically generate feedback for the action
-        # This is run after each _loop_inner call
-        return feedback
-    
-    def _sam_detection_callback(self, msg):
-        self._node.get_logger().info(f"SAM detected: {msg.point}")
-        self.sam_position = msg
+        return f"Radius progress: {self._radius_progress:.2f}/{self._search_radius:.2f}m"
 
 
+def main(args=None):
+    rclpy.init(args=args)
 
+    node = Node("alars_search_action_server")
 
-def main():
-    rclpy.init()
-    node = Node("search_auv_action_node")
-    
-    action = SearchPlannerAction(node, "alars_search")
+    search_action = SearchAction(node)
 
     executor = MultiThreadedExecutor()
-    executor.add_node(node)
-    executor.add_node(action.spcontroller)
-    executor.add_node(action.spcontroller.planner)
-    executor.add_node(action.spcontroller.planner.grid_map)
-    try:
-        executor.spin()
-    except KeyboardInterrupt:
-        node.get_logger().info("Shutting down Search AUV Action server")
-    finally:
-        executor.shutdown()
-        node.destroy_node()
-        rclpy.shutdown()
+    rclpy.spin(node, executor=executor)
+
+    node.destroy_node()
+    rclpy.shutdown()
