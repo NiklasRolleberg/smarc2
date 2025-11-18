@@ -156,9 +156,9 @@ class SearchAction():
             center_in_utm_ps = PoseStamped()
             center_in_utm_ps.header = center_in_utm.header
             center_in_utm_ps.pose.position = center_in_utm.point
+            center_in_utm_ps.pose.position.z = search_center_gp.altitude  # keep the altitude from the GeoPoint as is
 
             self._search_center_odom = do_transform_pose_stamped(center_in_utm_ps, tf)
-            self._search_center_odom.pose.position.z = search_center_gp.altitude
             
         except:
             self._loginfo('Could not transform search center into ODOM frame!')
@@ -212,6 +212,7 @@ class SearchAction():
                 self._current_setpoint = None
             else:
                 self._loginfo(f"Distance to active setpoint: {distance_to_setpoint:.2f}m.")
+                if self._current_setpoint is None: return None
                 if self._current_setpoint.header is None: return None
                 self._current_setpoint.header.stamp = self._node.get_clock().now().to_msg()
                 self._setpoint_pub.publish(self._current_setpoint)
