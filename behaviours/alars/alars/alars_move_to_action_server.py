@@ -161,6 +161,9 @@ class MoveToAction():
                                   self._drone_state.drone_in_map.pose.position.y,
                                   self._drone_state.drone_in_map.pose.position.z])
         
+        self.log(f"Current position: [{self_position[0]:.2f}, {self_position[1]:.2f}, {self_position[2]:.2f}]")
+        self.log(f"Goal position:    [{goal_position[0]:.2f}, {goal_position[1]:.2f}, {goal_position[2]:.2f}]")
+        
         # if vertical first mode, check if we need to move vertically first
         if self._VERTICAL_FIRST_MODE:
             vertical_error = abs(goal_position[2] - self_position[2])

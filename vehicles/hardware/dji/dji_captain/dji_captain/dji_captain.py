@@ -523,52 +523,18 @@ class DjiCaptain():
             self._move_to_setpoint = None
             return
 
-
-        if msg.header.frame_id != self.ODOM_FRAME:
-            try:
-                tf = self._tf_buffer.lookup_transform(
-                    self.ODOM_FRAME, 
-                    msg.header.frame_id, 
-                    Time(seconds=0),
-                    timeout=Duration(seconds=1)
-                )
-                self._move_to_setpoint = do_transform_pose_stamped(msg, tf)
-            except Exception as e:
-                s = f"Could not transform move to setpoint from {msg.header.frame_id} to {self.ODOM_FRAME}: {e}"
-                s+= f"\nIgnoring this setpoint:\n{msg}"
-                self.log(s)
-                self._move_to_setpoint = None
-                return
-        else:
-            self._move_to_setpoint = msg
-
-        self.log(f"Move to setpoint message received:\n{msg}")
-        self.log(f"Transformed move to setpoint to ODOM frame:\n{self._move_to_setpoint}")
-
-        # At this point, the setpoint is in ODOM=HOME frame.
-
-        # Check if the new setpoint is the same as the current one
-        if self._move_to_setpoint is not None:
-            curr = self._move_to_setpoint.pose.position
-            new = msg.pose.position
-            if abs(curr.x - new.x) > 1e-6 and \
-               abs(curr.y - new.y) > 1e-6 and \
-               abs(curr.z - new.z) > 1e-6:
-                self.log(f"New move to setpoint received: {format_pose_stamped(msg)}")
-
-        # Check if it is too far
-        if self._base_pose_in_home is not None and self._move_to_setpoint is not None:
-            dx = self._move_to_setpoint.pose.position.x - self._base_pose_in_home.pose.position.x
-            dy = self._move_to_setpoint.pose.position.y - self._base_pose_in_home.pose.position.y
-            dz = self._move_to_setpoint.pose.position.z - self._base_pose_in_home.pose.position.z
-            dist = math.sqrt(dx*dx + dy*dy + dz*dz)
-            if dist > self._MAX_SETPOINT_DISTANCE:
-                self.log(f"Move to setpoint is too far away ({dist:.1f}m), ignoring it.")
-                self._speak("Setpoint too far away, ignoring it.")
-                self._move_to_setpoint = None
-                return
-
-        # self.log(f"Move to setpoint received: {format_pose_stamped(self._move_to_setpoint)}")
+        # transform it into base link frame
+        try:
+            transform = self._tf_buffer.lookup_transform(
+                self.BASE_FLAT_FRAME,
+                msg.header.frame_id,
+                Time())
+            self._move_to_setpoint = do_transform_pose_stamped(msg, transform)
+        except Exception as e:
+            self.log(f"Failed to transform move to setpoint from {msg.header.frame_id} to {self.BASE_FLAT_FRAME}, ignoring it. Error: {e}")
+            self._move_to_setpoint = None
+            return
+        
         
         if self._joy_timer is None:
             self._joy_timer = self._node.create_timer(self.JOY_PUB_PERIOD, self._move_towards_setpoint_FLUvel)
@@ -691,6 +657,7 @@ class DjiCaptain():
 
 
     def _move_towards_setpoint_FLUvel(self):
+        # assumes move_to_setpoint is in BASE_FLAT_FRAME already
 
         if self._move_to_setpoint is None or self.setpoint_received_at is None:
             self.log("No move to setpoint set, cannot move with joy.")
@@ -712,37 +679,36 @@ class DjiCaptain():
             self._cancel_joy_timer()
             return
         
+        
 
+        e_forw = self._move_to_setpoint.pose.position.x # error about each axis
+        e_left = self._move_to_setpoint.pose.position.y
+        e_updn = self._move_to_setpoint.pose.position.z # we like mirrors around a point
 
-        try:
-            tf_diff = self._tf_buffer.lookup_transform(
-                target_frame = self.BASE_FLAT_FRAME,
-                source_frame = self._move_to_setpoint.header.frame_id,
-                time=Time(seconds=0),
-                timeout=Duration(seconds=1))
-            target_in_base = do_transform_pose_stamped(self._move_to_setpoint, tf_diff)
-        except Exception as e:
-            self.log(f"Failed to transform move to setpoint from {self._move_to_setpoint.header.frame_id} to {self.BASE_FLAT_FRAME}, cancelling joy timer.: {e}")
+        if (abs(e_forw) < 0.1 and abs(e_left) < 0.1 and abs(e_updn) < 0.1):
+            self.log("Reached setpoint within 10cm on all axes, cancelling joy timer.")
+            self._cancel_joy_timer()
+            return
+
+        if np.linalg.norm([e_forw, e_left]) > self._MAX_SETPOINT_DISTANCE:
+            self.log(f"Setpoint is more than {self._MAX_SETPOINT_DISTANCE}m away horizontally, cancelling joy timer.")
             self._cancel_joy_timer()
             return
         
-        
-        k_pose = self._k_pose
-        r_sigma = self._r_sigma
+        if abs(e_updn) > self._MAX_SETPOINT_DISTANCE:
+            self.log(f"Setpoint is more than {self._MAX_SETPOINT_DISTANCE}m away vertically, cancelling joy timer.")
+            self._cancel_joy_timer()
+            return
 
-        e_forw = target_in_base.pose.position.x # error about each axis
-        e_left = target_in_base.pose.position.y
-        e_updn = target_in_base.pose.position.z # we like mirrors around a point
 
-        joy_forw = k_pose * e_forw
-        joy_left = k_pose * e_left
-        joy_updn = k_pose * e_updn
+        joy_forw = self._k_pose * e_forw
+        joy_left = self._k_pose * e_left
+        joy_updn = self._k_pose * e_updn
 
         if (self._prev_joy_output is None):
             max_speed = 0.1
             self._prev_joy_output = np.array([0.0, 0.0, 0.0])
-            self.log("No previous joy output, initializing to zero.")
-            self.log(f"Using low initial max speed of {max_speed} m/s for smooth start.")
+            self.log(f"No previous joy output using low initial max speed of {max_speed} m/s for smooth start.")
         else:
             max_speed = self.JOY_PUB_MAX
 
@@ -750,7 +716,7 @@ class DjiCaptain():
         joy_err = np.array([joy_forw, joy_left, joy_updn])
         joy_err = self._normalize_max_speed(joy_err, max_speed)
 
-        joy_net = (1 - r_sigma) * joy_err + r_sigma * self._prev_joy_output
+        joy_net = (1 - self._r_sigma) * joy_err + self._r_sigma * self._prev_joy_output
         joy_net = self._normalize_max_speed(joy_net, max_speed)
 
         #self.log(f"\njoy_err: {joy_err}\njoy_pre: {self._prev_joy_output}\njoy_net: {joy_net}")
