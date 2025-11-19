@@ -43,7 +43,7 @@ class PSDKTopics(Enum):
     ALTITUDE            = WRAPPER_NS + "altitude_sea_level"
     CONTROL_MODE        = WRAPPER_NS + "control_mode"
     BATTERY             = WRAPPER_NS + "battery" 
-    VELOCITY_GROUND_FSD  = WRAPPER_NS + "velocity_ground_fused"
+    VELOCITY_GROUND_FSD = WRAPPER_NS + "velocity_ground_fused"
     ANGULAR_RATE_GND_FSD= WRAPPER_NS + "angular_rate_ground_fused"
     ESC_DATA            = WRAPPER_NS + "esc_data"
     RC                  = WRAPPER_NS + "rc"
@@ -54,15 +54,9 @@ class PSDKTopics(Enum):
     LAND_SRV            = WRAPPER_NS + "land"
 
     FLUvel_JOY          = WRAPPER_NS + "flight_control_setpoint_FLUvelocity_yawrate"
-    ENUvel_JOY          = WRAPPER_NS + "flight_control_setpoint_ENUvelocity_yawrate"
-    ENUpos_JOY          = WRAPPER_NS + "flight_control_setpoint_ENUposition_yaw"    
+    # ENUvel_JOY          = WRAPPER_NS + "flight_control_setpoint_ENUvelocity_yawrate"
+    # ENUpos_JOY          = WRAPPER_NS + "flight_control_setpoint_ENUposition_yaw"    
 
-
-
-class ControlModes(Enum):
-    FLUvel = "FLU Velocity"
-    ENUvel = "ENU Velocity"
-    ENUpos = "ENU Position"
 
 
 class DjiCaptain():
@@ -114,12 +108,10 @@ class DjiCaptain():
 
         
 
-        self._control_mode = ControlModes.FLUvel
         self._move_to_setpoint : PoseStamped | None = None
         self._joy_timer : None | Timer = None
         self._FLU_vel_joy_pub = node.create_publisher(Joy, PSDKTopics.FLUvel_JOY.value, qos_profile=10)
-        # self._ENU_vel_joy_pub = node.create_publisher(Joy, PSDKTopics.ENUvel_JOY.value, qos_profile=10)
-        # self._ENU_pos_joy_pub = node.create_publisher(Joy, PSDKTopics.ENUpos_JOY.value, qos_profile=10)
+        
         
         self.MOVE_TO_SETPOINT_MAX_AGE : float = 1.0 #Usually .5, set to 1 for sim testing seconds, how long we keep the move to setpoint before we consider it stale
         self._MAX_SETPOINT_DISTANCE : float = 50.0 # meters, max distance from current position to accept a move to setpoint
@@ -142,18 +134,14 @@ class DjiCaptain():
         self.MAP_FRAME = self._TF_NS + DjiLinks.MAP
         self.BASE_FRAME = self._TF_NS + DjiLinks.BASE_LINK
         self.BASE_FLAT_FRAME = self._TF_NS + DjiLinks.BASE_FLAT
-        self.BASE_ENU_FRAME = self._TF_NS + DjiLinks.BASE_ENU
         self.HOME_FRAME = self._TF_NS + DjiLinks.HOME_POINT
-        self.HOME_AT_SURFACE_FRAME = self._TF_NS + DjiLinks.HOME_AT_SURFACE
-        self._utm_labeled_frame : str | None = None
         self.GIMBAL_FRAME = self._TF_NS + DjiLinks.GIMBAL_CAMERA_LINK
         self.WINCH_FRAME = self._TF_NS + DjiLinks.WINCH_LINK
 
+        self._utm_zb_label : str | None = None
 
         self._base_pose_in_home : PoseStamped | None = None
-        self._base_pose_in_home_at_surface : PoseStamped | None = None
         self._base_pose_flat_in_home : PoseStamped | None = None
-        self._base_pose_ENU_in_home : PoseStamped | None = None
         self._home_point_in_utm : PointStamped | None = None
         self._home_geo_altitude : float | None = None
         self._gps_point_in_home : PointStamped | None = None
@@ -401,7 +389,7 @@ class DjiCaptain():
     @property
     def status_str(self) -> str:
         s = "\nDjiCaptain Status:\n"
-        s += f"  Home in UTM: {format_point_stamped(self._home_point_in_utm)} ({self._utm_labeled_frame})\n"
+        s += f"  Home in UTM: {format_point_stamped(self._home_point_in_utm)} ({self._utm_zb_label})\n"
         s += f"\n  Position in Home: {format_pose_stamped(self._base_pose_in_home)}\n"
         
         if self._battery_percent is not None:
@@ -429,16 +417,18 @@ class DjiCaptain():
         s += f"  Angular Rate Ground: {format_vector3_stamped(self._angular_rate_ground)}\n"
         
         s += f"\n  Smarc Topics: {self._smarc_pub_status}\n"
+        
         s += f"  TF: {self._tf_pub_status}\n"
 
         s += f"\n  Got Control: {self._got_control}\n"
-        s += f"  Control Mode: {self._control_mode.value}\n"
+        
         if self.setpoint_received_at is None and self._move_to_setpoint is None:
             s += f"  No setpoint set.\n"
         elif self.setpoint_received_at is None and self._move_to_setpoint is not None:
             s += f"  Setpoint received time unknown, this is a bug! FIX THIS\n"
         elif self.setpoint_received_at is not None and self._move_to_setpoint is not None:
             s += f"  Current target setpoint: {format_pose_stamped(self._move_to_setpoint)} ({self.now_time - self.setpoint_received_at:.2f}s ago)\n"
+        
         s += f"  Flying: {self._flying}\n"
 
         if self._last_pubbed_fluvel_joy is not None:
@@ -581,13 +571,7 @@ class DjiCaptain():
         # self.log(f"Move to setpoint received: {format_pose_stamped(self._move_to_setpoint)}")
         
         if self._joy_timer is None:
-            if self._control_mode == ControlModes.FLUvel:
-                self._joy_timer = self._node.create_timer(self.JOY_PUB_PERIOD, self._move_towards_setpoint_FLUvel)
-            elif self._control_mode == ControlModes.ENUvel:
-                self._joy_timer = self._node.create_timer(self.JOY_PUB_PERIOD, self._move_towards_setpoint_ENUvel)
-            elif self._control_mode == ControlModes.ENUpos:
-                self._joy_timer = self._node.create_timer(self.JOY_PUB_PERIOD, self._move_towards_setpoint_ENUpos)
-
+            self._joy_timer = self._node.create_timer(self.JOY_PUB_PERIOD, self._move_towards_setpoint_FLUvel)
             self.log("Joy timer started to move with joy.")
 
 
@@ -687,31 +671,13 @@ class DjiCaptain():
                 self.JOY_PUB_MAX = 0.0
             self.log(f"Joy max decreased to {self.JOY_PUB_MAX:.2f} (m/s)")
             self._speak(f"Joy max {self.JOY_PUB_MAX:.1f}")
-
-
-        control_modes = list(ControlModes)
-        if left:
-            self._control_mode = control_modes[(control_modes.index(self._control_mode) - 1) % len(control_modes)]
-            self.log(f"Control mode changed to {self._control_mode.value}")
-            self._speak(f"Control mode {self._control_mode.value}")
-        if right:
-            self._control_mode = control_modes[(control_modes.index(self._control_mode) + 1) % len(control_modes)]
-            self.log(f"Control mode changed to {self._control_mode.value}")
-            self._speak(f"Control mode {self._control_mode.value}")
-        
-
-            
+    
         if self._got_control and sticks_pushed:
             joy_msg = Joy()
             joy_msg.header.stamp = self.now_stamp
-            if self._control_mode == ControlModes.FLUvel:
-                # DJI expects Axes: [forward, left, up, yawrate]
-                self._pub_flu_vel_joy([RV, RH, LV, LH])
-            else:
-                self.log(f"Controller input received but control mode {self._control_mode.value} not implemented yet.")
-                # implement other control modes here as needed
-                
-
+            # DJI expects Axes: [forward, left, up, yawrate]
+            self._pub_flu_vel_joy([RV, RH, LV, LH])
+        
         
         
     def _cancel_joy_timer(self):
@@ -875,15 +841,13 @@ class DjiCaptain():
             self.log("Home point not set, ignoring position fused until it is...")
             return
         
-        if self._base_pose_in_home is None or self._base_pose_flat_in_home is None or self._base_pose_ENU_in_home is None or self._base_pose_in_home_at_surface is None:
+        if self._base_pose_in_home is None or self._base_pose_flat_in_home is None or self._base_pose_ENU_in_home is None:
             self._base_pose_in_home = PoseStamped()
             self._base_pose_in_home.header.frame_id = self.ODOM_FRAME
             self._base_pose_flat_in_home = PoseStamped()
             self._base_pose_flat_in_home.header.frame_id = self.ODOM_FRAME
             self._base_pose_ENU_in_home = PoseStamped()
             self._base_pose_ENU_in_home.header.frame_id = self.ODOM_FRAME
-            self._base_pose_in_home_at_surface = PoseStamped()
-            self._base_pose_in_home_at_surface.header.frame_id = self.HOME_AT_SURFACE_FRAME
             self.log("Base pose initialized in home frame.")
             
         self._base_pose_in_home.pose.position.x = msg.position.x
@@ -895,11 +859,6 @@ class DjiCaptain():
         self._base_pose_flat_in_home.header.stamp = self._base_pose_in_home.header.stamp
         self._base_pose_ENU_in_home.pose.position = self._base_pose_in_home.pose.position
         self._base_pose_ENU_in_home.header.stamp = self._base_pose_in_home.header.stamp
-
-        self._base_pose_in_home_at_surface.pose.position.x = self._base_pose_in_home.pose.position.x
-        self._base_pose_in_home_at_surface.pose.position.y = self._base_pose_in_home.pose.position.y
-        self._base_pose_in_home_at_surface.pose.position.z = self._base_pose_in_home.pose.position.z + self._HOME_ALT_ABOVE_WATER # because this frame is lower by the same amount wrt to home
-        self._base_pose_in_home_at_surface.header.stamp = self._base_pose_in_home.header.stamp
         
 
     def _attitude_callback(self, msg: QuaternionStamped):
@@ -977,9 +936,9 @@ class DjiCaptain():
         self._gps_point_in_home.point.z = self._geo_altitude - self._home_geo_altitude
         self._gps_point_in_home.header.stamp = self.now_stamp
 
-        if self._utm_labeled_frame is None:
-            self._utm_labeled_frame = utm.header.frame_id
-            self.log(f"Setting UTM labeled frame to: {self._utm_labeled_frame}")
+        if self._utm_zb_label is None:
+            self._utm_zb_label = utm.header.frame_id
+            self.log(f"Setting UTM labeled frame to: {self._utm_zb_label}")
 
 
     def _rtk_cb(self, msg: NavSatFix):
@@ -1049,15 +1008,8 @@ class DjiCaptain():
 
         self._tf_pub_status = f"Publishing"
 
-        # 0 transforms for home -> map, home -> odom, utm_z_b -> utm
-        # for compatibility with other systems
+        # 0 transforms for home -> odom for compatibility with other systems
         # and so we can use "odom" for all things that relate to home point
-        map_in_home = TransformStamped()
-        map_in_home.header.stamp = now
-        map_in_home.header.frame_id = self.HOME_FRAME
-        map_in_home.child_frame_id = self.MAP_FRAME
-        tf_msg.transforms.append(map_in_home)
-
         odom_in_home = TransformStamped()
         odom_in_home.header.stamp = now
         odom_in_home.header.frame_id = self.HOME_FRAME
@@ -1093,10 +1045,10 @@ class DjiCaptain():
         winch_in_base.transform.rotation.w = 1.0
         tf_msg.transforms.append(winch_in_base)
 
-        if self._utm_labeled_frame is not None: 
+        if self._utm_zb_label is not None: 
             utms = TransformStamped()
             utms.header.stamp = now
-            utms.header.frame_id = self._utm_labeled_frame
+            utms.header.frame_id = self._utm_zb_label
             utms.child_frame_id = DjiLinks.UTM 
             tf_msg.transforms.append(utms)
 
@@ -1115,7 +1067,7 @@ class DjiCaptain():
             home_surface_tf = TransformStamped()
             home_surface_tf.header.stamp = now
             home_surface_tf.header.frame_id = DjiLinks.UTM
-            home_surface_tf.child_frame_id = self.HOME_AT_SURFACE_FRAME
+            home_surface_tf.child_frame_id = self.MAP_FRAME
             home_surface_tf.transform.translation.x = self._home_point_in_utm.point.x
             home_surface_tf.transform.translation.y = self._home_point_in_utm.point.y
             home_surface_tf.transform.translation.z = 0.0
@@ -1146,18 +1098,7 @@ class DjiCaptain():
             base_flat_in_home.transform.translation.z = self._base_pose_flat_in_home.pose.position.z
             tf_msg.transforms.append(base_flat_in_home)
 
-        if self._base_pose_ENU_in_home is not None:
-            # base ENU in odom
-            base_ENU_in_home = TransformStamped()
-            base_ENU_in_home.header.stamp = now
-            base_ENU_in_home.header.frame_id = self.ODOM_FRAME
-            base_ENU_in_home.child_frame_id = self.BASE_ENU_FRAME
-            base_ENU_in_home.transform.rotation = self._base_pose_ENU_in_home.pose.orientation
-            base_ENU_in_home.transform.translation.x = self._base_pose_ENU_in_home.pose.position.x
-            base_ENU_in_home.transform.translation.y = self._base_pose_ENU_in_home.pose.position.y
-            base_ENU_in_home.transform.translation.z = self._base_pose_ENU_in_home.pose.position.z
-            tf_msg.transforms.append(base_ENU_in_home)
-
+        
 
         if self._gps_point_in_home is not None:
             # GPS point in Home
@@ -1231,7 +1172,7 @@ class DjiCaptain():
             self.log("Home point or base pose not set, cannot publish latlon position.")
             return
         base_in_utm = PointStamped()
-        base_in_utm.header.frame_id = self._utm_labeled_frame
+        base_in_utm.header.frame_id = self._utm_zb_label
         base_in_utm.point.x = self._base_pose_in_home.pose.position.x + self._home_point_in_utm.point.x
         base_in_utm.point.y = self._base_pose_in_home.pose.position.y + self._home_point_in_utm.point.y
         base_in_geopoint = convert_utm_to_latlon(base_in_utm)
@@ -1266,8 +1207,8 @@ class DjiCaptain():
             self._battery_percent_pub.publish(Float32(data=self._battery_percent))
             self._smarc_pub_status += "battery_percent "
 
-        if self._utm_labeled_frame is not None:
-            self._labeled_utm_frame_pub.publish(String(data=self._utm_labeled_frame))
+        if self._utm_zb_label is not None:
+            self._labeled_utm_frame_pub.publish(String(data=self._utm_zb_label))
             self._smarc_pub_status += "labeled_utm_frame "
                         
         

@@ -23,6 +23,8 @@ from dji_msgs.msg import Topics as DJITopics
 from dji_msgs.msg import Links as DJILinks
 from smarc_msgs.msg import Topics as SmarcTopics
 
+from alars.alars_common import DroneState
+
 class RecoveryPhases(enum.Enum):
     IDLE = 0
     MOVING_TO_DIPPING_POSITION = 1
@@ -37,8 +39,9 @@ class RecoverAction():
 
         self._node.declare_parameter('robot_name', 'M350')
         self._robot_name : str = self._node.get_parameter('robot_name').get_parameter_value().string_value
-        self.ODOM_FRAME : str = self._robot_name + '/' + DJILinks.ODOM
-        self._drone_in_odom : None | PoseStamped = None
+        self.MAP_FRAME : str = self._robot_name + '/' + DJILinks.MAP
+
+        self._drone_state = DroneState(node, self._robot_name)
 
         self._node.declare_parameter('max_rope_length', 3.0)
         self.MAX_ROPE_LENGTH = self._node.get_parameter('max_rope_length').get_parameter_value().double_value
@@ -53,16 +56,6 @@ class RecoverAction():
             topic = DJITopics.MOVE_TO_SETPOINT_TOPIC,
             qos_profile= 10)
         
-        self._node.create_subscription(Odometry,
-                                       SmarcTopics.ODOM_TOPIC,
-                                       self._odom_cb,
-                                       10)
-        
-
-
-        self._tf_buffer = Buffer()
-        self._tf_listener = TransformListener(self._tf_buffer, self._node, spin_thread=True)
-        
         self._as = GentlerActionServer(
             node,
             "alars_recover",
@@ -75,8 +68,8 @@ class RecoverAction():
         )
             
     def _reset(self):
-        self._obj_in_odom : PoseStamped = PoseStamped()
-        self._buoy_in_odom : PoseStamped = PoseStamped()
+        self._obj_in_map : PoseStamped = PoseStamped()
+        self._buoy_in_map : PoseStamped = PoseStamped()
         self._phase : RecoveryPhases = RecoveryPhases.IDLE
         self._points : dict[RecoveryPhases, PoseStamped] = {}
 
@@ -94,45 +87,16 @@ class RecoverAction():
             return True
         return self._now_float - (msg.header.stamp.sec + msg.header.stamp.nanosec * 1e-9) > age_s
     
-    def in_odom_frame(self, pose_stamped: PoseStamped) -> PoseStamped:
-        try:
-            t = self._tf_buffer.lookup_transform(
-                target_frame=self.ODOM_FRAME,
-                source_frame=pose_stamped.header.frame_id,
-                time=Time(seconds=0),
-                timeout=Duration(seconds=1),
-            )
-            return do_transform_pose_stamped(pose_stamped, t)
-        except Exception as e:
-            self._loginfo(f"TF lookup failed when transforming {pose_stamped.header.frame_id} to {self.ODOM_FRAME}: {str(e)}")
-            raise e
-
     
     def compute_distance(self, pose1 : PoseStamped, pose2 : PoseStamped) -> float:
-        if pose1.header.frame_id != self.ODOM_FRAME:
-            p1o = self.in_odom_frame(pose1)
-            p1 = np.array([p1o.pose.position.x, p1o.pose.position.y, p1o.pose.position.z])
-        else:
-            p1 = np.array([pose1.pose.position.x, pose1.pose.position.y, pose1.pose.position.z])
-        
-        if pose2.header.frame_id != self.ODOM_FRAME:
-            p2o = self.in_odom_frame(pose2)
-            p2 = np.array([p2o.pose.position.x, p2o.pose.position.y, p2o.pose.position.z])
-        else:
-            p2 = np.array([pose2.pose.position.x, pose2.pose.position.y, pose2.pose.position.z])
-
+        if pose1.header.frame_id != pose2.header.frame_id:
+            raise ValueError("Poses must be in the same frame to compute distance")
+        p1 = np.array([pose1.pose.position.x, pose1.pose.position.y, pose1.pose.position.z])
+        p2 = np.array([pose2.pose.position.x, pose2.pose.position.y, pose2.pose.position.z])
         return np.linalg.norm(p1 - p2)
 
     def _loginfo(self, msg: str):
         self._node.get_logger().info(f"[RecoverAction] {msg}")
-
-
-    def _odom_cb(self, msg: Odometry):
-        if self._drone_in_odom is None:
-            self._drone_in_odom = PoseStamped()
-            self._drone_in_odom.header.frame_id = self.ODOM_FRAME
-        self._drone_in_odom.header.stamp = msg.header.stamp
-        self._drone_in_odom.pose = msg.pose.pose
 
 
     def _on_goal_received(self, goal_request: dict) -> bool:
@@ -174,25 +138,14 @@ class RecoverAction():
             return False
 
         try:
-            obj_pose_utm = convert_latlon_to_utm(geopoint_obj)
-            obj_pose_utm.point.z = geopoint_obj.altitude
-            buoy_pose_utm = convert_latlon_to_utm(geopoint_buoy)
-            buoy_pose_utm.point.z = geopoint_buoy.altitude
-        except:
-            self._loginfo(f"Failed to convert geopoint to UTM, received:\n obj: {geopoint_obj}\n buoy: {geopoint_buoy}")
+            self._obj_in_map = self._drone_state.convert_geopoint_to_map_pose_stamped(geopoint_obj)
+            self._buoy_in_map = self._drone_state.convert_geopoint_to_map_pose_stamped(geopoint_buoy)
+            obj_buoy_dist = self.compute_distance(self._obj_in_map, self._buoy_in_map)
+        except Exception as e:
+            self._loginfo(f"Could not transform object or buoy position into MAP frame: {e}")
+            traceback.print_exc()
             return False
-        
-        try:
-            self._obj_in_odom = self.in_odom_frame(point_to_pose(obj_pose_utm))
-            self._buoy_in_odom = self.in_odom_frame(point_to_pose(buoy_pose_utm))
-        except:
-            return False
-
-        try:
-            obj_buoy_dist = self.compute_distance(self._obj_in_odom, self._buoy_in_odom)
-        except:
-            self._loginfo("Could not successfully compute distance between obj and buoy in odom frame. Rejecting goal!\n")
-            return False
+    
 
         if obj_buoy_dist > self.MAX_ROPE_LENGTH:
             self._loginfo(f"Rejecting. Criteria: obj-buoy dist=={obj_buoy_dist:.1f} <= {self.MAX_ROPE_LENGTH:.1f}")
@@ -212,8 +165,8 @@ class RecoverAction():
         # pre-compute all the points
         # see diagram in _on_goal_received
         # everything in odom frame
-        obj_pos = np.array([self._obj_in_odom.pose.position.x, self._obj_in_odom.pose.position.y])
-        buoy_pos = np.array([self._buoy_in_odom.pose.position.x, self._buoy_in_odom.pose.position.y])
+        obj_pos = np.array([self._obj_in_map.pose.position.x, self._obj_in_map.pose.position.y])
+        buoy_pos = np.array([self._buoy_in_map.pose.position.x, self._buoy_in_map.pose.position.y])
         middle_pos = (obj_pos + buoy_pos) / 2.0
         # line perpendicular to obj-buoy line
         rope_direction = buoy_pos - obj_pos
@@ -224,7 +177,7 @@ class RecoverAction():
 
         # A
         self._dipping_high = PoseStamped()
-        self._dipping_high.header.frame_id = self.ODOM_FRAME
+        self._dipping_high.header.frame_id = self.MAP_FRAME
         self._dipping_high.pose.position.x = dipping_pos[0]
         self._dipping_high.pose.position.y = dipping_pos[1]
         self._dipping_high.pose.position.z = self.dipping_altitude
@@ -233,7 +186,7 @@ class RecoverAction():
 
         # B
         self._dipping_low = PoseStamped()
-        self._dipping_low.header.frame_id = self.ODOM_FRAME
+        self._dipping_low.header.frame_id = self.MAP_FRAME
         self._dipping_low.pose.position.x = dipping_pos[0]
         self._dipping_low.pose.position.y = dipping_pos[1]
         self._dipping_low.pose.position.z = self.forward_altitude
@@ -242,7 +195,7 @@ class RecoverAction():
 
         # C
         self._raising_low = PoseStamped()
-        self._raising_low.header.frame_id = self.ODOM_FRAME
+        self._raising_low.header.frame_id = self.MAP_FRAME
         self._raising_low.pose.position.x = raising_pos[0]
         self._raising_low.pose.position.y = raising_pos[1]
         self._raising_low.pose.position.z = self.forward_altitude
@@ -251,7 +204,7 @@ class RecoverAction():
 
         # D
         self._raising_high = PoseStamped()
-        self._raising_high.header.frame_id = self.ODOM_FRAME
+        self._raising_high.header.frame_id = self.MAP_FRAME
         self._raising_high.pose.position.x = raising_pos[0]
         self._raising_high.pose.position.y = raising_pos[1]
         self._raising_high.pose.position.z = self.raising_altitude
@@ -263,7 +216,7 @@ class RecoverAction():
         """
         Return True to indicate success, False for failure, or None to continue
         """
-        if self._drone_in_odom is None:
+        if self._drone_state.drone_in_map is None:
             self._loginfo("No odom received yet, cannot perform recovery...")
             return False
         
@@ -272,7 +225,7 @@ class RecoverAction():
             self._loginfo(f"Starting recovery, moving to dipping position at {str_posestamp(self._points[self._phase])}")
         
         target_point = self._points[self._phase]
-        distance_to_target = self.compute_distance(self._drone_in_odom, target_point)
+        distance_to_target = self.compute_distance(self._drone_state.drone_in_map, target_point)
         
         if distance_to_target <= self.SETPOINT_TOLERANCE:
             # reached current phase target, move to next phase

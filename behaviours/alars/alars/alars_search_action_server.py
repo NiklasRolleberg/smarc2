@@ -22,6 +22,8 @@ from dji_msgs.msg import Topics as DJITopics
 from dji_msgs.msg import Links as DJILinks
 from smarc_msgs.msg import Topics as SmarcTopics
 
+from alars.alars_common import DroneState
+
 class SearchAction():
     def __init__(self,
                  node: Node):
@@ -29,8 +31,9 @@ class SearchAction():
 
         self._node.declare_parameter('robot_name', 'M350')
         self._robot_name : str = self._node.get_parameter('robot_name').get_parameter_value().string_value
-        self.ODOM_FRAME : str = self._robot_name + '/' + DJILinks.ODOM
-        self._drone_in_odom : None | PoseStamped = None
+        self.MAP_FRAME : str = self._robot_name + '/' + DJILinks.MAP
+
+        self._drone_state = DroneState(node, self._robot_name)
 
         self._node.declare_parameter('setpoint_threshold', 2.0)
         self.SETPOINT_THRESHOLD : float = self._node.get_parameter('setpoint_threshold').get_parameter_value().double_value
@@ -51,10 +54,6 @@ class SearchAction():
             topic = DJITopics.MOVE_TO_SETPOINT_TOPIC,
             qos_profile= 10)
         
-        self._node.create_subscription(Odometry,
-                                       SmarcTopics.ODOM_TOPIC,
-                                       self._odom_cb,
-                                       10)
         
         self._node.create_subscription(PointStamped, 
                                        DJITopics.ESTIMATED_AUV_TOPIC,
@@ -66,9 +65,7 @@ class SearchAction():
                                        self._buoy_detection_cb,
                                        10)
 
-        self._tf_buffer = Buffer()
-        self._tf_listener = TransformListener(self._tf_buffer, self._node, spin_thread=True)
-        
+      
         self._as = GentlerActionServer(
             node,
             "alars_search",
@@ -84,7 +81,7 @@ class SearchAction():
         self._auv_detection : PointStamped = PointStamped()
         self._buoy_detection : PointStamped = PointStamped()
         self._spiral_progress : float = 0.0
-        self._search_center_odom : PoseStamped = PoseStamped()
+        self._search_center_map : PoseStamped = PoseStamped()
         self._search_radius : float = 0.0
         self._radius_progress : float = -1.0
         self._current_setpoint : PoseStamped | None = None
@@ -110,13 +107,6 @@ class SearchAction():
 
     def _buoy_detection_cb(self, msg: PointStamped):
         self._buoy_detection = msg
-
-    def _odom_cb(self, msg: Odometry):
-        if self._drone_in_odom is None:
-            self._drone_in_odom = PoseStamped()
-            self._drone_in_odom.header.frame_id = self.ODOM_FRAME
-        self._drone_in_odom.header.stamp = msg.header.stamp
-        self._drone_in_odom.pose = msg.pose.pose
 
 
     def _on_goal_received(self, goal_request: dict) -> bool:
@@ -145,27 +135,14 @@ class SearchAction():
             return False
         
         try:
-            # transform search center into ODOM frame
-            center_in_utm : PointStamped = convert_latlon_to_utm(search_center_gp)
-            tf = self._tf_buffer.lookup_transform(
-                target_frame = self.ODOM_FRAME,
-                source_frame = center_in_utm.header.frame_id,
-                time = Time(seconds=0),
-                timeout = Duration(seconds=1)
-            )
-            center_in_utm_ps = PoseStamped()
-            center_in_utm_ps.header = center_in_utm.header
-            center_in_utm_ps.pose.position = center_in_utm.point
-            center_in_utm_ps.pose.position.z = search_center_gp.altitude  # keep the altitude from the GeoPoint as is
-
-            self._search_center_odom = do_transform_pose_stamped(center_in_utm_ps, tf)
+            self._search_center_map = self._drone_state.convert_geopoint_to_map_pose_stamped(search_center_gp)
             
         except:
-            self._loginfo('Could not transform search center into ODOM frame!')
+            self._loginfo('Could not transform search center into MAP frame!')
             traceback.print_exc()
             return False
 
-        self._loginfo(f"Accepted goal request with search position: {self._search_center_odom} and radius: {self._search_radius} m")
+        self._loginfo(f"Accepted goal request with search position: {self._search_center_map} and radius: {self._search_radius} m")
         return True
     
 
@@ -190,8 +167,8 @@ class SearchAction():
             y = r * np.sin(theta)
             return np.array([x,y])
         
-        if self._drone_in_odom is None:
-            self._loginfo("No odom received yet, cannot perform search...")
+        if self._drone_state.drone_in_map is None:
+            self._loginfo("No drone position received yet, cannot perform search...")
             return False
         
         # if both the auv and buoy are detected, we are done too
@@ -204,7 +181,7 @@ class SearchAction():
 
         # if there is a current setpoint, check if we are close enough to it
         if self._current_setpoint is not None:
-            drone_pos = np.array([self._drone_in_odom.pose.position.x, self._drone_in_odom.pose.position.y])
+            drone_pos = np.array([self._drone_state.drone_in_map.pose.position.x, self._drone_state.drone_in_map.pose.position.y])
             setpoint_pos = np.array([self._current_setpoint.pose.position.x, self._current_setpoint.pose.position.y])
             distance_to_setpoint = np.linalg.norm(drone_pos - setpoint_pos)
             if distance_to_setpoint < self.SETPOINT_THRESHOLD:
@@ -220,8 +197,8 @@ class SearchAction():
 
         # either reached, or the first point
         # compute next spiral point
-        drone_pos = np.array([self._drone_in_odom.pose.position.x, self._drone_in_odom.pose.position.y])
-        search_center = np.array([self._search_center_odom.pose.position.x, self._search_center_odom.pose.position.y])
+        drone_pos = np.array([self._drone_state.drone_in_map.pose.position.x, self._drone_state.drone_in_map.pose.position.y])
+        search_center = np.array([self._search_center_map.pose.position.x, self._search_center_map.pose.position.y])
         
 
         # if the drone is far, at 0 progress, we'll break from the loop
@@ -241,11 +218,11 @@ class SearchAction():
 
         # publish setpoint
         setpoint_msg = PoseStamped()
-        setpoint_msg.header.frame_id = self.ODOM_FRAME
+        setpoint_msg.header.frame_id = self.MAP_FRAME
         setpoint_msg.header.stamp = self._node.get_clock().now().to_msg()
         setpoint_msg.pose.position.x = float(spiral_point[0])
         setpoint_msg.pose.position.y = float(spiral_point[1])
-        setpoint_msg.pose.position.z = self._search_center_odom.pose.position.z
+        setpoint_msg.pose.position.z = self._search_center_map.pose.position.z
         setpoint_msg.pose.orientation.w = 1.0  # neutral orientation
         self._setpoint_pub.publish(setpoint_msg)
         self._current_setpoint = setpoint_msg

@@ -25,6 +25,7 @@ from dji_msgs.msg import Links as DJILinks
 from smarc_msgs.msg import Topics as SmarcTopics
 
 from alars.speed_names import SpeedNames
+from alars.alars_common import DroneState
 
 
 class MoveToAction():
@@ -34,20 +35,16 @@ class MoveToAction():
 
         self._node.declare_parameter('robot_name', 'M350')
         self._robot_name : str = self._node.get_parameter('robot_name').get_parameter_value().string_value
-        self.ODOM_FRAME : str = self._robot_name + '/' + DJILinks.ODOM
-        self._drone_in_odom : None | PoseStamped = None
+        self.MAP_FRAME : str = self._robot_name + '/' + DJILinks.MAP
+        
+        self._drone_state = DroneState(node, self._robot_name)
 
-        self._node.create_subscription(Odometry,
-                                       SmarcTopics.ODOM_TOPIC,
-                                       self._odom_cb,
-                                       10)
-
-        self._goal_in_odom : PoseStamped|None = None
+        self._goal_in_map : PoseStamped|None = None
         self._goal_tolerance : None | float = None
         self._node.declare_parameter('default_tolerance', 0.3)
         self._default_goal_tolerance : float = self._node.get_parameter('default_tolerance').get_parameter_value().double_value
 
-        self._node.declare_parameter("speeds", [0.5, 1.0, 1.5])
+        self._node.declare_parameter("speeds", [0.5, 1.5, 2.5])
         speeds = self._node.get_parameter("speeds").get_parameter_value().double_array_value
         self.SPEED_VALUES : dict[SpeedNames, float] = {
             SpeedNames.SLOW: speeds[0],
@@ -92,13 +89,6 @@ class MoveToAction():
     def log(self, msg: str):
         self._node.get_logger().info(msg)
 
-    def _odom_cb(self, msg: Odometry):
-        if self._drone_in_odom is None:
-            self._drone_in_odom = PoseStamped()
-            self._drone_in_odom.header.frame_id = self.ODOM_FRAME
-        self._drone_in_odom.header.stamp = msg.header.stamp
-        self._drone_in_odom.pose = msg.pose.pose
-
     
     def _on_goal_received(self, goal_request: dict) -> bool:
         """
@@ -110,20 +100,8 @@ class MoveToAction():
             gp.latitude = goal_request['waypoint']['latitude']
             gp.longitude = goal_request['waypoint']['longitude']
             gp.altitude = goal_request['waypoint']['altitude']
-            goal_in_utm : PointStamped = convert_latlon_to_utm(gp)
-            goal_in_utm_pose : PoseStamped = PoseStamped()
-            goal_in_utm_pose.header = goal_in_utm.header
-            goal_in_utm_pose.pose.position = goal_in_utm.point
-            goal_in_utm_pose.pose.position.z = gp.altitude  # keep the altitude from the GeoPoint as is
-
-            # then transform the UTM goal into ODOM
-            tf = self._tf_buffer.lookup_transform(
-                target_frame = self.ODOM_FRAME,
-                source_frame = goal_in_utm.header.frame_id,
-                time = Time(seconds=0),
-                timeout = Duration(seconds=1)
-            )
-            self._goal_in_odom = do_transform_pose_stamped(goal_in_utm_pose, tf)
+            
+            self._goal_in_map = self._drone_state.convert_geopoint_to_map_pose_stamped(gp)
 
             self._goal_tolerance = float(goal_request['waypoint']['tolerance']) if 'tolerance' in goal_request['waypoint'] else self._default_goal_tolerance
             speed_str = goal_request['speed'] if 'speed' in goal_request else 'standard'
@@ -139,9 +117,9 @@ class MoveToAction():
 
             self._goal_speed = speed_value
 
-            pos = self._goal_in_odom.pose.position
+            pos = self._goal_in_map.pose.position
             self.log(
-                f"Received goal in odom: [{pos.x:.2f},{pos.y:.2f},{pos.z:.2f}], tolerance: {self._goal_tolerance}, speed: {self._goal_speed}"
+                f"Received goal in map: [{pos.x:.2f},{pos.y:.2f},{pos.z:.2f}], tolerance: {self._goal_tolerance}, speed: {self._goal_speed}"
             )
             return True
         
@@ -152,7 +130,7 @@ class MoveToAction():
 
     def _on_cancel_received(self) -> bool:
         self.log("Cancel requested, stopping...")
-        self._goal_in_odom = None
+        self._goal_in_map = None
         return True
 
     def _prepare_loop(self) -> None:
@@ -160,12 +138,8 @@ class MoveToAction():
         return
 
     def _loop_inner(self) -> bool|None:
-        if self._goal_in_odom is None:
+        if self._goal_in_map is None:
             self.log("No goal set, failing...")
-            return False
-        
-        if self._drone_in_odom is None:
-            self.log("No odom received yet, failing...")
             return False
         
         if self._goal_tolerance is None:
@@ -175,13 +149,17 @@ class MoveToAction():
         if self._goal_speed is None:
             self.log("No goal speed set, failing...")
             return False
+        
+        if self._drone_state.drone_in_map is None:
+            self.log("No drone position available yet, waiting...")
+            return None
 
-        goal_position = np.array([self._goal_in_odom.pose.position.x,
-                                  self._goal_in_odom.pose.position.y,
-                                  self._goal_in_odom.pose.position.z])
-        self_position = np.array([self._drone_in_odom.pose.position.x,
-                                  self._drone_in_odom.pose.position.y,
-                                  self._drone_in_odom.pose.position.z])
+        goal_position = np.array([self._goal_in_map.pose.position.x,
+                                  self._goal_in_map.pose.position.y,
+                                  self._goal_in_map.pose.position.z])
+        self_position = np.array([self._drone_state.drone_in_map.pose.position.x,
+                                  self._drone_state.drone_in_map.pose.position.y,
+                                  self._drone_state.drone_in_map.pose.position.z])
         
         # if vertical first mode, check if we need to move vertically first
         if self._VERTICAL_FIRST_MODE:
@@ -212,7 +190,7 @@ class MoveToAction():
         # publish the setpoint
         setpoint = PoseStamped()
         setpoint.header.stamp = self.now_stamp
-        setpoint.header.frame_id = self.ODOM_FRAME
+        setpoint.header.frame_id = self.MAP_FRAME
         setpoint.pose.position.x = setpoint_position[0]
         setpoint.pose.position.y = setpoint_position[1]
         setpoint.pose.position.z = setpoint_position[2]
