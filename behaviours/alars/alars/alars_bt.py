@@ -16,7 +16,7 @@ from py_trees.common import Status, ParallelPolicy
 from py_trees.trees import BehaviourTree
 
 from std_msgs.msg import String, Float32, Int32
-from geographic_msgs.msg import GeoPoint
+from geographic_msgs.msg import GeoPointStamped, GeoPoint
 from nav_msgs.msg import Odometry
 from geometry_msgs.msg import  PointStamped
 
@@ -36,31 +36,22 @@ class AlarsBT():
             
             self._node : Node = node
 
-            self.raise_to_travel_action = A_ActionClient(node, action_client_name='move_to', bt_action_name='raise_to_travel')
-            self.travel_to_search_action = A_ActionClient(node, action_client_name='move_to', bt_action_name='travel_to_search')
-            self.lower_to_search = A_ActionClient(node, action_client_name='move_to', bt_action_name='lower_to_search')
+            self.move_to_search_action = A_ActionClient(node, action_client_name='move_to', bt_action_name='move_to_search')
             self.search_action = A_ActionClient(node, 'alars_search')
 
-            self.lower_to_localize_action = A_ActionClient(node, action_client_name='move_to', bt_action_name='lower_to_localize')
             self.localize_auv_action = A_ActionClient(node, action_client_name='alars_localize', bt_action_name='localize_auv')
             self.localize_buoy_action = A_ActionClient(node, action_client_name='alars_localize', bt_action_name='localize_buoy')
 
             self.recover_action = A_ActionClient(node, 'alars_recover')
 
-            self.raise_to_delivery_action = A_ActionClient(node, action_client_name='move_to', bt_action_name='raise_to_delivery')
             self.move_to_delivery_action = A_ActionClient(node, action_client_name='move_to', bt_action_name='move_to_delivery')
             
             self._action_clients = [
-                self.raise_to_delivery_action,
                 self.move_to_delivery_action,
-                self.lower_to_localize_action,
                 self.search_action,
                 self.localize_auv_action,
                 self.localize_buoy_action,
-                self.recover_action,
-                self.raise_to_travel_action,
-                self.travel_to_search_action,
-                self.lower_to_search
+                self.recover_action
             ]
 
             self._node.create_subscription(GeoPoint,
@@ -108,18 +99,25 @@ class AlarsBT():
             self._load_cell_weight : float|None = None
             self._node.declare_parameter('loaded_loadcell_raw', 300000)
             self.LOADED_LOADCELL_RAW : int = self._node.get_parameter('loaded_loadcell_raw').get_parameter_value().integer_value
+            self._load_cell_raw : int|None = None
             self.captured_auv : bool = False
 
 
-            self._auv_geopoint : GeoPoint | None = None
-            self._buoy_geopoint : GeoPoint | None = None
-            self.both_geopoints_known : bool = False
+            self._auv_geopoint_stamped : GeoPointStamped | None = None
+            self._buoy_geopoint_stamped : GeoPointStamped | None = None
             self.first_search_done : bool = False
             self.delivered : bool = False
 
 
             self._bt : BehaviourTree|None = None
             self._prev_str : str = ""
+
+            status_str_pub = self._node.create_publisher(String, 'alars_bt/status', 10)
+            def publish_status():
+                msg = String()
+                msg.data = self._status_str
+                status_str_pub.publish(msg)
+            self._node.create_timer(1.0, publish_status)
 
             self._as = GentlerActionServer(
                 node,
@@ -147,13 +145,10 @@ class AlarsBT():
                     "altitude": None,
                     "tolerance": None
                 },
-                "recover_min_height_above_water": None,
-                "recover_swoop_vertical": None,
-                "recover_swoop_horizontal": None,
-                "recover_straight_before_rope": None,
-                "recover_straight_distance": None,
-                "recover_raise_horizontal": None,
-                "recover_raise_vertical": None,
+                "forward_distance": None,
+                "forward_altitude": None,
+                "dipping_altitude": None,
+                "raising_altitude": None,
             }
                 
 
@@ -222,7 +217,39 @@ class AlarsBT():
     
     def _prepare_loop(self) -> None:
         self._reset_states()
+
     
+
+    @property
+    def _auv_geopoint_known(self) -> bool:
+        if self._auv_geopoint_stamped is None:
+            return False
+        else:
+            return not self._msg_is_older_than(self._auv_geopoint_stamped, self.MAX_DETECTION_AGE)
+        
+    @property
+    def _buoy_geopoint_known(self) -> bool:
+        if self._buoy_geopoint_stamped is None:
+            return False
+        else:
+            return not self._msg_is_older_than(self._buoy_geopoint_stamped, self.MAX_DETECTION_AGE)
+    
+    @property
+    def _status_str(self) -> str:
+        str = "\n\nStates:"
+        str += f"\n Delivered: {self.delivered}"
+        if self._load_cell_weight is not None:
+            str += f"\n Captured AUV (load cell): {self.captured_auv}({self._load_cell_weight})"
+        elif self._load_cell_raw is not None:
+            str += f"\n Captured AUV (load cell raw): {self.captured_auv}({self._load_cell_raw})"
+        else:
+            str += f"\n Captured AUV: {self.captured_auv} (no load cell data)"
+        str += f"\n AUV in view: {self.auv_in_view}"
+        str += f"\n AUV geopoint known: {self._auv_geopoint_known}"
+        str += f"\n Buoy geopoint known: {self._buoy_geopoint_known}"
+        str += f"\n First search done: {self.first_search_done}"
+        return str
+
 
     def _loop_inner(self) -> bool|None:
         if self._bt is None:
@@ -246,22 +273,11 @@ class AlarsBT():
 
             
         self.auv_in_view = self._auv_detection_camera is not None and not self._msg_is_older_than(self._auv_detection_camera, self.MAX_DETECTION_AGE)
-        self.both_geopoints_known = self._auv_geopoint is not None and self._buoy_geopoint is not None
         
         self._bt.tick()
 
         str = pt.display.ascii_tree(self._bt.root, show_status=True)
-        str += "\n\nStates:"
-        str += f"\n Delivered: {self.delivered}"
-        if self._load_cell_weight is not None:
-            str += f"\n Captured AUV (load cell): {self.captured_auv}({self._load_cell_weight})"
-        elif self._load_cell_raw is not None:
-            str += f"\n Captured AUV (load cell raw): {self.captured_auv}({self._load_cell_raw})"
-        else:
-            str += f"\n Captured AUV: {self.captured_auv} (no load cell data)"
-        str += f"\n AUV in view: {self.auv_in_view}"
-        str += f"\n Both geopoints known: {self.both_geopoints_known}"
-        str += f"\n First search done: {self.first_search_done}"
+        str += self._status_str
         if str != self._prev_str:
             self.log("\n" + str)
             self._prev_str = str
@@ -288,69 +304,35 @@ class AlarsBT():
                     }   
                 }
             self.move_to_delivery_action.set_goal(json.dumps(g))
+            self.log("Set move_to delivery goal.")
             return True
         except:
             self.log("Failed to set move_to delivery goal.")
             return False
         
 
-    def _set_move_to_goal_delivery_altitude(self) -> bool:
-        if self._drone_geopoint is None:
-            self.log("Drone geopoint not known, cannot set move_to RTH altitude goal.")
-            return False
-        try:
-            g = {"waypoint":{
-                    "latitude": self._drone_geopoint.latitude,
-                    "longitude": self._drone_geopoint.longitude,
-                    "altitude": float(self._goal["delivery_position"]["altitude"]),
-                    "tolerance": float(self._goal["delivery_position"]["tolerance"])
-                }}
-            self.raise_to_delivery_action.set_goal(json.dumps(g))
-            return True
-        except:
-            self.log("Failed to set move_to RTH altitude goal.")
-            return False
-        
-    def _set_goal_lower_to_localize(self) -> bool:
-        if self._drone_geopoint is None:
-            self.log("Drone geopoint not known, cannot set lower to localize goal.")
-            return False
-        try:
-            g = {"waypoint":{
-                    "latitude": self._drone_geopoint.latitude,
-                    "longitude": self._drone_geopoint.longitude,
-                    "altitude": float(self._goal["search_position"]["altitude"]),
-                    "tolerance": 1.0
-                }}
-            self.lower_to_localize_action.set_goal(json.dumps(g))
-            return True
-        except:
-            self.log("Failed to set lower to localize goal.")
-            return False
+
     
     def _set_recover_goal(self) -> bool:
-        if self._auv_geopoint is None or self._buoy_geopoint is None:
+        if self._auv_geopoint_stamped is None or self._buoy_geopoint_stamped is None:
             self.log("AUV or buoy geopoint not known, cannot set recover goal.")
             return False
         try:
             g = {
                 "object_position": {
-                    "latitude": self._auv_geopoint.latitude,
-                    "longitude": self._auv_geopoint.longitude,
+                    "latitude": self._auv_geopoint_stamped.position.latitude,
+                    "longitude": self._auv_geopoint_stamped.position.longitude,
                     "altitude": 0.0
                 },
                 "buoy_position": {
-                    "latitude": self._buoy_geopoint.latitude,
-                    "longitude": self._buoy_geopoint.longitude,
+                    "latitude": self._buoy_geopoint_stamped.position.latitude,
+                    "longitude": self._buoy_geopoint_stamped.position.longitude,
                     "altitude": 0.0
                 },
-                "min_height_above_water": self._goal["recover_min_height_above_water"],
-                "swoop_vertical": self._goal["recover_swoop_vertical"],
-                "swoop_horizontal": self._goal["recover_swoop_horizontal"],
-                "straight_before_rope": self._goal["recover_straight_before_rope"],
-                "straight_distance": self._goal["recover_straight_distance"],
-                "raise_horizontal": self._goal["recover_raise_horizontal"],
-                "raise_vertical": self._goal["recover_raise_vertical"]
+                "forward_distance": self._goal["forward_distance"],
+                "forward_altitude": self._goal["forward_altitude"],
+                "dipping_altitude": self._goal["dipping_altitude"],
+                "raising_altitude": self._goal["raising_altitude"],
             }
             self.recover_action.set_goal(json.dumps(g))
             return True
@@ -364,126 +346,63 @@ class AlarsBT():
         self.localize_auv_action.set_goal(json.dumps(g))
         return True
     
+    
     def _set_goal_localize_buoy(self) -> bool:
         g = {"localize_auv": False, "localize_buoy": True}
         self.localize_buoy_action.set_goal(json.dumps(g))
         return True
     
-    def _unset_auv_buoy_positions(self) -> bool:
-        self._auv_geopoint = None
-        self._buoy_geopoint = None
-        return True
 
     def _set_auv_position_from_drone(self) -> bool:
         if self._drone_geopoint is None:
             self.log("Drone geopoint not known, cannot set AUV position.")
             return False
-        self._auv_geopoint = GeoPoint()
-        self._auv_geopoint.latitude = self._drone_geopoint.latitude
-        self._auv_geopoint.longitude = self._drone_geopoint.longitude
-        self._auv_geopoint.altitude = 0.0
+        self._auv_geopoint_stamped = GeoPointStamped()
+        self._auv_geopoint_stamped.position.latitude = self._drone_geopoint.latitude
+        self._auv_geopoint_stamped.position.longitude = self._drone_geopoint.longitude
+        self._auv_geopoint_stamped.position.altitude = 0.0
+        self._auv_geopoint_stamped.header.stamp = self._node.get_clock().now().to_msg()
         return True
     
-    def _set_buoy_position(self) -> bool:
+    def _set_buoy_position_from_drone(self) -> bool:
         if self._drone_geopoint is None:
             self.log("Drone geopoint not known, cannot set buoy position.")
             return False
-        self._buoy_geopoint = GeoPoint()
-        self._buoy_geopoint.latitude = self._drone_geopoint.latitude
-        self._buoy_geopoint.longitude = self._drone_geopoint.longitude
-        self._buoy_geopoint.altitude = 0.0
+        self._buoy_geopoint_stamped = GeoPointStamped()
+        self._buoy_geopoint_stamped.position.latitude = self._drone_geopoint.latitude
+        self._buoy_geopoint_stamped.position.longitude = self._drone_geopoint.longitude
+        self._buoy_geopoint_stamped.position.altitude = 0.0
+        self._buoy_geopoint_stamped.header.stamp = self._node.get_clock().now().to_msg()
         return True
     
-    def _set_goal_search_first(self) -> bool:
-        self.log("Setting first search goal from given goal position.")
+    def _set_goal_search(self) -> bool:
+        if self.first_search_done:
+            if self._drone_geopoint is None:
+                self.log("Drone geopoint not known, cannot set search locally.")
+                return False
+            lat,lon = self._drone_geopoint.latitude, self._drone_geopoint.longitude
+        else:
+            lat = self._goal["search_position"]["latitude"]
+            lon = self._goal["search_position"]["longitude"]
+            self.first_search_done = True
+
         try:
             g = {"search_position": {
-                "latitude": self._goal["search_position"]["latitude"],
-                "longitude": self._goal["search_position"]["longitude"],
+                "latitude": lat,
+                "longitude": lon,
                 "altitude": self._goal["search_position"]["altitude"],
                 "tolerance": self._goal["search_position"]["tolerance"]
             }}
             self.search_action.set_goal(json.dumps(g))
-            self.first_search_done = True
-            self.log("First search marked done!")
+            self.log("Set search goal.")
             return True
         except:
             self.log("Failed to set search goal.")
             return False
         
-    def _set_goal_search_local(self) -> bool:
-        self.log("Setting local search goal from current drone position.")
-        if self._drone_geopoint is None:
-            self.log("Drone geopoint not known, cannot set local search goal.")
-            return False
-        try:
-            g = {"search_position": {
-                    "latitude": self._drone_geopoint.latitude,
-                    "longitude": self._drone_geopoint.longitude,
-                    "altitude": self._goal["search_position"]["altitude"],
-                    "tolerance": self._goal["search_position"]["tolerance"]
-                }}
-            self.search_action.set_goal(json.dumps(g))
-            return True
-        except:
-            self.log("Failed to set local search goal.")
-            return False
-        
-    def _set_goal_raise_to_travel(self) -> bool:
-        if self._drone_geopoint is None:
-            self.log("Drone geopoint not known, cannot set raise to travel goal.")
-            return False
-        try:
-            g = {"waypoint":{
-                    "latitude": self._drone_geopoint.latitude,
-                    "longitude": self._drone_geopoint.longitude,
-                    "altitude": float(self._goal["initial_travel_alt"]),
-                    "tolerance": 1.0
-                }}
-            self.raise_to_travel_action.set_goal(json.dumps(g))
-            return True
-        except:
-            self.log("Failed to set raise to travel goal.")
-            return False
-        
-    def _set_goal_travel_to_search(self) -> bool:
-        g = {"waypoint": {
-                "latitude": self._goal["search_position"]["latitude"],
-                "longitude": self._goal["search_position"]["longitude"],
-                "altitude": float(self._goal["initial_travel_alt"]),
-                "tolerance": float(self._goal["search_position"]["tolerance"])
-            }}
-        try:
-            self.travel_to_search_action.set_goal(json.dumps(g))
-            return True
-        except:
-            self.log("Failed to set travel to search goal.")
-            return False
-        
-    def _set_goal_lower_to_search(self) -> bool:
-        if self._drone_geopoint is None:
-            self.log("Drone geopoint not known, cannot set lower to search goal.")
-            return False
-        try:
-            g = {"waypoint":{
-                    "latitude": self._drone_geopoint.latitude,
-                    "longitude": self._drone_geopoint.longitude,
-                    "altitude": float(self._goal["search_position"]["altitude"]),
-                    "tolerance": 1.0
-                }}
-            self.lower_to_search.set_goal(json.dumps(g))
-            return True
-        except:
-            self.log("Failed to set lower to search goal.")
-            return False
-        
 
     def _set_delivered(self) -> bool:
         self.delivered = True
-        return True
-
-    def _set_first_search_done(self) -> bool:
-        self.first_search_done = True
         return True
     
 
@@ -510,12 +429,8 @@ class AlarsBT():
         # Go home if we have the AUV
         go_deliver = Sequence("SQ Deliver the AUV", memory=False)
         go_deliver.add_child(FuncToStatus("Got AUV?", lambda: self.captured_auv))
-        go_deliver.add_child(FuncToStatus("Searched once?", lambda: self.first_search_done))
-        go_deliver.add_child(FuncToStatus("Both geopoints known?", lambda: self.both_geopoints_known))
         deliver = Sequence("SQ Deliver", memory=True)
-        deliver.add_child(FuncToStatus("Set goal: Delivery altitude", self._set_move_to_goal_delivery_altitude))
-        deliver.add_child(self.raise_to_delivery_action)
-        deliver.add_child(FuncToStatus("Set goal: Move to delivery", self._set_move_to_goal_delivery))
+        deliver.add_child(FuncToStatus("Set goal: Move to delivery point", self._set_move_to_goal_delivery))
         deliver.add_child(self.move_to_delivery_action)
         deliver.add_child(FuncToStatus("Set delivery complete", self._set_delivered))
 
@@ -524,47 +439,31 @@ class AlarsBT():
 
         # Okay, we dont have the AUV yet, if we know where it is, we can try to recover it
         recover = Sequence("SQ Recover AUV", memory=True)
-        recover.add_child(FuncToStatus("Both geopoints known?", lambda: self.both_geopoints_known))
+        both_geopoints_known = Parallel("PR Both geopoints known?", policy=ParallelPolicy.SuccessOnAll(synchronise=False))
+        both_geopoints_known.add_child(FuncToStatus("AUV geopoint known?", lambda: self._auv_geopoint_stamped is not None))
+        both_geopoints_known.add_child(FuncToStatus("Buoy geopoint known?", lambda: self._buoy_geopoint_stamped is not None))
+        recover.add_child(both_geopoints_known)
         recover.add_child(FuncToStatus("Set goal: Recover", self._set_recover_goal))
         recover.add_child(self.recover_action)
-        recover.add_child(FuncToStatus("Forget geopoints", self._unset_auv_buoy_positions))
         root.add_child(recover)
 
         # So we dont exactly know where the auv and buoy are, but do we at least see the AUV so we can localize it?
         localize = Sequence("SQ Localize AUV", memory=True)
         localize.add_child(FuncToStatus("AUV in view?", lambda: self.auv_in_view))
         localize.add_child(FuncToStatus("Searched first?", lambda: self.first_search_done))
-        localize.add_child(FuncToStatus("Set goal: Lower to localize", self._set_goal_lower_to_localize))
-        localize.add_child(self.lower_to_localize_action)
         localize.add_child(FuncToStatus("Set goal: Localize auv", self._set_goal_localize_auv))
         localize.add_child(self.localize_auv_action)
         localize.add_child(FuncToStatus("Set AUV Position", self._set_auv_position_from_drone))
         localize.add_child(FuncToStatus("Set goal: Localize buoy", self._set_goal_localize_buoy))
         localize.add_child(self.localize_buoy_action)
-        localize.add_child(FuncToStatus("Set Buoy Position", self._set_buoy_position))
+        localize.add_child(FuncToStatus("Set Buoy Position", self._set_buoy_position_from_drone))
         root.add_child(localize)
 
         # We dont even see the thing... so we gotta search it
         # if this is the first time searching, we use the given search position
         # in the goal, otherwise we search from where we are
-        # if first search, we get to the search position at the travel altitude first
-        # since the search could be at a lower altitude than even our home point. gotta be safe...
         search = Sequence("SQ Search AUV", memory=True)
-        search_kind = Fallback("FB Prepare Search", memory=True)
-        local_search = Sequence("SQ Setup for Local Search", memory=True)
-        local_search.add_child(FuncToStatus("First search done?", lambda: self.first_search_done))
-        local_search.add_child(FuncToStatus("Set goal: Search AUV (local)", self._set_goal_search_local))
-        first_search = Sequence("SQ Setup for First Search", memory=True)
-        first_search.add_child(FuncToStatus("Set goal: Raise to travel", self._set_goal_raise_to_travel))
-        first_search.add_child(self.raise_to_travel_action)
-        first_search.add_child(FuncToStatus("Set goal: Travel to search", self._set_goal_travel_to_search))
-        first_search.add_child(self.travel_to_search_action)
-        first_search.add_child(FuncToStatus("Set goal: Lower to search", self._set_goal_lower_to_search))
-        first_search.add_child(self.lower_to_search)
-        first_search.add_child(FuncToStatus("Set goal: Search AUV (first)", self._set_goal_search_first))
-        search_kind.add_child(local_search)
-        search_kind.add_child(first_search)
-        search.add_child(search_kind)
+        search.add_child(FuncToStatus("Set search goal", self._set_goal_search))
         search.add_child(self.search_action)
         root.add_child(search)
 
