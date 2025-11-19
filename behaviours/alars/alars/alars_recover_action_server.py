@@ -175,7 +175,9 @@ class RecoverAction():
 
         try:
             obj_pose_utm = convert_latlon_to_utm(geopoint_obj)
+            obj_pose_utm.point.z = geopoint_obj.altitude
             buoy_pose_utm = convert_latlon_to_utm(geopoint_buoy)
+            buoy_pose_utm.point.z = geopoint_buoy.altitude
         except:
             self._loginfo(f"Failed to convert geopoint to UTM, received:\n obj: {geopoint_obj}\n buoy: {geopoint_buoy}")
             return False

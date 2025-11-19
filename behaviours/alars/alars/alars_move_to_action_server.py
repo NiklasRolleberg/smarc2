@@ -114,6 +114,7 @@ class MoveToAction():
             goal_in_utm_pose : PoseStamped = PoseStamped()
             goal_in_utm_pose.header = goal_in_utm.header
             goal_in_utm_pose.pose.position = goal_in_utm.point
+            goal_in_utm_pose.pose.position.z = gp.altitude  # keep the altitude from the GeoPoint as is
 
             # then transform the UTM goal into ODOM
             tf = self._tf_buffer.lookup_transform(
