@@ -25,7 +25,7 @@ tmux select-pane -t $SESSION:0.0
 tmux split-window -v -t $SESSION:0.0
 tmux select-layout -t $SESSION:0 tiled
 tmux select-pane -t $SESSION:0.0
-tmux send-keys "TODO: launch low level controllers if we implement any" C-m
+tmux send-keys "ros2 launch evolo_controllers evolo_controllers_launch.py"
 tmux select-pane -t $SESSION:0.1
 tmux send-keys "TODO: Launch evolo description" #"sleep 2; ros2 launch lolo_description lolo_description.launch" C-m
 
@@ -46,8 +46,8 @@ tmux select-layout -t $SESSION:2 tiled
 #TODO launch action servers
 tmux select-pane -t $SESSION:2.0
 tmux send-keys "sleep 4; ros2 run evolo_move_to move_to_server --ros-args -r __ns:=/$ROBOT_NAME -p use_sim_time:=$USE_SIM_TIME" C-m
-#tmux select-pane -t $SESSION:2.1
-#tmux send-keys "sleep 4; ros2 run lolo_cruise_depth_at_heading server --ros-args -r __ns:=/$ROBOT_NAME -p use_sim_time:=$USE_SIM_TIME" C-m
+tmux select-pane -t $SESSION:2.1
+tmux send-keys "sleep 4; ros2 run evolo_move_path move_path_server --ros-args -r __ns:=/$ROBOT_NAME -p use_sim_time:=$USE_SIM_TIME" C-m
 #tmux select-pane -t $SESSION:2.2
 #tmux send-keys "sleep 4; ros2 run lolo_emergency_action server --ros-args -r __ns:=/$ROBOT_NAME -p use_sim_time:=$USE_SIM_TIME" C-m
 #tmux select-pane -t $SESSION:2.3
@@ -68,7 +68,7 @@ if [ "$REALSIM" = "real" ]; then
     tmux send-keys "ros2 launch evolo_mqtt_bridge evolo_mqtt_launch.py" C-m
     # Smarc broker
     tmux select-pane -t $SESSION:3.1
-    tmux send-keys "sleep 7; ros2 launch str_json_mqtt_bridge waraps_bridge.launch broker_addr:=20.240.40.232 broker_port:=1884 robot_name:=$ROBOT_NAME domain:=$AGENT_TYPE realsim:=$REALSIM use_sim_time:=$USE_SIM_TIME context:=$CONTEXT"
+    tmux send-keys "sleep 7; ros2 launch str_json_mqtt_bridge waraps_bridge.launch broker_addr:=20.240.40.232 broker_port:=1884 robot_name:=$ROBOT_NAME domain:=$AGENT_TYPE realsim:=$REALSIM use_sim_time:=$USE_SIM_TIME context:=$CONTEXT" C-m
 else
     tmux send-keys "sleep 7; ros2 launch str_json_mqtt_bridge waraps_bridge.launch broker_addr:=127.0.0.1 broker_port:=1883 robot_name:=$ROBOT_NAME domain:=$AGENT_TYPE realsim:=$REALSIM use_sim_time:=$USE_SIM_TIME context:=$CONTEXT"
     tmux new-window -t $SESSION:4 -n 'tcp-endpoint'
