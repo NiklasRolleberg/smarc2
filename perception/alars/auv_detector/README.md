@@ -12,6 +12,21 @@ Run: `ros2 run auv_detector auv_buoy_detector --ros-args -r __ns:=/$ROBOT_NAME -
 
 ## Dependencies
 
+
+### Handling Complex Rope Pattern Scenarios
+
+To enable the CNN-based detector for complex rope patterns:
+
+1. Open either `auv_detector_sim_calibration.yaml` or `auv_detector_field_calibration.yaml`.  
+2. Set the parameter:
+
+   ```yaml
+   enable_rope_detector: 1
+   enable_cnn_detector: 1
+
+3. Download the CNN model file (`.pth`) from the following link: [Link](https://purdue0-my.sharepoint.com/:f:/g/personal/wu1714_purdue_edu/EipFkxfwAChCs9_pB7qYX7oBZJphrxCcef63-rTvEa2O2g?e=zMG8hA)
+
+
 ### System Requirements
 
 - ROS 2 Humble (or later)
@@ -87,6 +102,21 @@ This script implements the EKF, which operates similarly to the Kalman Filter bu
 
 ---
 
+### **4. hook_estimator.py**
+
+#### **Purpose**
+- Estimates the swinging hook position compared to the quadrotor body. Validates the results through plots and RMSE. Publishes 'alars_detection/hook_est' and 'alars_detection/hook_ekf'.
+
+#### **Description**
+This script implements a pipeline to get the hook position from the feed of a single camera and rope length. Specifically:
+- The rope length is set as a parameter (in the future could take topic). Other important parameters to set before usage are rope color and camera intrinsic matrix.
+- The feed from the camera is filtered in order to get the rope tip (through triangle fitting or Hough lines)
+- The rope tip in pixel is converted into 3D position in different frames
+- The estimation obtained is filtered using basic EKF
+- Estimation and EKF are plotted against ground truth, and RMSE is calculated
+
+---
+
 ## Launch Files
 
 ### 1. `detector_only.launch`
@@ -129,7 +159,23 @@ ros2 launch auv_detector estimator_detector_auto_winch.launch
 ```
 This is Li-Fan's method, which simultaneously detects the rope and AUV, and suggests the UAV hooking point and flight direction.
 
+### 3. `hook_estimator.launch`
+This launch file starts only the `hook_estimator_node`, which executes the hook_estimator.py script.
 
+#### Usage
+1. Open Unity and start the simulation.
+2. Click the `Game` tab, then click `Connect` in the upper-right corner.
+3. Open a terminal and run:
+
+```bash
+cd /colcon_ws/src/smarc2/scripts
+/colcon_ws/src/smarc2/scripts$ ./unity_ros_bridge.sh 
+```
+Open the second terminal.  
+
+```bash
+ros2 launch auv_detector hook_estimator.launch
+```
 ---
 
 ## Tune Parameters

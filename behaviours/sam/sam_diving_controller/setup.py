@@ -35,6 +35,7 @@ setup(
             'setpoint = sam_diving_controller.SetpointNode:main',
             'joy_depth = sam_diving_controller.JoyNode:joy_depth',
             'nmpc_diving = sam_diving_controller.Node:nmpc_action_server',
+            'sim_sam = sam_diving_controller.Node:sim_sam',
         ],
     },
 )

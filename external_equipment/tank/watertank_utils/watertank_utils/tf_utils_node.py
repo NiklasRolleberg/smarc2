@@ -76,7 +76,7 @@ class MocapToEnuBroadcaster(Node):
         # No translation offset
         t.transform.translation.x = 0.0
         t.transform.translation.y = 0.0
-        t.transform.translation.z = 3.0
+        t.transform.translation.z = 2.8
 
         # 180 deg yaw + 90 deg roll = rotation from NED to ENU
         q = quaternion_from_euler(math.radians(180), 0, 0)

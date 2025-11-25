@@ -10,17 +10,28 @@ string CONTROLLER_INPUT_TOPIC = 'joy' # Joy
 string CONTROLLER_VIBRATION_TOPIC = 'joy/set_feedback' # JoyFeedback
 string TTS_TOPIC = 'speak' # String
 
-# gimbal camera
-string GIMBAL_CAMERA_RAW_TOPIC = 'gimbal_camera/image_raw' # Image
+# cameras
+string GIMBAL_CAMERA_RAW_TOPIC = 'gimbal_camera/camera/image_raw' # Image
+string FISHEYE_CAMERA_RAW_TOPIC = 'fisheye_camera/camera/image_raw' # Image
 
-# object detectors, these are in normalized camera pixel coordinates
-string ESTIMATED_BUOY_TOPIC = 'alars_detection/buoy' # PointStamped
+# object detectors in normalized image coordinates [-1,1]
+# (0,0) is the center of the image, +x is right, +y is up!
+# If this is not the case, FIX IT.
+string ESTIMATED_BUOY_TOPIC = 'alars_detection/buoy' # PointStamped, 
 string ESTIMATED_AUV_TOPIC = 'alars_detection/auv' # PointStamped
 string ESTIMATED_MIDDLE_TOPIC = 'alars_detection/middle' # PointStamped
+string ESTIMATED_CNN_HOOK_ANCHOR_TOPIC = 'alars_detection/cnn' # PointStamped
+string ESTIMATED_CNN_AFTER_CATCH_FLY_DIRECTION_TOPIC = 'alars_detection/cnn_vec' # PointStamped
+
+# object detectors in 3D
+string ESTIMATED_HOOK_TOPIC = 'alars_detection/hook_est' #PoseStamped
+string ESTIMATED_EKF_HOOK_TOPIC = 'alars_detection/hook_ekf' #PoseStamped
 
 # services
 string ENABLE_ALARS_DETECTOR_SERVICE_TOPIC = 'enable_alars_detector' # Trigger
 string DISABLE_ALARS_DETECTOR_SERVICE_TOPIC = 'disable_alars_detector' # Trigger
+string ENABLE_HOOK_ESTIMATOR_SERVICE_TOPIC = 'enable_hook_estimator' # Trigger
+string DISABLE_HOOK_ESTIMATOR_SERVICE_TOPIC = 'disable_hook_estimator' # Trigger
 
 # sensors that are not coming from PSDK
 string LOAD_CELL_RAW_TOPIC = 'sensor/load_cell_raw' # Int32

@@ -107,8 +107,13 @@ tmux split-window -v -t $SESSION:1.1      # Split right pane into top-right (0.1
 tmux select-layout -t $SESSION:1 tiled    # Arrange as a 2x2 grid
 
 tmux select-pane -t $SESSION:1.0
-tmux send-keys "ros2 launch alars_auv_search_planner search_planning_launch.py  mode:=\"'as'\" namespace:=\"'$ROBOT_NAME'\" use_sim_time:=$USE_SIM_TIME" C-m
-# the line above with all the quotes is annyoing but it works...
+tmux send-keys "ros2 run alars alars_search_action_server --ros-args -r __ns:=/$ROBOT_NAME \
+-p use_sim_time:=$USE_SIM_TIME \
+-p setpoint_threshold:=0.5 \
+-p spiral_arm_distance:=2.0 \
+-p min_setpoint_distance_to_drone:=1.0 \
+-p detection_freshness_threshold:=1.0" C-m
+
 
 tmux select-pane -t $SESSION:1.1
 tmux send-keys "ros2 run alars alars_localize_action_server --ros-args -r __ns:=/$ROBOT_NAME \
@@ -124,17 +129,13 @@ if [[ $USE_SIM_TIME = "True" ]]; then
 fi
 tmux send-keys "ros2 run alars alars_recover_action_server --ros-args -r __ns:=/$ROBOT_NAME \
 -p use_sim_time:=$USE_SIM_TIME \
--p setpoint_tolerance:=$ALARS_RECOVER_SETPOINT_TOLERANCE" C-m
+-p setpoint_tolerance:=$ALARS_RECOVER_SETPOINT_TOLERANCE \
+-p max_rope_length:=5.0" C-m
 
 
 tmux select-pane -t $SESSION:1.3
-MOVE_TO_SETPOINT_TOLERANCE=0.3
-if [[ $USE_SIM_TIME = "True" ]]; then
-    MOVE_TO_SETPOINT_TOLERANCE=1.0
-fi
-tmux send-keys "ros2 launch go_to_geopoint go_to_geopoint_server.launch robot_name:=$ROBOT_NAME use_sim_time:=$USE_SIM_TIME \
-setpoint_topic:=move_to_setpoint \
-setpoint_tolerance:=$MOVE_TO_SETPOINT_TOLERANCE" C-m
+tmux send-keys "ros2 run alars alars_move_to_action_server --ros-args -r __ns:=/$ROBOT_NAME \
+-p use_sim_time:=$USE_SIM_TIME" C-m
 
 
 # bt
@@ -154,8 +155,16 @@ LOADED_WEIGHT_KG=1.2 # real empty sam + hook + rope weight is 1.78kg, just the h
 tmux new-window -t $SESSION:3 -n 'alars-bt'
 tmux rename-window "alars-bt"
 tmux select-window -t $SESSION:3
-tmux send-keys "ros2 run alars alars_bt --ros-args -r __ns:=/$ROBOT_NAME -p use_sim_time:=$USE_SIM_TIME \
--p loaded_weight_kg:=$LOADED_WEIGHT_KG" C-m
+
+tmux split-window -h -t $SESSION:3.0
+tmux select-pane -t $SESSION:3.0
+tmux send-keys "ros2 run alars alars_bt --ros-args -r __ns:=/$ROBOT_NAME \
+-p use_sim_time:=$USE_SIM_TIME \
+-p loaded_weight_kg:=$LOADED_WEIGHT_KG \
+-p max_detection_age:=15.0" C-m
+
+tmux select-pane -t $SESSION:3.1
+tmux send-keys "ros2 topic echo ${ROBOT_NAME}/alars_bt/status std_msgs/msg/String --field data" C-m
 
 
 # camera and detection node
@@ -163,23 +172,55 @@ tmux new-window -t $SESSION:4 -n 'Camera'
 tmux rename-window "Cam"
 tmux select-window -t $SESSION:4
 tmux split-window -h -t $SESSION:4.0
+
 tmux select-pane -t $SESSION:4.0
+# Li-Fan's HSV based detector
+# AUV_DETECTOR_CONFIG_FILENAME=auv_detector_field_calibration.yaml
+# if [[ $USE_SIM_TIME = "True" ]]; then
+# AUV_DETECTOR_CONFIG_FILENAME=auv_detector_sim_calibration.yaml
+# fi
+# AUV_DETECTOR_CONFIG_FILE=$(ros2 pkg prefix auv_detector --share)/config/$AUV_DETECTOR_CONFIG_FILENAME
+# tmux send-keys "ros2 run auv_detector auv_buoy_detector --ros-args \
+# -r __ns:=/$ROBOT_NAME -p use_sim_time:=$USE_SIM_TIME \
+# --params-file $AUV_DETECTOR_CONFIG_FILE" C-m
 
-# auv buoy detector
-AUV_DETECTOR_CONFIG_FILENAME=auv_detector_field_calibration.yaml
+# Fransisco's YOLO detector
+YOLO_DEVICE=0
 if [[ $USE_SIM_TIME = "True" ]]; then
-    AUV_DETECTOR_CONFIG_FILENAME=auv_detector_sim_calibration.yaml
+    YOLO_DEVICE=cpu
 fi
-AUV_DETECTOR_CONFIG_FILE=$(ros2 pkg prefix auv_detector --share)/config/$AUV_DETECTOR_CONFIG_FILENAME
+tmux send-keys "ros2 launch auv_yolo_detector yolo_detector_launch.py \
+namespace:=$ROBOT_NAME \
+device:=$YOLO_DEVICE \
+use_sim_time:=$USE_SIM_TIME" C-m
 
-tmux send-keys "ros2 run auv_detector auv_buoy_detector --ros-args \
--r __ns:=/$ROBOT_NAME -p use_sim_time:=$USE_SIM_TIME \
---params-file $AUV_DETECTOR_CONFIG_FILE" C-m
 
 # the cam driver is needed just for the real thing
+# for basic usb webcam
+#tmux send-keys "ros2 run usb_cam usb_cam_node_exe --ros-args -r __ns:=/$ROBOT_NAME/gimbal_camera" C-m
 if [[ $USE_SIM_TIME = "False" ]]; then
+    tmux split-window -v -t $SESSION:4.1
     tmux select-pane -t $SESSION:4.1
-    tmux send-keys "ros2 run usb_cam usb_cam_node_exe --ros-args -r __ns:=/$ROBOT_NAME/gimbal_camera" C-m
+    # for the dji gimbal cam
+    # requires ros-humble-gscam gstreamer1.0-tools gstreamer1.0-plugins-good
+    GSCAM_CONFIG_DJI="v4l2src device=/dev/djipocket3 ! image/jpeg,width=1920,height=1080,framerate=30/1 ! jpegdec ! videoconvert ! video/x-raw,format=BGR"
+    tmux send-keys "ros2 run gscam gscam_node --ros-args \
+    -p gscam_config:=\"$GSCAM_CONFIG_DJI\" \
+    -p frame_id:=osmo3_optical_frame \
+    -p image_encoding:=rgb8 \
+    -p sync_sink:=false \
+    -r __ns:=/$ROBOT_NAME/gimbal_camera" C-m
+
+    # for the 360 cam
+    tmux select-pane -t $SESSION:4.2
+    # for the dji gimbal cam
+    GSCAM_CONFIG_FISH="v4l2src device=/dev/insta360x4 ! image/jpeg,width=1920,height=1080,framerate=30/1 ! jpegdec ! videoconvert ! video/x-raw,format=BGR"
+    tmux send-keys "ros2 run gscam gscam_node --ros-args \
+    -p gscam_config:=\"$GSCAM_CONFIG_FISH\" \
+    -p frame_id:=fisheye_optical_frame \
+    -p image_encoding:=rgb8 \
+    -p sync_sink:=false \
+    -r __ns:=/$ROBOT_NAME/fisheye_camera" C-m
 fi
 
 

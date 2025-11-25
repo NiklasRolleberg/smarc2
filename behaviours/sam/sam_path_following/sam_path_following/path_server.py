@@ -25,7 +25,6 @@ from tf2_ros import Buffer, TransformException, TransformListener
 from sam_path_following.path_action import ActionComponent as ActC
 from sam_path_following.path_action import PathAction
 
-KM_TO_METER = 1000
 
 class PathServer(SMARCActionServer):
     """Action point server that handle GotoGeopoint messages.
@@ -126,11 +125,37 @@ class PathServer(SMARCActionServer):
         self.distance_frame = f"{self.robot_name}/{self._distance_frame_param}{self._distance_frame_suffix}"
         self.logger.info(f"Distance frame {self.distance_frame}")
 
-    def _save_path(self, path):
+    def _save_path(self, goal_path):
         """
-        Convert path from list to numpy array.
+        Convert path from list to numpy array.                                                                
         """
-        self.path = np.asarray(path)
+        path = []
+        for i in range(0, len(goal_path.trajectory)):
+            i_path = []
+            i_path.append(goal_path.trajectory[i].wp.pose.position.x)
+            i_path.append(goal_path.trajectory[i].wp.pose.position.y)
+            i_path.append(goal_path.trajectory[i].wp.pose.position.z)
+            i_path.append(goal_path.trajectory[i].wp.pose.orientation.w)
+            i_path.append(goal_path.trajectory[i].wp.pose.orientation.x)
+            i_path.append(goal_path.trajectory[i].wp.pose.orientation.y)
+            i_path.append(goal_path.trajectory[i].wp.pose.orientation.z)
+            i_path.append(goal_path.trajectory[i].velocities.linear.x)
+            i_path.append(goal_path.trajectory[i].velocities.linear.y)
+            i_path.append(goal_path.trajectory[i].velocities.linear.z)
+            i_path.append(goal_path.trajectory[i].velocities.angular.x)
+            i_path.append(goal_path.trajectory[i].velocities.angular.y)
+            i_path.append(goal_path.trajectory[i].velocities.angular.z)
+            i_path.append(goal_path.trajectory[i].nominal_control.vbs.value)
+            i_path.append(goal_path.trajectory[i].nominal_control.lcg.value)
+            i_path.append(goal_path.trajectory[i].nominal_control.thruster_angles.thruster_vertical_radians)
+            i_path.append(goal_path.trajectory[i].nominal_control.thruster_angles.thruster_horizontal_radians)
+            i_path.append(goal_path.trajectory[i].nominal_control.rpms.thruster_1_rpm)
+            i_path.append(goal_path.trajectory[i].nominal_control.rpms.thruster_2_rpm)
+
+            path.append(i_path)
+
+        self.path = np.asarray(path)      
+        self.logger.info(f"AS: saved path")
 
 
     def goal_callback(self, goal_request: ActionType.Goal) -> GoalResponse:
@@ -149,7 +174,7 @@ class PathServer(SMARCActionServer):
         path = self._json_ops.decode(goal_request, ActC.GOAL)
         self.logger.info(f"Recieved path")
         self._save_path(path)
-        self.path_len = len(self.path) # TODO: Check which index to use, 0 or 1
+        self.path_len = len(self.path)
 
         # Accepts as all criteria fulfilled
         return GoalResponse.ACCEPT
@@ -220,10 +245,18 @@ class PathServer(SMARCActionServer):
 
 def main(args=None):
     rclpy.init(args=args)
-    node_name = "auv_hydrobatic_move_to"
-    node = rclpy.node.Node(node_name)
+    node_name = "path_server"
+    node = Node(node_name)
     action_type = ActionType(BaseAction)
-    setpoint = HydropointServer(node, "go_to_hydropoint", action_type)
+    path_server = PathServer(node, "sam/auv_trajectory_tracking", action_type)
+    #path_server.run()
+    #rclpy.spin(node)
+
+    #rclpy.init(args=args)
+    #node_name = "auv_hydrobatic_move_to"
+    #node = rclpy.node.Node(node_name)
+    #action_type = ActionType(BaseAction)
+    #setpoint = HydropointServer(node, "go_to_hydropoint", action_type)
     executor = MultiThreadedExecutor()
     executor.add_node(node)
     executor.spin()

@@ -45,7 +45,7 @@ class DiveControllerMPC(DiveControllerInterface):
         sam = SAM_casadi(dt=self._dt)
 
         # Flag if you want to rebuild the OCP or not (if changes has been made to the MPC)
-        build = True
+        build = False
 
         # create nmpc object for the OCP
         self.N_horizon = 30  # Prediction horizon
@@ -66,7 +66,7 @@ class DiveControllerMPC(DiveControllerInterface):
 
         # FIXME: This should change. We don't want to change code when
         # switching between trajectories and waypoints
-        self.ref_is_traj = False  # Flag to indicate if the reference is a trajectory or not
+        self.ref_is_traj = True # Flag to indicate if the reference is a trajectory or not
         self._loginfo("Dive Controller created")
 
         self._acados_status = {0: "ACADOS_SUCCESS",
@@ -165,6 +165,7 @@ class DiveControllerMPC(DiveControllerInterface):
         # simulate system:
         # NOTE: May be possible to use get(0, "x") to acquire the actual control input.
         self.simU = self.ocp_solver.get(0, "u")
+        simX = self.ocp_solver.get(0, "x")
 
         self.pred_mpc = []
         for j in range(self.N_horizon + 1):
@@ -188,6 +189,9 @@ class DiveControllerMPC(DiveControllerInterface):
         s += f"NMPC solver status: {self._acados_status[status]}\n"
         # s += f"NMPC solve time: {(end_time - start_time)*1000:.1f} ms\n"
         # s += f"Traj. index: {self._dive_sub.current_idx}/{self.traj_len}:\n" if self.ref_is_traj else f""
+        s += f"MPC pred: x: {simX[0]}, y: {simX[1]}, z: {simX[2]}\n"
+        s += f"ref: x: {self.trajectory.shape}\n"
+
 
         self._loginfo(s)
 
@@ -471,7 +475,7 @@ class DiveControllerMPC(DiveControllerInterface):
         u_vbs = mpc_solution[13]
         u_lcg = mpc_solution[14]
         u_stern = mpc_solution[15]
-        u_rudder = mpc_solution[16]
+        u_rudder = -mpc_solution[16]
         u_rpm1 = mpc_solution[17]
         u_rpm2 = mpc_solution[18]
 
