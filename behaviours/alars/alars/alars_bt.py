@@ -206,6 +206,8 @@ class AlarsBT():
         self.auv_in_view = False
         self.both_geopoints_known = False
         self.first_search_done = False
+        self._auv_geopoint_stamped = None
+        self._buoy_geopoint_stamped = None
         for ac in self._action_clients:
             ac.terminate(Status.INVALID)
 
