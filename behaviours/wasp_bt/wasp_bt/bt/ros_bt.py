@@ -72,6 +72,10 @@ class BT(HasVehicleContainer, HasClock, HasWaraPSTaskHandler):
         self._last_state_str = ""
 
         self._bt_health_timeout = bt_health_timeout
+        
+        # Add tracking for dynamic tree updates
+        self._last_available_tasks = []
+        self._task_handler_node = None  # Reference to the task handler node in the tree
 
     @property
     def vehicle_container(self) -> IVehicleStateContainer:
@@ -293,6 +297,45 @@ class BT(HasVehicleContainer, HasClock, HasWaraPSTaskHandler):
                                 
         return task_handler
 
+    def _update_task_handler_tree(self):
+        """
+        Check if available tasks have changed and rebuild the task handler subtree if needed.
+        Returns True if tree was updated, False otherwise.
+        """
+        if self._bt is None or self._task_handler_node is None:
+            return False
+            
+        # Get current available tasks
+        current_tasks = self._task_handler.get_available_tasks()
+        current_task_names = [task["ros_name"] for task in current_tasks 
+                             if "emergency" not in task["ros_name"] and "ready" not in task["ros_name"]]
+        
+        # Check if tasks have changed
+        if set(current_task_names) != set(self._last_available_tasks):
+            self._task_handler._node.get_logger().info(
+                f"Tasks changed from {self._last_available_tasks} to {current_task_names}. Rebuilding tree..."
+            )
+            
+            # Rebuild the task handler tree
+            new_task_handler = self._task_handler_tree(self.action_client_list)
+            
+            # Find the task handler node in the tree and replace it
+            # This assumes F_Task_Handler is a direct child of S_Root
+            root = self._bt.root
+            for i, child in enumerate(root.children):
+                if child.name == "F_Task_Handler":
+                    # Replace the old node with the new one
+                    root.children[i] = new_task_handler
+                    # Setup the new subtree
+                    new_task_handler.setup_with_descendants()
+                    self._task_handler_node = new_task_handler
+                    break
+            
+            self._last_available_tasks = current_task_names
+            return True
+            
+        return False
+
     def setup(self) -> bool:
 
         children = [
@@ -315,11 +358,25 @@ class BT(HasVehicleContainer, HasClock, HasWaraPSTaskHandler):
         root = Sequence("S_Root", memory=False, children=children)
 
         self._bt = pt.trees.BehaviourTree(root)
+        
+        # Store reference to task handler node for dynamic updates
+        for child in root.children:
+            if child.name == "F_Task_Handler":
+                self._task_handler_node = child
+                break
+        
+        # Initialize tracking for available tasks
+        tasks_available = self._task_handler.get_available_tasks()
+        self._last_available_tasks = [task["ros_name"] for task in tasks_available 
+                                     if "emergency" not in task["ros_name"] and "ready" not in task["ros_name"]]
+        
         return self._bt.setup()
 
 
 
     def tick(self):
+        # Update tree structure before ticking if tasks changed
+        self._update_task_handler_tree()
         self._bt.tick()
 
 
@@ -472,8 +529,17 @@ def wasp_bt():
         if is_bt_setup:
             bt.tick()
             print_bt(mode=bt_log_mode)
+    
+    def check_tree_updates():
+        """Periodically check if available tasks have changed (separate from tick for efficiency)"""
+        nonlocal bt, is_bt_setup
+        if is_bt_setup:
+            # The actual update happens in tick(), this is just for logging purposes
+            # or you could call bt._update_task_handler_tree() here if you want less frequent checks
+            pass
         
     node.create_timer(0.1, update)
+    node.create_timer(5.0, check_tree_updates)  # Optional: Add explicit periodic check
     # node.create_timer(0.5, print_bt)
 
     def publish_bt_tip():
