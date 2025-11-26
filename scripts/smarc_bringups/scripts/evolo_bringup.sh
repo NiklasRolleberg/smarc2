@@ -66,6 +66,7 @@ if [ "$REALSIM" = "real" ]; then
     # Evolo / puffin broker
     tmux select-pane -t $SESSION:3.0
     tmux send-keys "ros2 launch evolo_mqtt_bridge evolo_mqtt_launch.py" C-m
+    #tmux send-keys "ros2 launch evolo_serial_bridge evolo_serial_launch.py" C-m
     # Smarc broker
     tmux select-pane -t $SESSION:3.1
     tmux send-keys "sleep 7; ros2 launch str_json_mqtt_bridge waraps_bridge.launch broker_addr:=20.240.40.232 broker_port:=1884 robot_name:=$ROBOT_NAME domain:=$AGENT_TYPE realsim:=$REALSIM use_sim_time:=$USE_SIM_TIME context:=$CONTEXT" C-m
@@ -131,6 +132,10 @@ tmux select-window -t $SESSION:10
 tmux new-window -t $SESSION:11 -n 'visualization'
 tmux select-window -t $SESSION:11
 tmux send-keys "TDODO launch rosboard"
+
+tmux new-window -t $SESSION:20 -n 'zenoh router'p
+tmux select-window -t $SESSION:20
+tmux send-keys "ros2 run rmw_zenoh_cpp rmw_zenohd" C-m
 
 
 # Set default window
