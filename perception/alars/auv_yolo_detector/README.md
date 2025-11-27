@@ -21,11 +21,20 @@ When installing *Ultralytics*, corresponding dependencies (*eg*: torch, opencv, 
 > It is likely that if you run `pip3 install ultralytics` it will also install `numpy 2.2.6` (as of 2025 Nov). This is very likely to cause issues with the `tf_transformations` library (that everyone is using...). So remove numpy with `pip` if this is the case.
 
 ## Launch yolo detector (example)
-``
-ros2 launch auv_yolo_detector yolo_detector_launch.py namespace:=M350 device:=cpu
+Launch yolo detector:
+```
+ros2 launch auv_yolo_detector yolo_detector_launch.py namespace:=M350 device:=cpu use_sim_time:=true mode:="real"
+```
 
-ros2 service call /namespace/enable_alars_detector std_srvs/srv/Trigger 
-``
+Launch rviz file (needs absolute path):
+```
+rviz2 -d <your path>/perception/alars/auv_yolo_detector/config/M350_yolo.rviz 
+```
+
+Launch rosbag (for frame collection or testing purposes):
+ros2 bag play --read-ahead-queue-size 1000 -r 1.0 --clock 100 --start-paused <rosbag path>
+```
+
 ## **Visualization Topics**
 | Topic | Msg | Description |
 | --- | ---| --- |
