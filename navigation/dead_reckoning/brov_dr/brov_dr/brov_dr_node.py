@@ -8,6 +8,7 @@ from tf2_ros import StaticTransformBroadcaster
 from tf2_ros import TransformBroadcaster
 from nav_msgs.msg import Odometry
 from rclpy.qos import QoSProfile, ReliabilityPolicy, DurabilityPolicy, HistoryPolicy
+from geodesy import utm
 
 from tf_transformations import (
     quaternion_inverse,
@@ -31,14 +32,14 @@ class BrovDR(Node):
 
         # Parameters (can be overridden via ROS params)
         self.declare_parameter('odom_topic', '/mavros/local_position/odom')
-        self.declare_parameter('parent_frame', 'map')        # source frame
-        self.declare_parameter('child_frame', 'saabmarine/base_link')   # target frame
+        self.declare_parameter('map_frame', 'map')        # source frame
+        self.declare_parameter('base_frame', 'saabmarine/base_link')   # target frame
         self.declare_parameter('output_odom_topic', '/saabmarine/dr/odom')
         self.declare_parameter('odom_frame', 'saabmarine/odom')
 
         odom_topic = self.get_parameter('odom_topic').get_parameter_value().string_value
-        self.parent_frame = self.get_parameter('parent_frame').get_parameter_value().string_value
-        self.child_frame = self.get_parameter('child_frame').get_parameter_value().string_value
+        self.map_frame = self.get_parameter('map_frame').get_parameter_value().string_value
+        self.base_frame = self.get_parameter('base_frame').get_parameter_value().string_value
         self.odom_frame = self.get_parameter('odom_frame').get_parameter_value().string_value
         output_topic = self.get_parameter('output_odom_topic').value
 
@@ -85,17 +86,16 @@ class BrovDR(Node):
         if self._transform_sent:
             return
 
-        # TODO: convert lat/lon/alt to ENU
         t = TransformStamped()
         t.header.stamp = self.get_clock().now().to_msg()
         t.header.frame_id = 'world'
-        t.child_frame_id = self.parent_frame
+        t.child_frame_id = self.map_frame
 
-        t.transform.translation.x = float(0.)
-        t.transform.translation.y = float(0.)
+        utm_coord = utm.fromLatLong(msg.latitude, msg.longitude)
+        t.transform.translation.x = utm_coord.easting
+        t.transform.translation.y = utm_coord.northing
         t.transform.translation.z = 0.
 
-        # Identity orientation (no rotation)
         t.transform.rotation.x = 0.0
         t.transform.rotation.y = 0.0
         t.transform.rotation.z = 0.0
@@ -118,7 +118,7 @@ class BrovDR(Node):
         current_position = (p.x, p.y, p.z)
         current_orientation = (q.x, q.y, q.z, q.w)
 
-        # Al primer mensaje guardamos como origen
+        # Save origin from first received odom
         if self.initial_position is None:
             self.initial_position = current_position
             self.initial_orientation = current_orientation
@@ -127,29 +127,25 @@ class BrovDR(Node):
             self.initial_rot_matrix = quaternion_matrix(self.initial_quat_inv)
             self.get_logger().info("Initial odom pose captured as new origin.")
 
-            # t = TransformStamped()
-            # t.header.stamp = self.get_clock().now().to_msg()
-            # t.header.frame_id = 'world'
-            # t.child_frame_id = self.parent_frame
+            t = TransformStamped()
+            t.header.stamp = self.get_clock().now().to_msg()
+            t.header.frame_id = self.map_frame
+            t.child_frame_id = self.odom_frame
 
-            # t.transform.translation.x = float(0.)
-            # t.transform.translation.y = float(0.)
-            # t.transform.translation.z = 0.
+            t.transform.translation.x = 0.
+            t.transform.translation.y = 0.
+            t.transform.translation.z = 0.
+            t.transform.rotation.x = msg.pose.pose.orientation.x
+            t.transform.rotation.y = msg.pose.pose.orientation.y
+            t.transform.rotation.z = msg.pose.pose.orientation.z
+            t.transform.rotation.w = msg.pose.pose.orientation.w
 
-            # # Identity orientation (no rotation)
-            # t.transform.rotation.x = 0.0
-            # t.transform.rotation.y = 0.0
-            # t.transform.rotation.z = 0.0
-            # t.transform.rotation.w = 1.0
+            # Publish as static transform
+            self.static_broadcaster.sendTransform(t)
 
-            # # Publish as static transform
-            # self.static_broadcaster.sendTransform(t)
-            # self._transform_sent = True
-
-            # self.get_logger().info(
-            #     f'Published static TF map -> odom with '
-            # )
-
+            self.get_logger().info(
+                f'Published static TF map -> odom with '
+            )
 
         # p_rel = R(q0^-1) * (p - p0)
         dx = current_position[0] - self.initial_position[0]
@@ -163,7 +159,8 @@ class BrovDR(Node):
 
         new_msg = Odometry()
         new_msg.header = msg.header  
-        new_msg.child_frame_id = msg.child_frame_id
+        new_msg.header.frame_id = self.odom_frame   
+        new_msg.child_frame_id = self.base_frame
 
         new_msg.pose = msg.pose
         new_msg.pose.pose.position.x = p_rel[0]
@@ -175,7 +172,6 @@ class BrovDR(Node):
         new_msg.pose.pose.orientation.w = q_rel[3]
         new_msg.twist = msg.twist
 
-        # self.odom_pub.publish(new_msg)
         self.publish_tf_odom(new_msg)
 
 
@@ -205,14 +201,15 @@ class BrovDR(Node):
         t = TransformStamped()
         # Use timestamp from the odometry message
         t.header.stamp = msg.header.stamp
-        t.header.frame_id = self.parent_frame
-        t.child_frame_id = self.child_frame
+        t.header.frame_id = self.odom_frame
+        t.child_frame_id = self.base_frame
 
         # Copy position
         t.transform.translation.x = msg.pose.pose.position.x
         t.transform.translation.y = msg.pose.pose.position.y
         t.transform.translation.z = msg.pose.pose.position.z
 
+        # Flit to FRD frame
         q_enu_to_frd = np.array([1.0, 0.0, 0.0, 0.0])
         q_odom = np.array([
             msg.pose.pose.orientation.x,
@@ -220,7 +217,6 @@ class BrovDR(Node):
             msg.pose.pose.orientation.z,
             msg.pose.pose.orientation.w
         ])
-
         q_out = quaternion_multiply(q_odom, q_enu_to_frd)
         msg.pose.pose.orientation = self.quaternion_to_msg(q_out)#
         t.transform.rotation = self.quaternion_to_msg(q_out)#
