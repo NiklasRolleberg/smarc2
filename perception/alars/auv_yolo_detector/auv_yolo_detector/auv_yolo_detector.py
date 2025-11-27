@@ -422,6 +422,8 @@ class YOLODetector(Node):
             if not isinstance(self.model_params[key], expected):
                 raise TypeError(f"{key} should be {expected}, got {type(self.model_params[key]).__name__}")
             
+        self.model_params["topics.rviz.annotated_image"] = self.model_params["topics.rviz.annotated_image"] + str(2)
+            
             
 
 def main():

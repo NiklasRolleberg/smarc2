@@ -1,8 +1,9 @@
 from launch import LaunchDescription
 from launch.actions import DeclareLaunchArgument,LogInfo
-from launch.substitutions import LaunchConfiguration, PathJoinSubstitution
+from launch.substitutions import LaunchConfiguration, PathJoinSubstitution, PythonExpression
 from launch_ros.actions import Node
 from launch_ros.substitutions import FindPackageShare
+from launch.conditions import IfCondition, LaunchConfigurationEquals
 
 def generate_launch_description():
 
@@ -20,12 +21,19 @@ def generate_launch_description():
     use_sim_time = LaunchConfiguration('use_sim_time')
     model_file = LaunchConfiguration('model_file')
 
-    # ---- rarely changed params from yaml (yaml has every parameter but launch arguments will override)
-    config_file = PathJoinSubstitution([
+    # ---- Paths for config files and model.
+    real_config = PathJoinSubstitution([
         FindPackageShare('auv_yolo_detector'),
         'config',
-        'params.yaml'
+        'real_params.yaml'
     ])
+
+    sim_config = PathJoinSubstitution([
+        FindPackageShare('auv_yolo_detector'),
+        'config',
+        'sim_params.yaml'
+    ])
+
 
     model_path = PathJoinSubstitution([
         FindPackageShare('auv_yolo_detector'),
@@ -33,21 +41,43 @@ def generate_launch_description():
         model_file
     ])
 
-    detector_node = Node(
+    # ----Node declaration, while making sure config file matches the mode
+
+    detector_node_real = Node(
         package='auv_yolo_detector',
         executable='auv_yolo_detector',
         namespace=namespace,
         output='screen',
         parameters=[
-            config_file,
+            real_config,
             {
                 'mode': mode,
                 'namespace': namespace,
                 'device': device,
                 'use_sim_time': use_sim_time,
                 'model_path': model_path
-            },
-        ]
+            }
+        ],
+        condition=LaunchConfigurationEquals('mode', 'real') #IfCondition(PythonExpression([mode, " == 'real'"]))
+        
+    )
+
+    detector_node_sim = Node(
+        package='auv_yolo_detector',
+        executable='auv_yolo_detector',
+        namespace=namespace,
+        output='screen',
+        parameters=[
+            sim_config,
+            {
+                'mode': mode,
+                'namespace': namespace,
+                'device': device,
+                'use_sim_time': use_sim_time,
+                'model_path': model_path
+            }
+        ],
+        condition=LaunchConfigurationEquals('mode', 'sim') #IfCondition(PythonExpression([mode, " == 'sim'"]))
     )
 
     return LaunchDescription([
@@ -61,5 +91,6 @@ def generate_launch_description():
         LogInfo(msg=["[Launch] device argument = ", device]),
         LogInfo(msg=["[Launch] use_sim_time argument = ", use_sim_time]),
         LogInfo(msg=["[Launch] yolo model path = ", model_path]),
-        detector_node
+        detector_node_real,
+        detector_node_sim
     ])
