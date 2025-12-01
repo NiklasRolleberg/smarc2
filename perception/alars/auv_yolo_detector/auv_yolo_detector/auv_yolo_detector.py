@@ -83,7 +83,6 @@ class YOLODetector(Node):
             self.get_logger().warn(f'\n\nYOLO model import failed; check if the model_path rosparam is pointing to a valid model file! Readme has more details.\nGiven path:{self.model_params["model_path"]}\n\n')
             self.get_logger().warn(str(e))
             self.get_logger().warn(traceback.format_exc())
-        self.camera_model = PinholeCameraModel()
         self.bridge = CvBridge()
 
         # timer to simulate tracking
@@ -256,14 +255,14 @@ class YOLODetector(Node):
 
         return im[corners[3]:corners[1], corners[2]:corners[0]], c4 - corners[2:]
 
-    def filter_detections(self, results: OBB) -> Tuple[Results, torch.Tensor, Union[list, None], Union[list, None]]:
+    def filter_detections(self, obb: OBB) -> Tuple[Results, torch.Tensor, Union[list, None], Union[list, None]]:
         """
         Filter detections by choosing most likely detection for each class and filter according to 
         box ratio and temporal/velocity constraints
         """
 
-        cls : torch.Tensor = results.cls
-        conf: torch.Tensor = results.conf
+        cls : torch.Tensor = obb.cls
+        conf: torch.Tensor = obb.conf
         sam_index, buoy_index = None, None  
         
         # Keep most likely sam/buoy (sam = 0, buoy = 1)
@@ -277,20 +276,20 @@ class YOLODetector(Node):
 
         # Check length/width ratio of sam bounding box
         if sam_index is not None:
-            lw_ratio = max(results.xywhr[sam_index][2],results.xywhr[sam_index][3])/min(results.xywhr[sam_index][2],results.xywhr[sam_index][3]) 
+            lw_ratio = max(obb.xywhr[sam_index][2],obb.xywhr[sam_index][3])/min(obb.xywhr[sam_index][2],obb.xywhr[sam_index][3]) 
             if lw_ratio < self.filt_params["lw_ratio_lb"] or lw_ratio > self.filt_params["lw_ratio_ub"]: 
                 sam_index = None
 
         # return objects posiitons as lists
-        sam_pos = results.xywhr[sam_index][0:2] if sam_index is not None else None
-        buoy_pos = results.xywhr[buoy_index][0:2] if buoy_index is not None else None
+        sam_pos = obb.xywhr[sam_index][0:2] if sam_index is not None else None
+        buoy_pos = obb.xywhr[buoy_index][0:2] if buoy_index is not None else None
 
         # Create valid detections mask and return new result.obb object
         final_mask = np.full(cls.cpu().numpy().size, False)
         if sam_index is not None: final_mask[sam_index] = True 
         if buoy_index is not None: final_mask[buoy_index] = True 
 
-        return results[torch.from_numpy(final_mask)], torch.from_numpy(final_mask), sam_pos, buoy_pos
+        return obb[torch.from_numpy(final_mask)], torch.from_numpy(final_mask), sam_pos, buoy_pos
                    
 
 
@@ -397,9 +396,9 @@ class YOLODetector(Node):
             "frames.camera": str,
         }
         frames_topics = {
-            "topics.rviz.annotated_image": namespace + "/rviz/" + self.get_parameter("topics.rviz.annotated_image").value,
-            "topics.rviz.bw_blurred_sam": namespace + "/rviz/" + self.get_parameter("topics.rviz.bw_blurred_sam").value,
-            "topics.rviz.edges": namespace + "/rviz/" + self.get_parameter("topics.rviz.edges").value,
+            "topics.rviz.annotated_image": namespace + "/"  + self.get_parameter("topics.rviz.annotated_image").value,
+            "topics.rviz.bw_blurred_sam": namespace + "/"  + self.get_parameter("topics.rviz.bw_blurred_sam").value,
+            "topics.rviz.edges": namespace + "/"  + self.get_parameter("topics.rviz.edges").value,
 
             "topics.predicted_position.sam": namespace + "/" + Topics.ESTIMATED_AUV_TOPIC,
             "topics.predicted_position.buoy": namespace + "/" + Topics.ESTIMATED_BUOY_TOPIC,
