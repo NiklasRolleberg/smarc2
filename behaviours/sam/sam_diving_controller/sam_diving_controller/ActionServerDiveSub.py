@@ -661,6 +661,7 @@ class MPCPathServer(PathServer, DiveSub):
         status = self.feedback_loop(goal_handle)
         if status == "cancelled":
             self.logger.info("Goal was cancelled by client.")
+            self.set_mission_state(MissionStates.CANCELLED, "AS")
             result_msg.success = False
             return result_msg
         
@@ -677,8 +678,19 @@ class MPCPathServer(PathServer, DiveSub):
         """
         rate = self._node.create_rate(2)
         feedback = self.action_type.Feedback
+        start_time = self._node.get_clock().now()
 
         while self.current_idx < self.path_len:
+            current_time = self._node.get_clock().now()
+            elapsed = (current_time - start_time).nanoseconds / 1e9  # seconds
+            self.set_mission_state(MissionStates.RUNNING, "AS")
+
+            #self.logger.info(f"elapsed: {elapsed}")
+
+            if elapsed > 50:
+                self.logger.info("Goal was cancelled by timeout.")
+                goal_handle.abort()
+                return "cancelled"
 
             self.set_mission_state(MissionStates.RUNNING, "AS")
             if goal_handle.is_cancel_requested:
