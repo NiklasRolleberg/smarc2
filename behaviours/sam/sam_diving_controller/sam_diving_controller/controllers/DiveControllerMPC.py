@@ -33,6 +33,7 @@ class DiveControllerMPC(DiveControllerInterface):
         self._ref = None
         self._error = None
         self._input = None
+        self._control_ref = None
         self.waypoint = None
 
 
@@ -191,14 +192,15 @@ class DiveControllerMPC(DiveControllerInterface):
             self.set_publishers(mpc_solution)
 
         # FIXME: Remove all the print statements here. They only should appear in the convenience node
+        np.set_printoptions(precision=3)
         s = f"\nNMPC INFO\n"  # {self._dive_sub.current_idx}/{self.traj_len}:\n"
         s += f"NMPC solver status: {status}\n"
         # s += f"NMPC solve time: {(end_time - start_time)*1000:.1f} ms\n"
         # s += f"Traj. index: {self._dive_sub.current_idx}/{self.traj_len}:\n" if self.ref_is_traj else f""
         s += f"current state: x: {x_current[0]}, y: {x_current[1]}, z: {x_current[2]}\n"
         s += f"MPC pred: x: {simX[0]}, y: {simX[1]}, z: {simX[2]}\n"
-        s += f"ref: {self.ref[0,:6]}\n"
-        s += f"u_vbs = {mpc_solution[13]}, u_lcg = {mpc_solution[14]} u_stern = {mpc_solution[15]} u_rudder = {-mpc_solution[16]} u_rpm1 = {mpc_solution[17]} u_rpm2 = {mpc_solution[18]}\n"
+        s += f"traj idx: {self.traj_index}/{self.traj_len}, ref: {self.ref[0,:6]}\n"
+        s += f"u_vbs = {mpc_solution[13]}, u_lcg = {mpc_solution[14]} u_stern = {mpc_solution[15]} u_rudder = {mpc_solution[16]} u_rpm1 = {mpc_solution[17]} u_rpm2 = {mpc_solution[18]}\n"
 
 
         self._loginfo(s)
@@ -494,14 +496,14 @@ class DiveControllerMPC(DiveControllerInterface):
                 self.ref = self.trajectory[self.traj_index:self.traj_index + self.N_horizon, :]
 
                 # DEBUG
-                self.ref[:,0] = 4
-                self.ref[:,1] = 0
-                self.ref[:,2] = 0
-                self.ref[:,3] = 1
-                self.ref[:,4:] = 0
-                self.ref[:,13] = 50
-                self.ref[:,14] = 50
-                self.ref[:,15:] = 0
+                #self.ref[:,0] = 4
+                #self.ref[:,1] = 0
+                #self.ref[:,2] = 0
+                #self.ref[:,3] = 1
+                #self.ref[:,4:] = 0
+                #self.ref[:,13] = 50
+                #self.ref[:,14] = 50
+                #self.ref[:,15:] = 0
 
             else:
                 self._loginfo_once("Trajectory Tracking Complete")
@@ -555,9 +557,20 @@ class DiveControllerMPC(DiveControllerInterface):
             self._ref.pitch = euler_angles[1]
             self._ref.yaw = euler_angles[2]
 
+            self._control_ref = ControlInput()
+            self._control_ref.vbs = self.ref[0,13]
+            self._control_ref.lcg = self.ref[0,14]
+            self._control_ref.thrustervertical = self.ref[0,15]
+            self._control_ref.thrusterhorizontal = self.ref[0,16]
+            self._control_ref.thrusterrpm = float(self.ref[0,17])
+
+
     def get_mpc_pred(self):
         """
         Get method for the MPC predictions
         """
 
         return self.pred_mpc
+
+    def get_ref_input(self):
+        return self._control_ref
