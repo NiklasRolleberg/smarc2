@@ -20,9 +20,9 @@
 
     topics:
       rviz:
-        annotated_image: 'yolo_annotation'
-        bw_blurred_sam: 'blurred_sam'
-        edges: 'sam_edges'
+        annotated_image: 'rviz/yolo_annotation'
+        bw_blurred_sam: 'rviz/blurred_sam'
+        edges: 'rviz/sam_edges'
       predicted_position: # only in sim
         sam: '/Quadrotor/pred_position/sam'
         buoy: '/Quadrotor/pred_position/buoy'
