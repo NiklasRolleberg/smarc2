@@ -1,9 +1,7 @@
 #!/usr/bin/python
 import sys
-import os
 from math import tan, dist, pi
 import time
-import numpy as np
 import rclpy
 from rclpy.node import Node
 from rclpy.executors import MultiThreadedExecutor
@@ -18,13 +16,10 @@ from smarc_msgs.msg import Topics as Topics_smarc
 import traceback
 
 
+
 class SearchPlannerController(Node):
     """ 
-    This node creates instances of grid_map and path planner classes and controls them via timer. 
-
-    Attributes (the relevant ones):
-        countsToInitialize<...>: the count attributes (grid map and path planner) impose a time delay in the initialization of the corresponding procedure.
-
+    This node creates instances of grid_map and path planner classes and controls them via timers. 
     """
     def __init__(self):
         super().__init__(
@@ -48,10 +43,8 @@ class SearchPlannerController(Node):
         self.grid_map = ProbabilisticGridMap(params = self.model_params)
         self.planner: SearchPlanner = planner_dict[self.model_params['path_planner']](params = self.model_params, grid_map = self.grid_map)
 
-        # important attributes -> have to be defined to trigger search. sam_init_pos corresponds to
-        # 1st position on odom topic; drone_init_pos is "hardcoded" since the drone might not start 
-        # from the desired initial position but will move to that position before starting search (in 'sim')
-        self.sam_init_pos: PointStamped = None
+        # important attributes -> have to be defined to trigger search. drone_init_pos is "hardcoded" since the drone 
+        # might not start from the desired initial position but will move to that position before starting search (in 'sim')
         self.drone_init_pos: PointStamped = None
         self.GPS_ping: PointStamped = None
         
@@ -65,7 +58,6 @@ class SearchPlannerController(Node):
                                         callback = self.get_path_srv_callback)
         elif self.model_params["mode"] == 'sim':
             self.sim_commands = InitializeActions(params = self.model_params)
-            self.get_sam_init_position()
 
 
         # initialize flags and counters to manage path planner and grid map timers
@@ -129,7 +121,7 @@ class SearchPlannerController(Node):
             return response
         else: return None
 
-    def reinitialize_search(self):
+    def reinitialize_search(self) -> None:
         """ 
         Reinitializes grid map and planner state (called when client makes requests a new service and 
         the search planning has to be reinitiated without destroying the node)
@@ -143,12 +135,12 @@ class SearchPlannerController(Node):
 
     """ --- Management of drone initial position and GPS ping retrievals """
 
-    def get_initial_info(self):
+    def get_initial_info(self) -> None:
         """ timer to continously try to get GPS ping and initial quadrotor's position (in sim mode) """
         self.get_logger().info("Waiting for initial information ...")
         self.initial_info = self.create_timer(0.1, self.attemp_retrieval)
 
-    def attemp_retrieval(self):
+    def attemp_retrieval(self) -> None:
         """ 
         Ensures the planner has GPS ping and the quadrotor's position in map_gt before initiating searching. The
         planner will only be executed when these variables are retrieved, which indicated by the flag init_done.
@@ -177,7 +169,8 @@ class SearchPlannerController(Node):
                         self.init_done = True
                         self.get_logger().info(f'Ready to start search')
 
-    def check_drone_position(self):
+
+    def check_drone_position(self) -> None:
         """ 
         Continously publish initial waypoint and checking distance; only useful in sim and it allows 
         detecting when we're close to SAM without detection node (distance-based only)
@@ -187,7 +180,7 @@ class SearchPlannerController(Node):
                                         self.drone_init_pos.point.z)
         if None in (x_odom, y_odom): return
         
-        if dist([x_odom, y_odom], [self.drone_init_pos.point.x, self.drone_init_pos.point.y]) < self.model_params["distance_threshold"]:
+        if dist([x_odom, y_odom], [self.drone_init_pos.point.x, self.drone_init_pos.point.y]) < 2*self.model_params["distance_threshold"]:
             self.relocate_timer.cancel()
             self.START = time.time()
             self.get_logger().info(f'Ready to start search!')
@@ -196,7 +189,7 @@ class SearchPlannerController(Node):
 
     """ --- Management of path planner """
 
-    def run_path_planner(self):
+    def run_path_planner(self) -> None:
         """ timer to continously produce and check path """
         self.path_timer = self.create_timer(self.path_update_dt, self.update_path)
 
@@ -237,11 +230,11 @@ class SearchPlannerController(Node):
 
     """ --- Management of grid map """
 
-    def run_grid_map(self):
+    def run_grid_map(self) -> None:
         """ timer to continously update grid map """
         self.create_timer(self.grid_update_dt, self.update_grid_map)
 
-    def update_grid_map(self):
+    def update_grid_map(self) -> float:
         """ Grid map timer callback. It will update the map with Bayes Filtering over and over"""
         map_seen = 0
         if self.init_done:
@@ -250,7 +243,7 @@ class SearchPlannerController(Node):
                     self.planner.grid_map.initiate_grid_map()
                     self.map_initiated = True
                 except Exception as e:
-                    self.get_logger().warn("Grid map initialization failed (most likely tf failure)")
+                    self.get_logger().warn("Grid map initialization failed (most likely tf failure); initialization will be retried")
                     self.get_logger().warn(str(e))
                     return map_seen
                 
@@ -269,7 +262,7 @@ class SearchPlannerController(Node):
     
     """ --- Management of returning motion """
 
-    def return_to_base(self):
+    def return_to_base(self) -> None:
         """ 
         This method will be called by the main function when the generate_path method return False. 
         It's called only on sim mode, when drone has found sam """
@@ -277,7 +270,7 @@ class SearchPlannerController(Node):
         self.get_logger().info('Simulation will end (low battery or SAM was found), returning to base.')
         self.return_timer = self.create_timer(0.5, self.return_timer_callback)
 
-    def return_timer_callback(self):
+    def return_timer_callback(self) -> None:
         """ Timer that continously checks when the drone is sufficiently close to the base (origin of odom frame)"""
         odom_x, odom_y = self.planner.return_to_base()
         thresh = 0.5
@@ -288,7 +281,7 @@ class SearchPlannerController(Node):
 
     """ --- Parameters declaration """
 
-    def get_params(self):
+    def get_params(self) -> None:
         """ 
         Check parameters type and update dictionary when needed:
             - sim mode has more parameters (sam stuff that's not accessible in real life)
@@ -408,10 +401,9 @@ class SearchPlannerController(Node):
             self.model_params.update(sim_parameters)
 
         
-    def finish_experiment(self):
+    def finish_experiment(self) -> bool:
         """ 
-        Experiment purposes only: checks when drone reaches AUV and logs parameters and metrics
-        into a mlflow server, as long as uri is properly set up
+        Checks when drone reaches AUV
         """
 
         try:
@@ -423,22 +415,8 @@ class SearchPlannerController(Node):
         if distance <= tan((pi/180)*self.model_params["drone.camera_fov"]/2)*self.planner.drone_position.point.z:
             self.get_logger().info("Experiment ended, logging information ...")             
             return True
+        
         return False
-
-            
-
-    def calc_init_distance(self)-> float:
-        """ Calculates distance between stored sam's initial position and predefined drone's initial position"""
-        return self.planner.calculate_distance(self.sam_init_pos, self.drone_init_pos)
-
-    def get_sam_init_position(self):
-        self.sam_pos_timer = self.create_timer(0.5, self.get_sam_init_position_callback)
-
-    def get_sam_init_position_callback(self):
-        if not self.sam_pos_timer.is_canceled() and self.sam_init_pos is None:
-            self.sam_init_pos = self.planner.sam_position
-            if self.sam_init_pos is not None:
-                self.sam_pos_timer.cancel()
 
 
 def main():

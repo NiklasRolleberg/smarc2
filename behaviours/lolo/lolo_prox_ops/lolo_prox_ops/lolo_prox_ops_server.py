@@ -38,8 +38,10 @@ class LoloProxOpsAction():
     class ACTION_PHASE(Enum):
         STANDBY = 0 # Do nothing
         LOITER = 1 # Loiter underwater and wait for a position fix from the docking station
-        LONG_DISTANCE = 2 # Drive towards the docking station
-        SHORT_DISTANCE = 3 # Close range including speed control?
+        POSE_INTERCEPT = 2
+        TOPIC_INTERCEPT = 3
+        #LONG_DISTANCE = 2 # Drive towards the docking station
+        #SHORT_DISTANCE = 3 # Close range including speed control?
         DONE = 4 # We have received a "success" and will stop the action
 
     def __init__(self,
@@ -75,6 +77,10 @@ class LoloProxOpsAction():
         self.robot_altitude = None #altitude over seafloor in meters [Float32]
         self.target_position = PoseStamped() #target position [geometry_msgs/msg/Pose]
         self.target_position_time = None #node time to be compared with current time
+        self.target_yawrate = 0
+        self.target_yawrate_time = None
+        self.target_rpm = 0
+        self.target_rpm_time = None
         self.current_loiter_point_index=0 #Index of current loiter point    
         self.loiter_points = []
 
@@ -119,6 +125,7 @@ class LoloProxOpsAction():
         self.path_pub = self._node.create_publisher(Path, 'proxops/path',10, callback_group=self.publisher_callback_group)
         self.rpm_pub = self._node.create_publisher(Float32, loloTopics.RPM_SETPOINT, 10, callback_group=self.publisher_callback_group)
         self.yaw_pub = self._node.create_publisher(Float32, loloTopics.YAW_SETPOINT, 10, callback_group=self.publisher_callback_group)
+        self.yawrate_pub = self._node.create_publisher(Float32, loloTopics.YAW_RATE_SETPOINT, 10, callback_group=self.publisher_callback_group)
         self.depth_pub = self._node.create_publisher(Float32, loloTopics.DEPTH_SETPOINT, 10, callback_group=self.publisher_callback_group)
         self.roll_pub = self._node.create_publisher(Float32, loloTopics.ROLL_SETPOINT, 10, callback_group=self.publisher_callback_group)
 
@@ -127,6 +134,8 @@ class LoloProxOpsAction():
         self.target_sub = self._node.create_subscription(PoseStamped, 'proxops/target', self.target_callback,10, callback_group=self.subscriber_callback_group2)
         self.robot_sub = self._node.create_subscription(Odometry, smarcTopics.ODOM_TOPIC, self.robot_odom_callback,10, callback_group=self.subscriber_callback_group)
         self.done_sub = self._node.create_subscription(Empty, 'proxops/done', self.done_callback,10, callback_group=self.subscriber_callback_group)
+        self.done_sub = self._node.create_subscription(Float32, 'proxops/yawrate_request', self.yawrate_callback,10, callback_group=self.subscriber_callback_group)
+        self.done_sub = self._node.create_subscription(Float32, 'proxops/rpm_request', self.rpm_callback,10, callback_group=self.subscriber_callback_group)
 
         self._node.get_logger().info("Action server started")
 
@@ -239,23 +248,38 @@ class LoloProxOpsAction():
         if(self.robot_position is None or (time_now - self.robot_position_time) > 10):
             self._node.get_logger().error("ERROR no robot position")
             return None
+
+        #Debug prints
         if(self.target_position_time != None):
             t = time_now - self.target_position_time
             self._node.get_logger().info("Tince since last target message: " + str(t))
+        if(self.target_rpm_time != None):
+            t = time_now - self.target_rpm_time
+            self._node.get_logger().info("Tince since last rpm message: " + str(t))
+        if(self.target_yawrate_time != None):
+            t = time_now - self.target_yawrate_time
+            self._node.get_logger().info("Tince since last yawrate message: " + str(t))
 
-        if(self.target_position == None or self.target_position_time == None): 
+        
+        #Reset phase variable
+        self.current_action_phase = None
+
+        #Priority 1: target intercept using yawrate and rpm
+        if(self.target_yawrate_time != None and self.target_rpm_time != None):
+            if( time_now - self.target_yawrate_time < 2.0 and time_now - self.target_yawrate_time < 2.0):
+                self.current_action_phase = self.ACTION_PHASE.TOPIC_INTERCEPT
+
+        #Priority 2: target intercept pose
+        if(self.current_action_phase == None and self.target_position != None and self.target_position_time != None):
+            if(time_now - self.target_position_time < 20):
+                self.current_action_phase = self.ACTION_PHASE.POSE_INTERCEPT
+
+        #Fallback. Loiter
+        if(self.current_action_phase == None):
             self.current_action_phase = self.ACTION_PHASE.LOITER
-        elif(time_now - self.target_position_time > 20):
-            self.current_action_phase = self.ACTION_PHASE.LOITER
-        else:
-            #TODO integrate target position..
-            dist = self.calculate_distance(self.robot_position, self.target_position)
-            self._node.get_logger().info("Distance to target: " + str(dist))
-            if(dist > 200): self.current_action_phase = self.ACTION_PHASE.LONG_DISTANCE
-            else: self.current_action_phase = self.ACTION_PHASE.SHORT_DISTANCE
             
             
-
+        #Loiter
         if(self.current_action_phase == self.ACTION_PHASE.LOITER):
             # We will plan a path every X loops that keeps lolo inside the geofenced area
             # Preferable as far away from the corners as possible to avoid running aground
@@ -297,71 +321,89 @@ class LoloProxOpsAction():
             self.depth_pub.publish(depth_setpoint)
             self.roll_pub.publish(roll_setpoint)
 
+        #Intercept target pose
+        if(self.current_action_phase == self.ACTION_PHASE.POSE_INTERCEPT):
+            dist = self.calculate_distance(self.robot_position, self.target_position)
+            self._node.get_logger().info("Distance to target: " + str(dist))
+            if(dist > 50):
+                # Plan a path that goes to a point 10m ahead of the docking station
+                # Send yaw = 10s into the future in the path
+                # Set RPM = Fast
+                path = self.plan_path(self.robot_position, self.target_position)
+                if(path is not None ): 
+                    self._node.get_logger().info("Plan path successful")
+                    #Publish path and map for logging
+                    self.path_pub.publish(path)
+                    self.map_pub.publish(self.map)
 
-        if(self.current_action_phase == self.ACTION_PHASE.LONG_DISTANCE):
-            # Plan a path that goes to a point 10m ahead of the docking station
-            # Send yaw = 10s into the future in the path
-            # Set RPM = Fast
+                    yaw_setpoint = Float32()
+                    roll_setpoint = Float32()
+                    depth_setpoint = Float32()
+                    rpm_setpoint = Float32()
 
-            #Plan a path to the next loiter point
-            path = self.plan_path(self.robot_position, self.target_position)
-            if(path is not None ): 
-                self._node.get_logger().info("Plan path successful")
-                #Publish path and map for logging
-                self.path_pub.publish(path)
-                self.map_pub.publish(self.map)
+                    yaw_setpoint.data = self.get_yaw_from_path(self.robot_position, path)
+                    roll_setpoint.data = 0.0
+                    depth_setpoint.data = self.get_depth_setpoint(self.long_distance_depth)
+                    rpm_setpoint.data = self.fast_rpm
+                    #self._node.get_logger().info("Yaw setpoint: " +str(yaw_setpoint))
 
+                    #publish setpoints
+                    self.rpm_pub.publish(rpm_setpoint)
+                    self.yaw_pub.publish(yaw_setpoint)
+                    self.depth_pub.publish(depth_setpoint)
+                    self.roll_pub.publish(roll_setpoint)
+                else: 
+                    self._node.get_logger().error("Failed to plan path")
+                    return False #FAIL
+            else:
+                # Set target yaw = docking station + 10m ahead
+                # Set RPM = SLOW if distance to target < 2m
+                # Set RPM = FAST if distance to target < 4m
                 yaw_setpoint = Float32()
                 roll_setpoint = Float32()
                 depth_setpoint = Float32()
                 rpm_setpoint = Float32()
 
-                yaw_setpoint.data = self.get_yaw_from_path(self.robot_position, path)
-                roll_setpoint.data = 0.0
-                depth_setpoint.data = self.get_depth_setpoint(self.long_distance_depth)
-                rpm_setpoint.data = self.fast_rpm
-                #self._node.get_logger().info("Yaw setpoint: " +str(yaw_setpoint))
+                #Project target to the side and foward
+                t = time_now - self.target_position_time
+                projected_target = self.integrate_pose(self.target_position,2,angle_rad=math.radians(-90))
+                projected_target = self.integrate_pose(projected_target,5 + 1.0*t,angle_rad=math.radians(0))
 
+                dist = self.calculate_distance(self.robot_position, projected_target)
+                self._node.get_logger().info("Distance to projected target: " + str(dist))
+
+                yaw_setpoint.data = self.get_angle_between_points(self.robot_position, projected_target)
+                roll_setpoint.data = 0.0
+                depth_setpoint.data = self.get_depth_setpoint(self.short_distance_depth)
+                rpm_setpoint.data = self.slow_rpm if self.calculate_distance(self.robot_position, projected_target) < 3 else self.fast_rpm
+                #self._node.get_logger().info("Yaw setpoint: " +str(yaw_setpoint))
+                
                 #publish setpoints
                 self.rpm_pub.publish(rpm_setpoint)
                 self.yaw_pub.publish(yaw_setpoint)
                 self.depth_pub.publish(depth_setpoint)
                 self.roll_pub.publish(roll_setpoint)
-            else: 
-                self._node.get_logger().error("Failed to plan path")
-                return False #FAIL
-            pass
-
-        if(self.current_action_phase == self.ACTION_PHASE.SHORT_DISTANCE):
-            # Set target yaw = docking station + 10m ahead
-            # Set RPM = SLOW if distance to target < 2m
-            # Set RPM = FAST if distance to target < 4m
-
-            yaw_setpoint = Float32()
+        
+        #Intercept target by relaying control commands
+        if(self.current_action_phase == self.ACTION_PHASE.TOPIC_INTERCEPT):
+            #Depth setpoint
+            yawrate_setpoint = Float32()
             roll_setpoint = Float32()
             depth_setpoint = Float32()
             rpm_setpoint = Float32()
 
-            #Project target to the side and foward
-            t = time_now - self.target_position_time
-            projected_target = self.integrate_pose(self.target_position,2,angle_rad=math.radians(-90))
-            projected_target = self.integrate_pose(projected_target,5 + 1.0*t,angle_rad=math.radians(0))
-
-            dist = self.calculate_distance(self.robot_position, projected_target)
-            self._node.get_logger().info("Distance to projected target: " + str(dist))
-
-            yaw_setpoint.data = self.get_angle_between_points(self.robot_position, projected_target)
             roll_setpoint.data = 0.0
-            depth_setpoint.data = self.get_depth_setpoint(self.short_distance_depth)
-            rpm_setpoint.data = self.slow_rpm if self.calculate_distance(self.robot_position, projected_target) < 3 else self.fast_rpm
-            #self._node.get_logger().info("Yaw setpoint: " +str(yaw_setpoint))
+            depth_setpoint.data = self.get_depth_setpoint(self.long_distance_depth)
             
-            #publish setpoints
+            yawrate_setpoint.data = self.target_yawrate
+            rpm_setpoint.data = self.target_rpm
+
             self.rpm_pub.publish(rpm_setpoint)
-            self.yaw_pub.publish(yaw_setpoint)
+            self.yawrate_pub.publish(yawrate_setpoint)
             self.depth_pub.publish(depth_setpoint)
             self.roll_pub.publish(roll_setpoint)
 
+            
         return None
     
     def _give_feedback(self) -> str:
@@ -382,7 +424,7 @@ class LoloProxOpsAction():
     def get_yaw_from_path(self, start_pose:PoseStamped, path : Path) -> float: 
 
         if(len(path.poses) < 4):
-            self._node.get_logger().Error("Path too short: " +str(len(path.poses)))
+            self._node.get_logger().error("Path too short: " +str(len(path.poses)))
             return self.get_yaw_from_posestamped(start_pose)
         
 
@@ -419,12 +461,12 @@ class LoloProxOpsAction():
 
     def integrate_pose(self,p:PoseStamped, m:float , angle_rad:float = 0) -> PoseStamped:
         p_i = PoseStamped()
-        p_i.header = p.header()
+        p_i.header = p.header
         p_i.pose.orientation = p.pose.orientation
         yaw = self.get_yaw_from_posestamped(p)
         p_i.pose.position.x = p.pose.position.x + m*math.cos(yaw + angle_rad)
         p_i.pose.position.y = p.pose.position.y + m*math.sin(yaw + angle_rad)
-        p_i.pose.position.z = 0
+        p_i.pose.position.z = 0.0
         return p
 
     def get_depth_setpoint(self, target_depth) -> float:
@@ -477,18 +519,18 @@ class LoloProxOpsAction():
         gridmap = OccupancyGrid()
         gridmap.header.stamp = self._node.get_clock().now().to_msg()
         gridmap.header.frame_id = frame_id
-        gridmap.info.height = int(maxy-miny)+1
-        gridmap.info.width = int(maxx-minx)+1
-        gridmap.info.resolution = 1.0
+        gridmap.info.resolution = 5.0 #TODO pick resolution based on map size
+        gridmap.info.height = int( (maxy-miny) / gridmap.info.resolution )+1
+        gridmap.info.width = int( (maxx-minx) / gridmap.info.resolution )+1
         gridmap.info.origin.position.x = minx
         gridmap.info.origin.position.y = miny
         gridmap.info.origin.position.z = 0.0
-
+        
         gridmap.data = [-1]*(gridmap.info.width*gridmap.info.height)
 
         for x in range(gridmap.info.width):
             for y in range(gridmap.info.height):
-                if(not self.is_inside_boundary(gridmap.info.origin.position.x + x,gridmap.info.origin.position.y + y, boundary)):
+                if(not self.is_inside_boundary(gridmap.info.origin.position.x + (x*gridmap.info.resolution) ,gridmap.info.origin.position.y + (y*gridmap.info.resolution), boundary)):
                     gridmap.data[x + y*gridmap.info.width] = 100
                 else:
                     gridmap.data[x + y*gridmap.info.width] = 0
@@ -545,6 +587,16 @@ class LoloProxOpsAction():
             return
         self.target_position = msg
         self.target_position_time = int(self._node.get_clock().now().nanoseconds * 1e-9)
+
+    def yawrate_callback(self, msg:Float32):
+        self._node.get_logger().info("new target yawrate received " + str(msg.data))
+        self.target_yawrate = msg.data
+        self.target_yawrate_time = int(self._node.get_clock().now().nanoseconds * 1e-9)
+
+    def rpm_callback(self, msg:Float32):
+        self._node.get_logger().info("new target rpm received " + str(msg.data))
+        self.target_rpm = msg.data
+        self.target_rpm_time = int(self._node.get_clock().now().nanoseconds * 1e-9)
 
     def robot_odom_callback(self,msg : Odometry):
         #self._node.get_logger().info("robot position updated.")

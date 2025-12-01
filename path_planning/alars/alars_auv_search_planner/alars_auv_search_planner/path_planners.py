@@ -97,7 +97,6 @@ class SearchPlanner(Node, ABC):
         self.tf_listener = TransformListener(self.tf_buffer, self)
         all_topics_and_types = self.get_topic_names_and_types()
         all_topics = [elem[0] for elem in all_topics_and_types]
-        print(all_topics)
 
         # send a warning if a topic is not registered
         used_topics = [params['topics.move_drone'], params['topics.drone_odom']]
@@ -404,7 +403,7 @@ class GreedyPathModel(SearchPlanner):
             self.get_logger().error("No valid parameters received in Greedy Path Model")
 
 
-    def generate_path(self) -> Tuple[Path, float, float]:
+    def generate_path(self) -> Path:
         """ It makes use of the grid map to generate a striaght line between current position and cell
         with highest probability. This cell can be retrieved using the full map or using a region around
         the drone's current position. In the latter case, the radius has to be specified -> horizon
@@ -719,7 +718,6 @@ class APFPathModel(SearchPlanner):
         
         The resultant of forces is then convert to a displacement vector, which is proportional to the force.
         """
-
         if self.path_needed:
 
             # get current position in odom and cell with highets prob in a given radius
