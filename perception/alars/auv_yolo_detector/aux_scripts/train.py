@@ -21,6 +21,3 @@ results = model.train(data="config.yaml",
 path = None #TODO: insert your path
 model.save(path)
 
-## If a virtual env (let it be called yolovenv) was created:
-# source ../yolovenv/bin/activate
-# python3 ./train.py 
