@@ -32,6 +32,7 @@ class ConveniencePub(IDivePub):
         self._ref_pub = node.create_publisher(ControlReference, ControlTopics.REF_CONV, 10)
         self._error_pub = node.create_publisher(ControlError, ControlTopics.CONTROL_ERROR_CONV, 10)
         self._input_pub = node.create_publisher(ControlInput, ControlTopics.CONTROL_INPUT_CONV, 10)
+        self._ref_input_pub = node.create_publisher(ControlInput, 'ctrl/ref_input', 10)
         self._waypoint_pub = node.create_publisher(Odometry, ControlTopics.WAYPOINT_CONV, 10)
         #self._mpc_pred_pub = node.create_publisher(Path, ControlTopics.MPC_PRED, 10)
         self._mpc_pred_pub = node.create_publisher(Path, 'ctrl/mpc_pred', 10)
@@ -87,6 +88,14 @@ class ConveniencePub(IDivePub):
             return
 
         self._input_pub.publish(self._input_msg)
+
+    def _update_ref_input(self) -> None:
+        self._ref_input_msg = self._dive_controller.get_ref_input()
+
+        if self._ref_input_msg is None:
+            return
+
+        self._ref_input_pub.publish(self._ref_input_msg)
 
     def _update_waypoint(self) -> None:
         self._waypoint = self._dive_controller.get_wp()
@@ -214,6 +223,7 @@ class ConveniencePub(IDivePub):
         self._update_ref()
         self._update_error()
         self._update_input()
+        self._update_ref_input()
         self._update_waypoint()
         self._print_state()
         self._publish_predicted_path()

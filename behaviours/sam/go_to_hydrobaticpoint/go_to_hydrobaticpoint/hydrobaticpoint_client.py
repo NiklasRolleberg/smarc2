@@ -50,12 +50,12 @@ class HydropointClient(SMARCActionClient):
 
     def run(self):
         self.logger.info("Subscribing to mocap hydro point topic")
+        #self.mocap_goal_sub = self._node.create_subscription(PoseStamped, 
+        #                                                    ControlTopics.MOCAP_HYDROPOINT,
+        #                                                    self.mocap_hydro_cb, 1)
         self.mocap_goal_sub = self._node.create_subscription(PoseStamped, 
-                                                            ControlTopics.MOCAP_HYDROPOINT,
-                                                            self.mocap_hydro_cb, 1)
-        #    self.mocap_goal_sub = self._node.create_subscription(PoseStamped, 
-        #                                                         '/mqtt/hula/pose',
-        #                                                         self.mqtt_hydro_cb, 1)
+                                                             '/mqtt/hula/pose',
+                                                             self.mqtt_hydro_cb, 1)
 
 
     def mqtt_hydro_cb(self, mqtt_goal: String):
@@ -70,6 +70,10 @@ class HydropointClient(SMARCActionClient):
                     return
 
                 self.logger.info(f"Sending goal {mqtt_goal}")
+
+                # DEBUG ONLY!!
+                mqtt_goal.pose.position.x = 5.0
+                
                 goal_msg = BaseAction.Goal()
                 goal_msg.goal = self._json_ops.encode(mqtt_goal)
                 self.send_goal(goal_msg)
@@ -87,6 +91,10 @@ class HydropointClient(SMARCActionClient):
 
             else:
                 # self.logger.info(f"Sending goal {mocap_goal}")
+
+                # DEBUG ONLY!!
+                mocap_goal.pose.position.x = 4.0
+
                 goal_msg = BaseAction.Goal()
                 goal_msg.goal = self._json_ops.encode(mocap_goal)
                 self.send_goal(goal_msg)

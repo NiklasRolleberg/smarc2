@@ -59,6 +59,7 @@ class PathClient(SMARCActionClient):
     def run(self):
         # DEBUGGING the trajectory tracking
         file_path = "/home/parallels/ros2_ws/src/smarc2/behaviours/sam/sam_diving_controller/sam_diving_controller/simple_path_complexity_1.csv"
+        #file_path = "/home/orin/colcon_ws/src/smarc2/behaviours/sam/sam_path_following/sam_path_following/trajectories/straight_trajectory_1.csv"
         np_path = self.read_csv_to_array(file_path)
         
         path = self.convert_np_path_to_trajectory(np_path)
@@ -188,6 +189,7 @@ def main(args=None):
     node = Node(node_name)
     action_type = ActionType(BaseAction)
     path_client = PathClient(node, "sam/auv_trajectory_tracking", action_type)
+    path_client._setup()
     path_client.run()
     rclpy.spin(node)
 

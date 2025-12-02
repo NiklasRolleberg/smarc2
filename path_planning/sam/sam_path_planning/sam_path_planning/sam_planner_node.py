@@ -1,5 +1,6 @@
 import rclpy
 import rclpy.logging
+import time
 import numpy as np
 from rclpy.node import Node
 from scipy.spatial.transform import Rotation as R
@@ -102,6 +103,7 @@ class SamPathPlanner(HydropointServer, PathClient):
         self.rpm2_fb = Subscriber(self._node, ThrusterFeedback, SamTopics.THRUSTER2_FB_TOPIC)
         # self.rpm1_fb = Subscriber(self, ThrusterFeedback, 'with_header/thruster1_fb')
         # self.rpm2_fb = Subscriber(self, ThrusterFeedback, 'with_header/thruster2_fb')
+        self._node.get_logger().info(f'Subscribers for ctrl inputs created')    
 
         self.ctrl_synch_msg = ApproximateTimeSynchronizer(
             [self.vbs_fb, self.lcg_fb],
@@ -318,18 +320,23 @@ class SamPathPlanner(HydropointServer, PathClient):
 
             # Do planning stuff here
             # === Start state ===
-            quat = np.array([self.sam_pose_t.pose.pose.orientation.w,
-                    self.sam_pose_t.pose.pose.orientation.x,
+            # Normalize orientation quaternion and transform from FLU to FRD
+            quat_flu = np.array([self.sam_pose_t.pose.pose.orientation.x,
                     self.sam_pose_t.pose.pose.orientation.y,
-                    self.sam_pose_t.pose.pose.orientation.z], dtype=float)
-            quat = quat/np.linalg.norm(quat)
+                    self.sam_pose_t.pose.pose.orientation.z,
+                    self.sam_pose_t.pose.pose.orientation.w], dtype=float)
+            quat_flu = quat_flu/np.linalg.norm(quat_flu)
+
+            r_roll_180 = R.from_euler('x', 180, degrees=True)
+            r_original = R.from_quat(quat_flu)
+            quat_frd = (r_original * r_roll_180).as_quat()  # Local frame rotation
 
             start_state = np.array([
                     self.sam_pose_t.pose.pose.position.x,
                     self.sam_pose_t.pose.pose.position.y,
-                    self.sam_pose_t.pose.pose.position.z + 0.5,
-                #    quat[0],quat[1],quat[2],quat[3],
-                    1,0,0,0,
+                    self.sam_pose_t.pose.pose.position.z + 0.5,  # Add offset to avoid collision with surface
+                    quat_frd[3],quat_frd[0],quat_frd[1],quat_frd[2],
+                    # 1,0,0,0,
                     self.sam_pose_t.twist.twist.linear.x,
                     self.sam_pose_t.twist.twist.linear.y,
                     self.sam_pose_t.twist.twist.linear.z,
@@ -339,33 +346,11 @@ class SamPathPlanner(HydropointServer, PathClient):
                     self.sam_control_t.vbs.value,
                     self.sam_control_t.lcg.value ,
                     0., 0., 0., 0
-                    # self.sam_control_t.thruster_angles.thruster_vertical_radians,
-                    # self.sam_control_t.thruster_angles.thruster_horizontal_radians,
-                    # self.sam_control_t.rpms.thruster_1_rpm,
-                    # self.sam_control_t.rpms.thruster_2_rpm
                 ])
 
-            # start_state = np.array([
-            #                     self.sam_pose_t.pose.pose.position.x,
-            #                     self.sam_pose_t.pose.pose.position.y,
-            #                     self.sam_pose_t.pose.pose.position.z + 0.5,
-            #        self.sam_pose_t.pose.pose.orientation.w,
-            #        self.sam_pose_t.pose.pose.orientation.x,
-            #        self.sam_pose_t.pose.pose.orientation.y,
-            #        self.sam_pose_t.pose.pose.orientation.z,
-            #                        0.,
-            #                        0.,
-            #                        0.,
-            #                        0.,
-            #                        0.,
-            #                        0.,
-            #                        0.,
-            #                        0.,
-            #                        0.,
-            #                        0.,
-            #                        0.,
-            #                        0.,
-            # ])
+            r = R.from_quat([quat_frd[0], quat_frd[1], quat_frd[2], quat_frd[3]])
+            roll, pitch, yaw = r.as_euler('xyz', degrees=True)
+            self._node.get_logger().info(f"Yaw: {yaw:.2f}, Pitch: {pitch:.2f}, Roll: {roll}")
 
             # Goal recevied by the ac. Set received to false
             self.sam_goal_t = self._hydropoint
@@ -388,7 +373,6 @@ class SamPathPlanner(HydropointServer, PathClient):
                     self.sam_goal_t.pose.orientation.x,
                     self.sam_goal_t.pose.orientation.y,
                     self.sam_goal_t.pose.orientation.z,
-                    # q0,q1,q2,q3,
                     0, 0, 0,
                     0, 0, 0,
                     50, 50, 0, 0, 0, 0
@@ -407,16 +391,24 @@ class SamPathPlanner(HydropointServer, PathClient):
             # For debugging
 
             # Call the planner
+            t = time.time()
             self._node.get_logger().info(f'Calling planner')
-            trajectory, self.path_found = MotionPlanningROS(start_state, end_state, map_boundaries, map_resolution)
+            trajectory, self.path_found, debugMsg = MotionPlanningROS(start_state, end_state, map_boundaries, map_resolution)
+            self._node.get_logger().info(f'Planner finished. Path found: {self.path_found}. Debug msg: {debugMsg}')
+            t_end = time.time()
+            self._node.get_logger().info(f'Planning time: {t_end - t:.2f} seconds')
 
             # If path found
             if self.path_found:
+                # Number of vertices in the trajectory
+                print(f"Length of trajectory: {len(trajectory):.2f} vertices>>")
+                
                 self._node._logger.info(f"Sending path to controller")
                 path = self.convert_np_path_to_trajectory(np.array(trajectory))
                 self.send_path(path)
 
                 ## Publish trajectory for Rviz
+                trajectory.append(end_state[0:7].tolist())  # Append goal state for visualization
                 self.publishTrajectoryRviz(trajectory)
 
             self.path_computed = True

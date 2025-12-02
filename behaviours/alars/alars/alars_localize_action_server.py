@@ -183,10 +183,9 @@ class LocalizeAction():
         # not done tracking, do P control i guess
         self._setpoint.header.stamp = self._node.get_clock().now().to_msg()
 
-        # IMPORTANT: x is right, y is down in image frames, for bodies, x is forward, y is left
-        # we assume the camera is mounted looking straight down, so in image: x is right and y is backward
+        # MINUS SIGNS. HARDCODED FOR SPECIFIC CAM SETUP
         if abs(target_position.point.x) > self._TRACKING_TOLERANCE:
-            self._setpoint.pose.position.y = target_position.point.x * self._TRACKING_AGGRESSIVENESS
+            self._setpoint.pose.position.y = - target_position.point.x * self._TRACKING_AGGRESSIVENESS
         else:
             self._setpoint.pose.position.y = 0.0
 

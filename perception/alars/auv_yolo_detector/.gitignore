@@ -1,4 +1,5 @@
 /images
 /bags
-/venv
+/models
 record_data.py
+*.pt

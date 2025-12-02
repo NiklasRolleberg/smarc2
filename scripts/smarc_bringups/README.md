@@ -39,6 +39,39 @@ In the beginning of the script, you can set whether you're on SAM or not.
 Launches everything related to DJI drones and the ALARS project.
 **You will need the submodule in `messages/psdk_interfaces` to run the captain this bringup launches.**
 
+#### Camera udev rules
+Since we have multiple cams, of different kinds, we have udev rules setup in the jetson to give them fixed device symlinks under `ls /dev`:
+Example:
+```
+> lsusb
+Bus 002 Device 002: ID 0bda:0420 Realtek Semiconductor Corp. 4-Port USB 3.0 Hub
+Bus 002 Device 001: ID 1d6b:0003 Linux Foundation 3.0 root hub
+Bus 001 Device 003: ID 0bda:5420 Realtek Semiconductor Corp. 4-Port USB 2.0 Hub
+Bus 001 Device 002: ID 8087:0032 Intel Corp. AX210 Bluetooth
+Bus 001 Device 005: ID 2ca3:0023 DJI Technology Co., Ltd. DJIPocket3
+Bus 001 Device 001: ID 1d6b:0002 Linux Foundat
+
+> v4l2-ctl --list-devices
+HD Pro Webcam C920 (usb-0000:00:14.0-3): 
+    /dev/video0
+
+Logitech Webcam C270 (usb-0000:00:14.0-4): 
+    /dev/video1
+
+
+
+> sudo vim /etc/udev/rules.d/80-djipocket3.rules
+
+# DJIPocket3 (vendor 2ca3, product 0023)
+# Video streaming node (usually index 0)
+SUBSYSTEM=="video4linux", ATTRS{idVendor}=="2ca3", ATTRS{idProduct}=="0023", ATTR{index}=="0", SYMLINK+="djipocket3"
+# Secondary node (often metadata/still capture; usually index 1)
+SUBSYSTEM=="video4linux", ATTRS{idVendor}=="2ca3", ATTRS{idProduct}=="0023", ATTR{index}=="1", SYMLINK+="djipocket3_meta"
+# Media controller node
+SUBSYSTEM=="media",       ATTRS{idVendor}=="2ca3", ATTRS{idProduct}=="0023", SYMLINK+="djipocket3_media"
+```
+The above makes `/dev/djipocket3` point to the video stream of the cam, independently of connection timing/port/other cams etc.
+
 
 ## TMUX Cheatsheet
 - `C-x` means "press control and `x`" at the same time. If its `C-X`, then its "Control Shift x".
