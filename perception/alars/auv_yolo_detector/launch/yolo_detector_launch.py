@@ -28,7 +28,7 @@ def generate_launch_description():
         'real_params.yaml'
     ])
 
-    sim_config = PathJoinSubstitution([
+    test_config = PathJoinSubstitution([
         FindPackageShare('auv_yolo_detector'),
         'config',
         'sim_params.yaml'
@@ -58,17 +58,17 @@ def generate_launch_description():
                 'model_path': model_path
             }
         ],
-        condition=LaunchConfigurationEquals('mode', 'real') #IfCondition(PythonExpression([mode, " == 'real'"]))
+        condition=LaunchConfigurationEquals('mode', 'real') 
         
     )
 
-    detector_node_sim = Node(
+    detector_node_test = Node(
         package='auv_yolo_detector',
         executable='auv_yolo_detector',
         namespace=namespace,
         output='screen',
         parameters=[
-            sim_config,
+            test_config,
             {
                 'mode': mode,
                 'namespace': namespace,
@@ -77,7 +77,7 @@ def generate_launch_description():
                 'model_path': model_path
             }
         ],
-        condition=LaunchConfigurationEquals('mode', 'sim') #IfCondition(PythonExpression([mode, " == 'sim'"]))
+        condition=LaunchConfigurationEquals('mode', 'test') 
     )
 
     return LaunchDescription([
@@ -92,5 +92,5 @@ def generate_launch_description():
         LogInfo(msg=["[Launch] use_sim_time argument = ", use_sim_time]),
         LogInfo(msg=["[Launch] yolo model path = ", model_path]),
         detector_node_real,
-        detector_node_sim
+        detector_node_test
     ])

@@ -7,12 +7,11 @@ from rclpy.node import Node
 from rclpy.executors import MultiThreadedExecutor
 from rclpy.duration import Duration
 
-from math import sqrt, cos, sin, tan, pi
+from math import pi
 import numpy as np
 import cv2
 import torch
 from cv_bridge import CvBridge
-from image_geometry import PinholeCameraModel
 
 from ultralytics import YOLO
 from ultralytics.engine.results import OBB, Results
@@ -20,14 +19,11 @@ from ultralytics.engine.results import OBB, Results
 import tf2_geometry_msgs
 from sensor_msgs.msg import Image
 from geometry_msgs.msg import PointStamped
-from nav_msgs.msg import Odometry
 from tf2_ros import Buffer, TransformListener
 from std_srvs.srv import Trigger
 
 from dji_msgs.msg import Topics
 from dji_msgs.msg import Links
-
-
 
 
 
@@ -48,18 +44,13 @@ class YOLODetector(Node):
             "sam_dim": [self.model_params['sam.width'], self.model_params['sam.length']],
             "lw_ratio_lb": self.model_params['sam.length']/self.model_params['sam.width'] - lw_ratio_margin, # requires fine-tuning
             "lw_ratio_ub": self.model_params['sam.length']/self.model_params['sam.width'] + lw_ratio_margin, # requires fine-tuning
-            "max_hor_vel": 0.08,
-            "max_ver_vel": 0.1,
-            "last_sam": [],
-            "last_buoy": [],
-            "horizon": 8
         }
         self.dircount = []
         self.horizon = 10
  
         
         # pubs, subs and tf2
-        self.create_subscription(Image, self.model_params["topics.raw_image"], self.image_callback, 10) # '/M350/gimbal_camera/camera/image_raw'
+        self.create_subscription(Image, self.model_params["topics.raw_image"], self.image_callback, 10) 
         self.annotated_img_pub = self.create_publisher(Image,
                                             self.model_params["topics.rviz.annotated_image"], 10)
         self.blurred_channel_pub = self.create_publisher(Image,
@@ -70,12 +61,11 @@ class YOLODetector(Node):
                                 self.model_params["topics.predicted_position.sam"], 10)
         self.buoy_position_pub = self.create_publisher(PointStamped, 
                                 self.model_params["topics.predicted_position.buoy"], 10)
-        # self.nf_annotated_img_pub = self.create_publisher(Image,"yolo_annotation_nf", 10)
 
         self.tf_buffer = Buffer()
         self.tf_listener = TransformListener(self.tf_buffer, self)
         
-        # models (yolo and camera
+        # models 
         try:
             self.yolo_model = YOLO(self.model_params['model_path'])
             self.yolo_model.info()
@@ -99,11 +89,10 @@ class YOLODetector(Node):
         """ 
         Callback that's running continuoysly at specified frequency. It only classified image if we
         have an image and if detector is enabled.
-        Infers with yolo model and publishes objects positions
+        Infers with yolo model and canny edge deetctor and publishes objects positions
         """
         
         if self.image is not None and self.detector_enabled:
-            # assert (self.image.width,self.image.height)  == (640, 480), "Image resolution isn't (640,480), YOLO model won't accept it"
             cv_image = self.bridge.imgmsg_to_cv2(self.image, desired_encoding='bgr8')
             results = self.yolo_model.predict(source = cv_image, 
                             conf = self.model_params['detection.confidence_threshold'],    
@@ -112,11 +101,6 @@ class YOLODetector(Node):
                             device = self.model_params['device'])
             result: Results = results[0]
             
-            ## publish non-filtered annotated image as ros msg
-            # im = result.plot()
-            # ros_img = self.bridge.cv2_to_imgmsg(im, encoding = 'bgr8')
-            # self.nf_annotated_img_pub.publish(ros_img)
-
             # filter detections and get head position
             result.obb, _ , sam_pixels, buoy_pixels = self.filter_detections(result.obb)
             head = self.identify_head(result.obb, cv_image)
@@ -139,12 +123,28 @@ class YOLODetector(Node):
 
 
     def identify_head(self, result: OBB, im: np.ndarray) -> tuple:
-        #xywhr (torch.Tensor | numpy.ndarray): Boxes in [x_center, y_center, width, height, rotation] format.
+        """
+        Head detection with Canny edge detector. It takes bounding box, slices and rotates window 
+        (bounding box + some slack to include the rope) and apply edge detector to see which side has 
+        the rope. To be robust against outliers, the argmax of last N detections is selected
+
+        Args:
+            - result: OBB instance, contains result from YOLO inference (bounding box, classifications, etc)
+            - im: raw image as numpy array instance
+
+        Return:
+            - tuple with head position (in pixels)
+
+        Vars:
+            - c4: list with the coordinates of the 4 corners of the bounding box
+            - thresh: threshold/slack given to define the window. 0 means window = box, 
+                      1 means = window = 2*box (roughly, check slice_image code for +info)
+        """
         
         cls : torch.Tensor = result.cls
-        xywhr: list = result.xywhr
+        xywhr: list = result.xywhr # [x_center, y_center, width, height, rotation]
         c4: list = result.xyxyxyxy
-        head, headc = None, None
+        head = None
         sam_index = np.nonzero(cls == 0).flatten()
         thresh = 0.8
 
@@ -181,10 +181,8 @@ class YOLODetector(Node):
             else:
                 sums = (np.sum(edges[0:coord_min, :]), np.sum(edges[coord_max:, :]))
    
-            # determine where are more edges on (left/bottom or right/top, respectively)
+            # determine where are more edges and update cumulative variable to get chosen side (left/bottom - 0; right/top - 1)
             argsum = np.argmax(np.array(sums))
-
-            #update cumulative variable to get chosen side (left/bottom - 0; right/top - 1)
             if len(self.dircount) >= self.horizon:
                 self.dircount.pop(0)
             self.dircount.append(argsum)
@@ -295,7 +293,8 @@ class YOLODetector(Node):
 
     def pixels2frame(self, u:float, v:float, Z:float, frame: str) -> PointStamped:
         """
-        Apllies camera matrix to obtain object position in camera frame and transforms it to specified frame"""
+        Apllies camera matrix to obtain object position in camera frame and transforms it to specified frame
+        """
         camera_coord_norm = np.matmul(self.invK,np.array([u,v,1]))
         camera_coord = camera_coord_norm*Z
 
@@ -352,20 +351,12 @@ class YOLODetector(Node):
         self.get_logger().info(f"Service called: detector_enabled = {self.detector_enabled}")
         return response
     
-    def remove_outliers(self) -> bool:
-        """
-        TODO: implement simple outlier removel or kalman filter
-        """
-        if len(self.prev_detections) < 5:
-            return True
-        else:
-            return False
 
     def image_callback(self, msg):
         self.image = msg
 
     def get_params(self):
-        #TODO: include if mode == 'sim' 
+ 
         # expected types of parameters and create parameters dictionary 
         namespace = "/"+self.get_parameter("namespace").value
         expected_types = {
@@ -420,8 +411,7 @@ class YOLODetector(Node):
         for key, expected in expected_types.items():
             if not isinstance(self.model_params[key], expected):
                 raise TypeError(f"{key} should be {expected}, got {type(self.model_params[key]).__name__}")
-            
-        self.model_params["topics.rviz.annotated_image"] = self.model_params["topics.rviz.annotated_image"] + str(2)
+           
             
             
 

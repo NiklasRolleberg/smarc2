@@ -1,6 +1,6 @@
 /**/auv_yolo_detector:
   ros__parameters:
-    mode: "sim" #overridden by launch
+    mode: "real" #overridden by launch
     namespace: "M350" #overridden by launch
     device: 'cpu' #overridden by launch
 

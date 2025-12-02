@@ -23,7 +23,7 @@ When installing *Ultralytics*, corresponding dependencies (*eg*: torch, opencv, 
 ## Launch yolo detector (example)
 Launch yolo detector:
 ```
-ros2 launch auv_yolo_detector yolo_detector_launch.py namespace:=M350 device:=cpu use_sim_time:=true mode:="real"
+ros2 launch auv_yolo_detector yolo_detector_launch.py namespace:=M350 device:=cpu use_sim_time:=true mode:=sim
 ```
 
 Launch rviz file (needs absolute path):
