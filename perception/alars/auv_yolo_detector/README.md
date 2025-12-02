@@ -69,8 +69,39 @@ Then create a folder and add the rosbags to it. Run the script (as a regular pyt
 
 Pressing [**TAB**] or [**ENTER**] will save the image and the label within your rosbags' folder. Pressing [**SPACE**] will save the image in a another folder within the same directory so you can label it later on. Pressing [**DEL**] won't save anything.
 
+**Script params (automatic_label_params.yaml)**
+| **Parameter**               | **Description**                                                                                                        |
+| --------------------------- | ---------------------------------------------------------------------------------------------------------------------- |
+| `paths.yolo_model` | Relative path of the yolo model (assuming it's within auv_yolo_detector package)                       |
+| `paths.bags`       | Absolute path of your rosbags' directory.                                                                             |
+| `rosbag.duration`          | Duration of the rosbag in [s]. See note below.                                                                         |
+| `rosbag.dt`     | Approximated time period between frames (lower value means you will evaluate more frames).                                                           |
+| `rosbag.initial_frame_index`     | Starting index when naming image/label. If you already have frames within your directory, you may want to change this accordingly so you don't replace already existing images/labels. |
+
+**Note**: In some rosbags, message stamp was always 0. This could be due to the use of `use_sim_time` parameter, check [this](https://stackoverflow.com/questions/69084148/the-effect-of-use-sim-time-in-ros) for more info. Thus, to skip to the next frame, we use the total number of frames in the rosbag and the rosbag duration to determine the next frame to evaluate.
 ### **record_data.py**
-It extracts frames
+It extracts frames from a played rosbag (check launch command above). It's not as user friendly in the sense it does not have a parameter file, so you may want to change the class attributes
+- self.path
+- self.period 
+- self.frame_index
+- self.run
+
+### **train.py**
+Use this to train your yolo model. You may need to use a virtual environment, so you can do this outside of the smarc workspace. If you use a virtual environment and name it `yolovenv`:
+```
+source yolovenv/bin/activate
+python3 ./train.py 
+```
+Your dataset should be within the directory and its path should be defined in a config.yaml (see example below)
+```
+path: /home/smarc/aa_francisco_ws/scripts/mixed_data_obb
+train: images/train
+val: images/val
+names:
+  0: sam
+  1: buoy
+```
+Thus, the dataset folder, the `config.yaml` and the `train.py` should be in the same directory.
 
 ## Future work
 - Convert bounding boxes+orientation to pose (not position)
