@@ -8,14 +8,12 @@ from launch.conditions import IfCondition, LaunchConfigurationEquals
 def generate_launch_description():
 
     # ---- frequently changed params as launch arguments ...
-    mode_arg = DeclareLaunchArgument('mode', default_value='real')
     namespace_arg = DeclareLaunchArgument('namespace', default_value='Quadrotor')
     device_arg = DeclareLaunchArgument('device', default_value='cpu')
     use_sim_time_arg = DeclareLaunchArgument('use_sim_time', default_value='false')
     model_file_arg = DeclareLaunchArgument('model_file', default_value='yolo_model.pt')
 
     # ... and as node params
-    mode = LaunchConfiguration('mode')
     namespace = LaunchConfiguration('namespace')
     device = LaunchConfiguration('device')
     use_sim_time = LaunchConfiguration('use_sim_time')
@@ -25,13 +23,7 @@ def generate_launch_description():
     real_config = PathJoinSubstitution([
         FindPackageShare('auv_yolo_detector'),
         'config',
-        'real_params.yaml'
-    ])
-
-    test_config = PathJoinSubstitution([
-        FindPackageShare('auv_yolo_detector'),
-        'config',
-        'sim_params.yaml'
+        'params.yaml'
     ])
 
 
@@ -51,46 +43,23 @@ def generate_launch_description():
         parameters=[
             real_config,
             {
-                'mode': mode,
                 'namespace': namespace,
                 'device': device,
                 'use_sim_time': use_sim_time,
                 'model_path': model_path
             }
         ],
-        condition=LaunchConfigurationEquals('mode', 'real') 
         
-    )
-
-    detector_node_test = Node(
-        package='auv_yolo_detector',
-        executable='auv_yolo_detector',
-        namespace=namespace,
-        output='screen',
-        parameters=[
-            test_config,
-            {
-                'mode': mode,
-                'namespace': namespace,
-                'device': device,
-                'use_sim_time': use_sim_time,
-                'model_path': model_path
-            }
-        ],
-        condition=LaunchConfigurationEquals('mode', 'test') 
     )
 
     return LaunchDescription([
         namespace_arg,
-        mode_arg,
         device_arg,
         use_sim_time_arg,
         model_file_arg,
-        LogInfo(msg=["[Launch] mode argument = ", mode]),
         LogInfo(msg=["[Launch] namespace argument = ", namespace]),
         LogInfo(msg=["[Launch] device argument = ", device]),
         LogInfo(msg=["[Launch] use_sim_time argument = ", use_sim_time]),
         LogInfo(msg=["[Launch] yolo model path = ", model_path]),
-        detector_node_real,
-        detector_node_test
+        detector_node_real
     ])

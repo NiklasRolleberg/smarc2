@@ -329,16 +329,12 @@ class YOLODetector(Node):
         # expected types of parameters and create parameters dictionary 
         namespace = "/"+self.get_parameter("namespace").value
         expected_types = {
-            "mode": str,
             "device": (str, int),
             "model_path": str,
 
             "detection.inference_period": float,
             "detection.confidence_threshold": float,
             "detection.blur_variance": (float, int),         
-
-            "camera.fov": (int, float),
-            "camera.K": list,
 
             "sam.width": (float, int),
             "sam.length": (float, int),
