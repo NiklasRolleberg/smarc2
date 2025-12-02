@@ -16,7 +16,6 @@ from cv_bridge import CvBridge
 from ultralytics import YOLO
 from ultralytics.engine.results import OBB, Results
 
-import tf2_geometry_msgs
 from sensor_msgs.msg import Image
 from geometry_msgs.msg import PointStamped
 from tf2_ros import Buffer, TransformListener
@@ -33,10 +32,6 @@ class YOLODetector(Node):
                 allow_undeclared_parameters=True,
                 automatically_declare_parameters_from_overrides=True)
         self.get_params()
-
-        # camera calibration matrix
-        K = np.array(self.model_params["camera.K"]).reshape(3,3)
-        self.invK = np.linalg.inv(K)
 
         # detection filtering params
         lw_ratio_margin = 4.0
@@ -62,8 +57,6 @@ class YOLODetector(Node):
         self.buoy_position_pub = self.create_publisher(PointStamped, 
                                 self.model_params["topics.predicted_position.buoy"], 10)
 
-        self.tf_buffer = Buffer()
-        self.tf_listener = TransformListener(self.tf_buffer, self)
         
         # models 
         try:
@@ -289,30 +282,6 @@ class YOLODetector(Node):
 
         return obb[torch.from_numpy(final_mask)], torch.from_numpy(final_mask), sam_pos, buoy_pos
                    
-
-
-    def pixels2frame(self, u:float, v:float, Z:float, frame: str) -> PointStamped:
-        """
-        Apllies camera matrix to obtain object position in camera frame and transforms it to specified frame
-        """
-        camera_coord_norm = np.matmul(self.invK,np.array([u,v,1]))
-        camera_coord = camera_coord_norm*Z
-
-        pos = PointStamped()
-        pos.header.frame_id = self.model_params["frames.camera"]
-        pos.header.stamp = self.get_clock().now().to_msg()
-        pos.point.x = camera_coord[2] # x axis in camera frame is depth
-        pos.point.y = - camera_coord[0]
-        pos.point.z = camera_coord[1]
-
-        t = self.tf_buffer.lookup_transform(
-            target_frame = frame,  
-            source_frame = pos.header.frame_id,                 
-            time = rclpy.time.Time(),
-            timeout= Duration(seconds=0.5))
-        #self.get_logger().info(f'In desired frame, position = {tf2_geometry_msgs.do_transform_point(pos, t).point.x,tf2_geometry_msgs.do_transform_point(pos, t).point.y}')
-
-        return tf2_geometry_msgs.do_transform_point(pos, t)
     
     def published_normalized_position(self, p: tuple, wh: tuple, label: str) -> tuple:
         """

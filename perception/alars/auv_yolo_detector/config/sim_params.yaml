@@ -10,10 +10,6 @@
       inference_period: 0.1
       confidence_threshold: 0.4
 
-    camera:
-      fov: 82.0
-      K: [369.5, 0.0, 320.0, 0.0, 415.69, 240.0, 0.0, 0.0, 1.0] #row-major order
-
     sam:
       width: 0.2
       length: 1.5
