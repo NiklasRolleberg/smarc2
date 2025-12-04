@@ -40,7 +40,7 @@ class LabelFrame():
         with open(get_package_share_directory('auv_yolo_detector') + "/config/automatic_label_params.yaml", "r") as f:
             data = yaml.safe_load(f)
             params = data["/**/auv_yolo_detector"]
-        with open(get_package_share_directory('auv_yolo_detector') + "/config/real_params.yaml", "r") as f:
+        with open(get_package_share_directory('auv_yolo_detector') + "/config/params.yaml", "r") as f:
             data = yaml.safe_load(f)
             self.model_params = data["/**/auv_yolo_detector"]["ros__parameters"]
 
@@ -82,7 +82,7 @@ class LabelFrame():
         self.bags = list(bags_path.glob('**/*.db3'))
         self.typestore = get_typestore(Stores.ROS2_HUMBLE) # Create a type store to use if the bag has no message definitions.
 
-        self.window_name = "Current Frame  | ENTER to save image and label | SPACE to save image only | TAB to save image and an empty label | DEL to continue | ESC to finish process"
+        self.window_name = "Current Frame  | ENTER to save image and non-empty label | SPACE to save image only | TAB to save image and an empty label | DEL to continue | ESC to finish process"
 
         
     def automatic_classifier(self): 

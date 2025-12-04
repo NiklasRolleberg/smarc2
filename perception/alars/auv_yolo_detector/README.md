@@ -15,9 +15,13 @@ There are three folders in OneDrive:
 - **mixed_data_obb**: Combination of the two datasets above.
 
 These folders allow flexibility if one wants, for instance, train a pre-trained model with sim images on real images only or to train a model with the full dataset.
-> When adding new data, follow the [YOLO OBB label format](https://docs.ultralytics.com/datasets/obb/). Tools like CVAT can be used for annotation. Place images and labels in the correct folder (`sim` or `real`) and update the `mixed` folder accordingly.
+> When adding new data, follow the [YOLO OBB label format](https://docs.ultralytics.com/datasets/obb/). Tools like CVAT can be used for annotation.
+> 
+> Place images and labels in the correct folder (`sim` or `real`) and update the `mixed` folder accordingly.
+> 
+> Update the `dataset_readme.txt` with the latest frame index so other people don't override files.
 
-> When adding new models, fill in the `yolo-model-stats.odt` file as well, very important!
+> When adding new models, fill in the `yolo-model-stats.odt` file as well, very important to keep track of model performance!
 
 ## Dependencies
 - ROS2 Humble
