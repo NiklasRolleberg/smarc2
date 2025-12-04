@@ -1,25 +1,31 @@
 #!/usr/bin/env -S venv/bin/python
+from typing import Tuple, Union
+import traceback
+
 import rclpy
+from rclpy.node import Node
+from rclpy.executors import MultiThreadedExecutor
 from rclpy.duration import Duration
+
+from math import sqrt, cos, sin, tan, pi
+import numpy as np
+import cv2
+import torch
+from cv_bridge import CvBridge
+from image_geometry import PinholeCameraModel
+
 from ultralytics import YOLO
 from ultralytics.engine.results import OBB, Results
-from rclpy.node import Node
+
+import tf2_geometry_msgs
 from sensor_msgs.msg import Image
-from cv_bridge import CvBridge
-import cv2
-from image_geometry import PinholeCameraModel
-import numpy as np
 from geometry_msgs.msg import PointStamped
 from nav_msgs.msg import Odometry
 from tf2_ros import Buffer, TransformListener
-import tf2_geometry_msgs
-from math import sqrt, cos, sin, tan, pi
-import torch
-from typing import Tuple, Union
+from std_srvs.srv import Trigger
+
 from dji_msgs.msg import Topics
 from dji_msgs.msg import Links
-from std_srvs.srv import Trigger
-import traceback
 
 
 
@@ -128,6 +134,8 @@ class YOLODetector(Node):
                 cv2.circle(im, center=(head[0], head[1]), radius=5, color=(0, 255, 0), thickness=2)
             ros_img = self.bridge.cv2_to_imgmsg(im, encoding = 'bgr8')
             self.annotated_img_pub.publish(ros_img)
+
+            self.get_logger().info(f"Detections:\nSAM Head: {head}\nSAM: {sam_pixels}\nBuoy: {buoy_pixels}")
 
 
 
@@ -419,13 +427,10 @@ class YOLODetector(Node):
 def main():
     rclpy.init()
     node = YOLODetector()
-    try:
-        while True and rclpy.ok():
-            rclpy.spin_once(node)            
-    except KeyboardInterrupt:
-        return
-    pass
-    
+    executor = MultiThreadedExecutor()
+    executor.add_node(node)
+    rclpy.spin(node, executor=executor)
+    rclpy.shutdown()
 
 
 if __name__ == '__main__':
