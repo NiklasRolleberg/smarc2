@@ -36,6 +36,7 @@ class ConveniencePub(IDivePub):
         self._waypoint_pub = node.create_publisher(Odometry, ControlTopics.WAYPOINT_CONV, 10)
         #self._mpc_pred_pub = node.create_publisher(Path, ControlTopics.MPC_PRED, 10)
         self._mpc_pred_pub = node.create_publisher(Path, 'ctrl/mpc_pred', 10)
+        self._mpc_path_pub = node.create_publisher(Path, 'ctrl/mpc_path', 10)
 
         self._state_msg = None
         self._ref_msg = None
@@ -130,6 +131,28 @@ class ConveniencePub(IDivePub):
 
         self._mpc_pred_pub.publish(predicted_path_msg)
 
+    def _publish_mpc_path_ref(self):
+        path_ref = self._dive_controller.get_mpc_path_ref()
+        current_attitude = np.array([1, 0, 0, 0])
+
+        now = self._node.get_clock().now()
+
+        mpc_path_msg = Path()
+        mpc_path_msg.header.stamp = now.to_msg()
+        mpc_path_msg.header.frame_id = 'mocap'
+
+        for i, path_state in enumerate(path_ref):
+            # Calculate future time offset
+            future_time = now + rclpy.duration.Duration(seconds=i * 0.1)
+
+            # Create PoseStamped
+            pose_stamped = self._vector2PoseMsg('mocap', path_state[0:3], path_state[3:7])
+            pose_stamped.header.stamp = future_time.to_msg()
+            pose_stamped.header.frame_id = 'mocap'
+
+            mpc_path_msg.poses.append(pose_stamped)
+
+        self._mpc_path_pub.publish(mpc_path_msg)
 
     def _vector2PoseMsg(self, frame_id, position, attitude):
         pose_msg = PoseStamped()
@@ -227,4 +250,5 @@ class ConveniencePub(IDivePub):
         self._update_waypoint()
         self._print_state()
         self._publish_predicted_path()
+        self._publish_mpc_path_ref()
 

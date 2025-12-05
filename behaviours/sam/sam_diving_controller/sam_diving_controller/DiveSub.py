@@ -202,10 +202,10 @@ class DiveSub():
         #   - Handle path following, which needs to transform the state, but there's no goal, bc. there's no waypoint.
         #   - Flexible enough to change, but not too complicated either.
         #   - Avoid hard coded things...
-        if self._waypoint_global is None:
-            return
-        #self._waypoint_global = Odometry()
-        #self._waypoint_global.header.frame_id = 'mocap'
+        #if self._waypoint_global is None:
+        #    return
+        self._waypoint_global = Odometry()
+        self._waypoint_global.header.frame_id = 'mocap'
 
         try:
             self._tf_base_link_global = self._tf_buffer.lookup_transform(self._robot_base_link,

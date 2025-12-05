@@ -687,7 +687,7 @@ class MPCPathServer(PathServer, DiveSub):
 
             #self.logger.info(f"elapsed: {elapsed}")
 
-            if elapsed > 50:
+            if elapsed > 150:
                 self.logger.info("Goal was cancelled by timeout.")
                 goal_handle.abort()
                 return "cancelled"

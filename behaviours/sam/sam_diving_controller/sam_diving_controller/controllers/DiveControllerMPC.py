@@ -386,6 +386,9 @@ class DiveControllerMPC(DiveControllerInterface):
         convert_state: state_msg is in ENU, x will be in NED
 
         Note: The MPC wants the quaternion scalar part first, [w, x, y, z]!
+        Also note: For running on SAM, the sign on the thrust vectoring has to
+            be switched due to different ways of viewing the thrust vecotring
+            angle in the model and on SAM.
         """
         x = np.zeros(19)
 
@@ -404,8 +407,8 @@ class DiveControllerMPC(DiveControllerInterface):
         x[12] = state_msg.twist.twist.angular.z
         x[13] = control_msg['vbs']
         x[14] = control_msg['lcg']
-        x[15] = control_msg['stern']
-        x[16] = control_msg['rudder']
+        x[15] = -control_msg['stern']
+        x[16] = -control_msg['rudder']
         x[17] = control_msg['rpm1']
         x[18] = control_msg['rpm2']
 
@@ -499,11 +502,11 @@ class DiveControllerMPC(DiveControllerInterface):
                 #self.ref[:,0] = 4
                 #self.ref[:,1] = 0
                 #self.ref[:,2] = 0
-                #self.ref[:,3] = 1
-                #self.ref[:,4:] = 0
-                #self.ref[:,13] = 50
-                #self.ref[:,14] = 50
-                #self.ref[:,15:] = 0
+                self.ref[:,3] = 1
+                self.ref[:,4:] = 0
+                self.ref[:,13] = 50
+                self.ref[:,14] = 50
+                self.ref[:,15:] = 0
 
             else:
                 self._loginfo_once("Trajectory Tracking Complete")
@@ -519,9 +522,12 @@ class DiveControllerMPC(DiveControllerInterface):
         Set the corresponding publishers for the actuators and convenience topics
         """
         # Assign the calculated control signal to actuators
+        # NOTE: We change the thrust vectoring sign bc. the MPC computes it
+        # w.r.t. the C frame, while on SAM the sign is w.r.t the yaw angle of
+        # SAM
         u_vbs = mpc_solution[13]
         u_lcg = mpc_solution[14]
-        u_stern = mpc_solution[15]
+        u_stern = -mpc_solution[15]
         u_rudder = -mpc_solution[16]
         u_rpm1 = mpc_solution[17]
         u_rpm2 = mpc_solution[18]
@@ -565,12 +571,15 @@ class DiveControllerMPC(DiveControllerInterface):
             self._control_ref.thrusterrpm = float(self.ref[0,17])
 
 
+
     def get_mpc_pred(self):
         """
         Get method for the MPC predictions
         """
-
         return self.pred_mpc
+
+    def get_mpc_path_ref(self):
+        return self.ref
 
     def get_ref_input(self):
         return self._control_ref

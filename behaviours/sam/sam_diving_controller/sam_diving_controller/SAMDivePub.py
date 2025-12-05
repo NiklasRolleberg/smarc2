@@ -119,7 +119,6 @@ class SAMDivePub(IDivePub):
         """
         Publish all actuator values
         """
-
         if self._actuator_state == ActuatorStates.DISENGAGED:
             #self._loginfo(f"Actuators disengaged")
             return
