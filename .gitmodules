@@ -38,7 +38,7 @@
 	branch = smarc
 [submodule "utilities/serial_ping_pkg"]
 	path = utilities/serial_ping_pkg
-	url = https://github.com/NinjaTuna007/serial_ping_pkg.git
+	url = git@github.com:NinjaTuna007/serial_ping_pkg.git
 [submodule "simulation/SMARCUnity"]
 	path = simulation/SMARCUnity
 	url = git@github.com:smarc-project/SMARCUnity.git
@@ -56,4 +56,4 @@
 	url = git@github.com:smarc-project/nau7802_ros2_driver.git
 [submodule "documentation/smarc2-obsidian"]
 	path = documentation/smarc2-obsidian
-	url = https://github.com/smarc-project/smarc2-obsidian
+	url = git@github.com:smarc-project/smarc2-obsidian.git
