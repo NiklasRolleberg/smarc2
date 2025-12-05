@@ -14,7 +14,8 @@ from smarc_action_base.smarc_action_base import (
 from smarc_msgs.action import BaseAction
 from geometry_msgs.msg import Pose, PoseStamped
 from smarc_control_msgs.msg import Topics as ControlTopics
-from std_msgs.msg import String
+from std_msgs.msg import String, Bool
+from nav_msgs.msg import Odometry   
 
 from go_to_hydrobaticpoint.hydrobaticpoint_action import ActionComponent as ActC
 from go_to_hydrobaticpoint.hydrobaticpoint_action import HydrobaticPointAction
@@ -40,6 +41,8 @@ class HydropointClient(SMARCActionClient):
         self._json_ops = HydrobaticPointAction()
         self.logger.set_level(rclpy.logging.LoggingSeverity.INFO)
         self.goal_processed = False
+        self.goal_msg = None
+        self.start_mission = False  
 
         # Wait for server
         # while not self._client.wait_for_server(timeout_sec=1.) and rclpy.ok():
@@ -56,27 +59,74 @@ class HydropointClient(SMARCActionClient):
         self.mocap_goal_sub = self._node.create_subscription(PoseStamped, 
                                                              '/mqtt/hula/pose',
                                                              self.mqtt_hydro_cb, 1)
+        
+        self.uw_comm_goal_sub = self._node.create_subscription(Bool,    
+                                                              '/sam/uwgps/nachos',
+                                                              self.uwcomm_start_mission, 1)
+        
+        self._node.create_timer(1, self.timer_callback)
+
+
+    def timer_callback(self):
+
+        self.logger.info("running timer callback")
+
+        if self.start_mission and self.goal_msg is not None:
+                self.logger.info("we can start")
+
+                if not self.goal_processed:
+
+                    if self.state != ActionClientState.SENT:
+
+                        if self.state == ActionClientState.ACCEPTED or self.state == ActionClientState.RUNNING:
+                            self.goal_processed = True
+                            self.start_mission = False
+                            self.goal_msg = None
+                            #self._node.destroy_subscription(self.mocap_goal_sub)
+                            return
+                        
+                        self.logger.info("Starting hydrobatic point mission")
+                        self.send_goal(self.goal_msg)
+
+
+    def uwcomm_start_mission(self, start_msg: Bool):
+        self.logger.info(f"Start received=========")
+        self.start_mission = True
 
 
     def mqtt_hydro_cb(self, mqtt_goal: String):
 
-        if not self.goal_processed:
+        # DEBUG ONLY!!
+        #mqtt_goal.pose.position.x = 5.0
+        #mqtt_goal.pose.position.z = 2.0
+        
+        self.goal_msg = BaseAction.Goal()
+        self.goal_msg.goal = self._json_ops.encode(mqtt_goal)
+        self.logger.info(f"Goal received and saved {mqtt_goal}")
+        self._node.destroy_subscription(self.mocap_goal_sub)
 
-            if self.state != ActionClientState.SENT:
+        # self.send_goal(self.goal_msg)
 
-                if self.state == ActionClientState.ACCEPTED or self.state == ActionClientState.RUNNING:
-                    self.goal_processed = True
-                    self._node.destroy_subscription(self.mocap_goal_sub)
-                    return
 
-                self.logger.info(f"Sending goal {mqtt_goal}")
+    #def mqtt_hydro_cb(self, mqtt_goal: String):
 
-                # DEBUG ONLY!!
-                mqtt_goal.pose.position.x = 5.0
-                
-                goal_msg = BaseAction.Goal()
-                goal_msg.goal = self._json_ops.encode(mqtt_goal)
-                self.send_goal(goal_msg)
+    #    if not self.goal_processed:
+
+    #        if self.state != ActionClientState.SENT:
+
+    #            if self.state == ActionClientState.ACCEPTED or self.state == ActionClientState.RUNNING:
+    #                self.goal_processed = True
+    #                self._node.destroy_subscription(self.mocap_goal_sub)
+    #                return
+
+    #            # DEBUG ONLY!!
+    #            mqtt_goal.pose.position.x = 4.0
+    #            mqtt_goal.pose.position.z = 2.0
+    #          
+    #            goal_msg = BaseAction.Goal()
+    #            goal_msg.goal = self._json_ops.encode(mqtt_goal)
+    #            self.logger.info(f"Goal received and sent {mqtt_goal}")
+    #            self.send_goal(goal_msg)
 
 
     def mocap_hydro_cb(self, mocap_goal: PoseStamped):

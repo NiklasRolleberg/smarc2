@@ -69,15 +69,28 @@ class PathClient(SMARCActionClient):
         np_path = self.read_csv_to_array(file_path)
         
         path = self.convert_np_path_to_trajectory(np_path)
-        path_msg = self.create_path_msg(FilePath(file_path))
+        self.create_path_msg(FilePath(file_path))
+
+        #self.path_msg.header.stamp = self._node.get_clock().now().to_msg()
+        #for p in self.path_msg.poses:
+        #    p.header.stamp = self.path_msg.header.stamp
+        #self.publisher_.publish(self.path_msg)
 
         self.send_path(path)
+
+        self.timer = self._node.create_timer(1.0, self.timer_callback)
 
         pass
         #self.logger.info("Subscribing to mocap hydro point topic")
         #self.mocap_goal_sub = self._node.create_subscription(PoseStamped, 
         #                                                     ControlTopics.MOCAP_HYDROPOINT,
         #                                                     self.mocap_hydro_cb, 1)
+
+    def timer_callback(self):
+        self.path_msg.header.stamp = self._node.get_clock().now().to_msg()
+        for p in self.path_msg.poses:
+            p.header.stamp = self.path_msg.header.stamp
+        self.publisher_.publish(self.path_msg)
 
     def read_csv_to_array(self, file_path: str):                    
         """                                                         
@@ -167,10 +180,6 @@ class PathClient(SMARCActionClient):
                 goal_msg.goal = self._json_ops.encode(path)
                 self.send_goal(goal_msg)
 
-                self.path_msg.header.stamp = self._node.get_clock().now().to_msg()
-                for p in self.path_msg.poses:
-                    p.header.stamp = self.path_msg.header.stamp
-                self.publisher_.publish(self.path_msg)
 
     def goal_response_callback(self, goal_handle: ClientGoalHandle):
         """Result when a goal is sent to the server."""
