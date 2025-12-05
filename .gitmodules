@@ -54,3 +54,6 @@
 [submodule "drivers/nau7802_ros2_driver"]
 	path = drivers/nau7802_ros2_driver
 	url = git@github.com:smarc-project/nau7802_ros2_driver.git
+[submodule "documentation/smarc2-obsidian"]
+	path = documentation/smarc2-obsidian
+	url = https://github.com/smarc-project/smarc2-obsidian
