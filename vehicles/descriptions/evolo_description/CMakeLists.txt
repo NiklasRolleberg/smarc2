@@ -21,10 +21,10 @@ install(
   DESTINATION share/${PROJECT_NAME}/mesh/
 )
 
-install(
-  DIRECTORY robots/
-  DESTINATION share/${PROJECT_NAME}/robots/
-)
+#install(
+#  DIRECTORY robots/
+#  DESTINATION share/${PROJECT_NAME}/robots/
+#)
 
 install(
   DIRECTORY urdf/
