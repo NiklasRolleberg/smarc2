@@ -501,7 +501,7 @@ class DiveControllerMPC(DiveControllerInterface):
                 # DEBUG
                 #self.ref[:,0] = 4
                 #self.ref[:,1] = 0
-                #self.ref[:,2] = 0
+                #self.ref[:,2] = 1
                 self.ref[:,3] = 1
                 self.ref[:,4:] = 0
                 self.ref[:,13] = 50
@@ -531,6 +531,16 @@ class DiveControllerMPC(DiveControllerInterface):
         u_rudder = -mpc_solution[16]
         u_rpm1 = mpc_solution[17]
         u_rpm2 = mpc_solution[18]
+
+        #        if np.abs(mpc_solution[17]) < 100:
+        #            u_rpm1 = 0
+        #        else: 
+        #            u_rpm1 = mpc_solution[17]
+        #
+        #        if np.abs(mpc_solution[18]) < 100:
+        #            u_rpm2 = 0
+        #        else: 
+        #            u_rpm2 = mpc_solution[18]
 
         # Publish the control input
         self._dive_pub.set_vbs(u_vbs)
