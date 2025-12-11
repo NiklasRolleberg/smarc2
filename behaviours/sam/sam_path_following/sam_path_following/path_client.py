@@ -65,7 +65,7 @@ class PathClient(SMARCActionClient):
 
     def run(self):
         # DEBUGGING the trajectory tracking                                                                                                  
-        file_path = "/home/orin/colcon_ws/src/smarc2/behaviours/sam/sam_path_following/sam_path_following/trajectories/straight_trajectory_1.csv"
+        file_path = "/home/orin/colcon_ws/src/smarc2/behaviours/sam/sam_path_following/sam_path_following/trajectories/straight_trajectory_1_mod_z.csv"
         np_path = self.read_csv_to_array(file_path)
         
         path = self.convert_np_path_to_trajectory(np_path)
@@ -109,7 +109,6 @@ class PathClient(SMARCActionClient):
             for row in csvreader:                                   
                 data.append([float(element) for element in row])    
                                                                     
-        print(f"data: {np.array(data).shape}")
         return np.array(data)
 
     def convert_np_path_to_trajectory(self, np_path):
@@ -139,7 +138,6 @@ class PathClient(SMARCActionClient):
 
             path.trajectory.append(i_wp)
 
-        print(f"path: {type(path)}")
         return path
 
     def create_path_msg(self, csv_path):
