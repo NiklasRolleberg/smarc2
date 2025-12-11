@@ -33,7 +33,7 @@ class yaw_control(Node):
                                  f"{ControlTopics.CONTROL_YAW_TOPIC}", self.yaw_cb, 1)
         #Outputs
         self.evolo_pub = self.create_publisher(String,
-                                                f"{evoloTopics.EVOLO_MQTT_SEND}", 1)
+                                                f"{evoloTopics.EVOLO_CAPTAIN_TO}", 1)
 
     def time_now(self):
         return self.get_clock().now().nanoseconds * 1e-9
