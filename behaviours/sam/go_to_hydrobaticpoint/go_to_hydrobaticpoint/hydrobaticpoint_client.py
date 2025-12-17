@@ -15,6 +15,7 @@ from smarc_msgs.action import BaseAction
 from geometry_msgs.msg import Pose, PoseStamped
 from smarc_control_msgs.msg import Topics as ControlTopics
 from std_msgs.msg import String
+from nav_msgs.msg import Odometry
 
 from go_to_hydrobaticpoint.hydrobaticpoint_action import ActionComponent as ActC
 from go_to_hydrobaticpoint.hydrobaticpoint_action import HydrobaticPointAction
@@ -46,13 +47,16 @@ class HydropointClient(SMARCActionClient):
         #     self.logger.info(f"Node {action_name} waiting for go_to_hydropoint server")
 
         self.logger.info(f"Node {action_name} connected to go_to_hydropoint server")
-
+        self.goal_msg = None
 
     def run(self):
         self.logger.info("Subscribing to mocap hydro point topic")
         self.mocap_goal_sub = self._node.create_subscription(PoseStamped, 
                                                             ControlTopics.MOCAP_HYDROPOINT,
                                                             self.mocap_hydro_cb, 1)
+        self.uw_comms_start_sub = self._node.create_subscription(Odometry,
+                                                                 "/uwcomms/start_mission",
+                                                                 self.start_mission_uwcomms, 1)
         #    self.mocap_goal_sub = self._node.create_subscription(PoseStamped, 
         #                                                         '/mqtt/hula/pose',
         #                                                         self.mqtt_hydro_cb, 1)
@@ -69,10 +73,28 @@ class HydropointClient(SMARCActionClient):
                     self._node.destroy_subscription(self.mocap_goal_sub)
                     return
 
-                self.logger.info(f"Sending goal {mqtt_goal}")
-                goal_msg = BaseAction.Goal()
-                goal_msg.goal = self._json_ops.encode(mqtt_goal)
-                self.send_goal(goal_msg)
+                self.goal_msg = BaseAction.Goal()
+                self.goal_msg.goal = self._json_ops.encode(mqtt_goal)
+                
+                # self.logger.info(f"Sending goal {mqtt_goal}")
+                # self.send_goal(goal_msg)
+
+    # 
+    def start_mission_uwcomms(self, start_msg: Odometry):
+
+        if not self.goal_processed:
+
+            if self.state != ActionClientState.SENT:
+
+                if self.state == ActionClientState.ACCEPTED or self.state == ActionClientState.RUNNING:
+                    self.goal_processed = True
+                    self._node.destroy_subscription(self.mocap_goal_sub)
+                    return
+
+                self.logger.info(f"UW comms signal received. Sending goal {self.goal_msg}")
+                # goal_msg = BaseAction.Goal()
+                # goal_msg.goal = self._json_ops.encode(mqtt_goal)
+                self.send_goal(self.goal_msg)
 
 
     def mocap_hydro_cb(self, mocap_goal: PoseStamped):
