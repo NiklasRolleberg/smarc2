@@ -1,0 +1,21 @@
+running develop
+running egg_info
+writing sam_dead_reckoning.egg-info/PKG-INFO
+writing dependency_links to sam_dead_reckoning.egg-info/dependency_links.txt
+writing entry points to sam_dead_reckoning.egg-info/entry_points.txt
+writing requirements to sam_dead_reckoning.egg-info/requires.txt
+writing top-level names to sam_dead_reckoning.egg-info/top_level.txt
+reading manifest file 'sam_dead_reckoning.egg-info/SOURCES.txt'
+writing manifest file 'sam_dead_reckoning.egg-info/SOURCES.txt'
+running build_ext
+Creating /home/nacho/colcon_workspaces/smarc_ws/install/sam_dead_reckoning/lib/python3.10/site-packages/sam-dead-reckoning.egg-link (link to .)
+Installing compass_heading_node script to /home/nacho/colcon_workspaces/smarc_ws/install/sam_dead_reckoning/lib/sam_dead_reckoning
+Installing depth_node script to /home/nacho/colcon_workspaces/smarc_ws/install/sam_dead_reckoning/lib/sam_dead_reckoning
+Installing dr_lat_lon_node script to /home/nacho/colcon_workspaces/smarc_ws/install/sam_dead_reckoning/lib/sam_dead_reckoning
+Installing dr_node script to /home/nacho/colcon_workspaces/smarc_ws/install/sam_dead_reckoning/lib/sam_dead_reckoning
+Installing gps_node script to /home/nacho/colcon_workspaces/smarc_ws/install/sam_dead_reckoning/lib/sam_dead_reckoning
+Installing rpy_node script to /home/nacho/colcon_workspaces/smarc_ws/install/sam_dead_reckoning/lib/sam_dead_reckoning
+Installing sam_dr script to /home/nacho/colcon_workspaces/smarc_ws/install/sam_dead_reckoning/lib/sam_dead_reckoning
+
+Installed /home/nacho/colcon_workspaces/smarc_ws/build/sam_dead_reckoning
+running symlink_data

@@ -1,0 +1,20 @@
+running develop
+running egg_info
+writing smarc_bt.egg-info/PKG-INFO
+writing dependency_links to smarc_bt.egg-info/dependency_links.txt
+writing entry points to smarc_bt.egg-info/entry_points.txt
+writing requirements to smarc_bt.egg-info/requires.txt
+writing top-level names to smarc_bt.egg-info/top_level.txt
+reading manifest file 'smarc_bt.egg-info/SOURCES.txt'
+writing manifest file 'smarc_bt.egg-info/SOURCES.txt'
+running build_ext
+Creating /home/nacho/colcon_workspaces/smarc_ws/install/smarc_bt/lib/python3.10/site-packages/smarc-bt.egg-link (link to .)
+Installing send_test_mission script to /home/nacho/colcon_workspaces/smarc_ws/install/smarc_bt/lib/smarc_bt
+Installing smarc_bt script to /home/nacho/colcon_workspaces/smarc_ws/install/smarc_bt/lib/smarc_bt
+Installing test_bt_conditions script to /home/nacho/colcon_workspaces/smarc_ws/install/smarc_bt/lib/smarc_bt
+Installing test_dubins_planner_caller script to /home/nacho/colcon_workspaces/smarc_ws/install/smarc_bt/lib/smarc_bt
+Installing test_ros_vehicle script to /home/nacho/colcon_workspaces/smarc_ws/install/smarc_bt/lib/smarc_bt
+Installing test_sam_auv script to /home/nacho/colcon_workspaces/smarc_ws/install/smarc_bt/lib/smarc_bt
+
+Installed /home/nacho/colcon_workspaces/smarc_ws/build/smarc_bt
+running symlink_data

@@ -1,0 +1,18 @@
+running develop
+running egg_info
+writing basic_depth_pitch_control.egg-info/PKG-INFO
+writing dependency_links to basic_depth_pitch_control.egg-info/dependency_links.txt
+writing entry points to basic_depth_pitch_control.egg-info/entry_points.txt
+writing requirements to basic_depth_pitch_control.egg-info/requires.txt
+writing top-level names to basic_depth_pitch_control.egg-info/top_level.txt
+reading manifest file 'basic_depth_pitch_control.egg-info/SOURCES.txt'
+writing manifest file 'basic_depth_pitch_control.egg-info/SOURCES.txt'
+running build_ext
+Creating /home/nacho/colcon_workspaces/smarc_ws/install/basic_depth_pitch_control/lib/python3.10/site-packages/basic-depth-pitch-control.egg-link (link to .)
+Installing action_client_node script to /home/nacho/colcon_workspaces/smarc_ws/install/basic_depth_pitch_control/lib/basic_depth_pitch_control
+Installing action_server_node script to /home/nacho/colcon_workspaces/smarc_ws/install/basic_depth_pitch_control/lib/basic_depth_pitch_control
+Installing diving script to /home/nacho/colcon_workspaces/smarc_ws/install/basic_depth_pitch_control/lib/basic_depth_pitch_control
+Installing test_view script to /home/nacho/colcon_workspaces/smarc_ws/install/basic_depth_pitch_control/lib/basic_depth_pitch_control
+
+Installed /home/nacho/colcon_workspaces/smarc_ws/build/basic_depth_pitch_control
+running symlink_data

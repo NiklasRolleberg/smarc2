@@ -1,0 +1,27 @@
+[31mCMake Error at CMakeLists.txt:70 (add_library):
+  Cannot find source file:
+
+    /home/nacho/colcon_workspaces/smarc_ws/src/smarc2/vehicles/hardware/sam/sam_drivers/sam_uavcan_bridge/libcanard/canard.c
+
+  Tried extensions .c .C .c++ .cc .cpp .cxx .cu .mpp .m .M .mm .ixx .cppm .h
+  .hh .h++ .hm .hpp .hxx .in .txx .f .F .for .f77 .f90 .f95 .f03 .hip .ispc
+
+[0m
+[31mCMake Error at CMakeLists.txt:159 (add_library):
+  Cannot find source file:
+
+    /home/nacho/colcon_workspaces/smarc_ws/src/smarc2/vehicles/hardware/sam/sam_drivers/sam_uavcan_bridge/dsdl/dsdl_generated/src/uavcan.protocol.NodeStatus.c
+
+  Tried extensions .c .C .c++ .cc .cpp .cxx .cu .mpp .m .M .mm .ixx .cppm .h
+  .hh .h++ .hm .hpp .hxx .in .txx .f .F .for .f77 .f90 .f95 .f03 .hip .ispc
+
+[0m
+[31mCMake Error at CMakeLists.txt:70 (add_library):
+  No SOURCES given to target: canard_lib
+
+[0m
+[31mCMake Error at CMakeLists.txt:159 (add_library):
+  No SOURCES given to target: dsdl_lib
+
+[0m
+[0mCMake Generate step failed.  Build files cannot be regenerated correctly.[0m

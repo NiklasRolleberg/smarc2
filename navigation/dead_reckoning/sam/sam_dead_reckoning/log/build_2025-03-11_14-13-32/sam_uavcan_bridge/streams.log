@@ -1,0 +1,67 @@
+[0.010s] Invoking command in '/home/nacho/colcon_workspaces/smarc_ws/build/sam_uavcan_bridge': AMENT_PREFIX_PATH=/home/nacho/colcon_workspaces/smarc_ws/install/uavcan_ros_msgs:/home/nacho/colcon_workspaces/smarc_ws/install/smarc_msgs:/home/nacho/colcon_workspaces/smarc_ws/install/sam_msgs:${AMENT_PREFIX_PATH} CMAKE_PREFIX_PATH=/home/nacho/colcon_workspaces/smarc_ws/install/uavcan_ros_msgs:/home/nacho/colcon_workspaces/smarc_ws/install/smarc_msgs:/home/nacho/colcon_workspaces/smarc_ws/install/sam_msgs:/opt/ros/humble LD_LIBRARY_PATH=/home/nacho/colcon_workspaces/smarc_ws/install/uavcan_ros_msgs/lib:/home/nacho/colcon_workspaces/smarc_ws/install/smarc_msgs/lib:/home/nacho/colcon_workspaces/smarc_ws/install/sam_msgs/lib:${LD_LIBRARY_PATH} PYTHONPATH=/home/nacho/colcon_workspaces/smarc_ws/install/uavcan_ros_msgs/local/lib/python3.10/dist-packages:/home/nacho/colcon_workspaces/smarc_ws/install/smarc_msgs/local/lib/python3.10/dist-packages:/home/nacho/colcon_workspaces/smarc_ws/install/sam_msgs/local/lib/python3.10/dist-packages:${PYTHONPATH} /usr/bin/cmake /home/nacho/colcon_workspaces/smarc_ws/src/smarc2/vehicles/hardware/sam/sam_drivers/sam_uavcan_bridge -DAMENT_CMAKE_SYMLINK_INSTALL=1 -DCMAKE_INSTALL_PREFIX=/home/nacho/colcon_workspaces/smarc_ws/install/sam_uavcan_bridge
+[0.049s] -- The C compiler identification is GNU 11.4.0
+[0.090s] -- The CXX compiler identification is GNU 11.4.0
+[0.097s] -- Detecting C compiler ABI info
+[0.158s] -- Detecting C compiler ABI info - done
+[0.165s] -- Check for working C compiler: /usr/bin/cc - skipped
+[0.165s] -- Detecting C compile features
+[0.165s] -- Detecting C compile features - done
+[0.169s] -- Detecting CXX compiler ABI info
+[0.232s] -- Detecting CXX compiler ABI info - done
+[0.239s] -- Check for working CXX compiler: /usr/bin/c++ - skipped
+[0.239s] -- Detecting CXX compile features
+[0.240s] -- Detecting CXX compile features - done
+[0.242s] -- Found ament_cmake: 1.3.11 (/opt/ros/humble/share/ament_cmake/cmake)
+[0.375s] -- Found Python3: /usr/bin/python3 (found version "3.10.12") found components: Interpreter 
+[0.436s] -- Override CMake install command with custom implementation using symlinks instead of copying resources
+[0.459s] -- Found rclcpp: 16.0.11 (/opt/ros/humble/share/rclcpp/cmake)
+[0.489s] -- Found rosidl_generator_c: 3.1.6 (/opt/ros/humble/share/rosidl_generator_c/cmake)
+[0.494s] -- Found rosidl_adapter: 3.1.6 (/opt/ros/humble/share/rosidl_adapter/cmake)
+[0.500s] -- Found rosidl_generator_cpp: 3.1.6 (/opt/ros/humble/share/rosidl_generator_cpp/cmake)
+[0.508s] -- Using all available rosidl_typesupport_c: rosidl_typesupport_fastrtps_c;rosidl_typesupport_introspection_c
+[0.517s] -- Using all available rosidl_typesupport_cpp: rosidl_typesupport_fastrtps_cpp;rosidl_typesupport_introspection_cpp
+[0.542s] -- Found rmw_implementation_cmake: 6.1.2 (/opt/ros/humble/share/rmw_implementation_cmake/cmake)
+[0.544s] -- Found rmw_fastrtps_cpp: 6.2.7 (/opt/ros/humble/share/rmw_fastrtps_cpp/cmake)
+[0.606s] -- Found OpenSSL: /usr/lib/x86_64-linux-gnu/libcrypto.so (found version "3.0.2")  
+[0.630s] -- Found FastRTPS: /opt/ros/humble/include  
+[0.661s] -- Using RMW implementation 'rmw_fastrtps_cpp' as default
+[0.669s] -- Looking for pthread.h
+[0.733s] -- Looking for pthread.h - found
+[0.734s] -- Performing Test CMAKE_HAVE_LIBC_PTHREAD
+[0.795s] -- Performing Test CMAKE_HAVE_LIBC_PTHREAD - Success
+[0.795s] -- Found Threads: TRUE  
+[0.826s] -- Found geometry_msgs: 4.2.4 (/opt/ros/humble/share/geometry_msgs/cmake)
+[0.834s] -- Found sensor_msgs: 4.2.4 (/opt/ros/humble/share/sensor_msgs/cmake)
+[0.844s] -- Found std_srvs: 4.2.4 (/opt/ros/humble/share/std_srvs/cmake)
+[0.850s] -- Found sam_msgs: 0.1.0 (/home/nacho/colcon_workspaces/smarc_ws/install/sam_msgs/share/sam_msgs/cmake)
+[0.860s] -- Found smarc_msgs: 0.1.0 (/home/nacho/colcon_workspaces/smarc_ws/install/smarc_msgs/share/smarc_msgs/cmake)
+[0.902s] -- Found uavcan_ros_msgs: 0.0.0 (/home/nacho/colcon_workspaces/smarc_ws/install/uavcan_ros_msgs/share/uavcan_ros_msgs/cmake)
+[0.980s] -- Configuring done
+[0.981s] [31mCMake Error at CMakeLists.txt:70 (add_library):
+[0.981s]   Cannot find source file:
+[0.982s] 
+[0.982s]     /home/nacho/colcon_workspaces/smarc_ws/src/smarc2/vehicles/hardware/sam/sam_drivers/sam_uavcan_bridge/libcanard/canard.c
+[0.982s] 
+[0.982s]   Tried extensions .c .C .c++ .cc .cpp .cxx .cu .mpp .m .M .mm .ixx .cppm .h
+[0.982s]   .hh .h++ .hm .hpp .hxx .in .txx .f .F .for .f77 .f90 .f95 .f03 .hip .ispc
+[0.982s] 
+[0.982s] [0m
+[0.983s] [31mCMake Error at CMakeLists.txt:159 (add_library):
+[0.983s]   Cannot find source file:
+[0.983s] 
+[0.983s]     /home/nacho/colcon_workspaces/smarc_ws/src/smarc2/vehicles/hardware/sam/sam_drivers/sam_uavcan_bridge/dsdl/dsdl_generated/src/uavcan.protocol.NodeStatus.c
+[0.983s] 
+[0.983s]   Tried extensions .c .C .c++ .cc .cpp .cxx .cu .mpp .m .M .mm .ixx .cppm .h
+[0.983s]   .hh .h++ .hm .hpp .hxx .in .txx .f .F .for .f77 .f90 .f95 .f03 .hip .ispc
+[0.983s] 
+[0.983s] [0m
+[0.985s] [31mCMake Error at CMakeLists.txt:70 (add_library):
+[0.985s]   No SOURCES given to target: canard_lib
+[0.985s] 
+[0.985s] [0m
+[0.985s] [31mCMake Error at CMakeLists.txt:159 (add_library):
+[0.985s]   No SOURCES given to target: dsdl_lib
+[0.986s] 
+[0.986s] [0m
+[0.986s] [0mCMake Generate step failed.  Build files cannot be regenerated correctly.[0m
+[0.992s] Invoked command in '/home/nacho/colcon_workspaces/smarc_ws/build/sam_uavcan_bridge' returned '1': AMENT_PREFIX_PATH=/home/nacho/colcon_workspaces/smarc_ws/install/uavcan_ros_msgs:/home/nacho/colcon_workspaces/smarc_ws/install/smarc_msgs:/home/nacho/colcon_workspaces/smarc_ws/install/sam_msgs:${AMENT_PREFIX_PATH} CMAKE_PREFIX_PATH=/home/nacho/colcon_workspaces/smarc_ws/install/uavcan_ros_msgs:/home/nacho/colcon_workspaces/smarc_ws/install/smarc_msgs:/home/nacho/colcon_workspaces/smarc_ws/install/sam_msgs:/opt/ros/humble LD_LIBRARY_PATH=/home/nacho/colcon_workspaces/smarc_ws/install/uavcan_ros_msgs/lib:/home/nacho/colcon_workspaces/smarc_ws/install/smarc_msgs/lib:/home/nacho/colcon_workspaces/smarc_ws/install/sam_msgs/lib:${LD_LIBRARY_PATH} PYTHONPATH=/home/nacho/colcon_workspaces/smarc_ws/install/uavcan_ros_msgs/local/lib/python3.10/dist-packages:/home/nacho/colcon_workspaces/smarc_ws/install/smarc_msgs/local/lib/python3.10/dist-packages:/home/nacho/colcon_workspaces/smarc_ws/install/sam_msgs/local/lib/python3.10/dist-packages:${PYTHONPATH} /usr/bin/cmake /home/nacho/colcon_workspaces/smarc_ws/src/smarc2/vehicles/hardware/sam/sam_drivers/sam_uavcan_bridge -DAMENT_CMAKE_SYMLINK_INSTALL=1 -DCMAKE_INSTALL_PREFIX=/home/nacho/colcon_workspaces/smarc_ws/install/sam_uavcan_bridge

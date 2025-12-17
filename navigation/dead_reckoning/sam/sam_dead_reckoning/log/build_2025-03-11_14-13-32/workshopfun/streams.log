@@ -1,0 +1,20 @@
+[1.585s] Invoking command in '/home/nacho/colcon_workspaces/smarc_ws/build/workshopfun': PYTHONPATH=/home/nacho/colcon_workspaces/smarc_ws/build/workshopfun/prefix_override:/usr/lib/python3/dist-packages/colcon_core/task/python/colcon_distutils_commands:/home/nacho/colcon_workspaces/smarc_ws/install/workshopfun/lib/python3.10/site-packages:${PYTHONPATH} /usr/bin/python3 -W ignore:setup.py install is deprecated -W ignore:easy_install command is deprecated setup.py develop --editable --build-directory /home/nacho/colcon_workspaces/smarc_ws/build/workshopfun/build --no-deps symlink_data
+[2.173s] running develop
+[2.410s] running egg_info
+[2.410s] writing workshopfun.egg-info/PKG-INFO
+[2.410s] writing dependency_links to workshopfun.egg-info/dependency_links.txt
+[2.410s] writing entry points to workshopfun.egg-info/entry_points.txt
+[2.411s] writing requirements to workshopfun.egg-info/requires.txt
+[2.411s] writing top-level names to workshopfun.egg-info/top_level.txt
+[2.416s] reading manifest file 'workshopfun.egg-info/SOURCES.txt'
+[2.417s] writing manifest file 'workshopfun.egg-info/SOURCES.txt'
+[2.417s] running build_ext
+[2.417s] Creating /home/nacho/colcon_workspaces/smarc_ws/install/workshopfun/lib/python3.10/site-packages/workshopfun.egg-link (link to .)
+[2.417s] Installing action_client_node script to /home/nacho/colcon_workspaces/smarc_ws/install/workshopfun/lib/workshopfun
+[2.417s] Installing action_server_node script to /home/nacho/colcon_workspaces/smarc_ws/install/workshopfun/lib/workshopfun
+[2.417s] Installing science_node script to /home/nacho/colcon_workspaces/smarc_ws/install/workshopfun/lib/workshopfun
+[2.417s] Installing view_test script to /home/nacho/colcon_workspaces/smarc_ws/install/workshopfun/lib/workshopfun
+[2.417s] 
+[2.417s] Installed /home/nacho/colcon_workspaces/smarc_ws/build/workshopfun
+[2.417s] running symlink_data
+[2.460s] Invoked command in '/home/nacho/colcon_workspaces/smarc_ws/build/workshopfun' returned '0': PYTHONPATH=/home/nacho/colcon_workspaces/smarc_ws/build/workshopfun/prefix_override:/usr/lib/python3/dist-packages/colcon_core/task/python/colcon_distutils_commands:/home/nacho/colcon_workspaces/smarc_ws/install/workshopfun/lib/python3.10/site-packages:${PYTHONPATH} /usr/bin/python3 -W ignore:setup.py install is deprecated -W ignore:easy_install command is deprecated setup.py develop --editable --build-directory /home/nacho/colcon_workspaces/smarc_ws/build/workshopfun/build --no-deps symlink_data

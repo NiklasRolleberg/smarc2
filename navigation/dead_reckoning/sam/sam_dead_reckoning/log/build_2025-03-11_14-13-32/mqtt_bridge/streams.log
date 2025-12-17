@@ -1,0 +1,17 @@
+[3.814s] Invoking command in '/home/nacho/colcon_workspaces/smarc_ws/build/mqtt_bridge': PYTHONPATH=/home/nacho/colcon_workspaces/smarc_ws/build/mqtt_bridge/prefix_override:/usr/lib/python3/dist-packages/colcon_core/task/python/colcon_distutils_commands:/home/nacho/colcon_workspaces/smarc_ws/install/mqtt_bridge/lib/python3.10/site-packages:${PYTHONPATH} /usr/bin/python3 -W ignore:setup.py install is deprecated -W ignore:easy_install command is deprecated setup.py develop --editable --build-directory /home/nacho/colcon_workspaces/smarc_ws/build/mqtt_bridge/build --no-deps symlink_data
+[4.088s] running develop
+[4.288s] running egg_info
+[4.289s] writing mqtt_bridge.egg-info/PKG-INFO
+[4.290s] writing dependency_links to mqtt_bridge.egg-info/dependency_links.txt
+[4.290s] writing entry points to mqtt_bridge.egg-info/entry_points.txt
+[4.291s] writing requirements to mqtt_bridge.egg-info/requires.txt
+[4.291s] writing top-level names to mqtt_bridge.egg-info/top_level.txt
+[4.293s] reading manifest file 'mqtt_bridge.egg-info/SOURCES.txt'
+[4.296s] writing manifest file 'mqtt_bridge.egg-info/SOURCES.txt'
+[4.298s] running build_ext
+[4.300s] Creating /home/nacho/colcon_workspaces/smarc_ws/install/mqtt_bridge/lib/python3.10/site-packages/mqtt-bridge.egg-link (link to .)
+[4.301s] Installing mqtt_bridge_node script to /home/nacho/colcon_workspaces/smarc_ws/install/mqtt_bridge/lib/mqtt_bridge
+[4.301s] 
+[4.301s] Installed /home/nacho/colcon_workspaces/smarc_ws/build/mqtt_bridge
+[4.301s] running symlink_data
+[4.472s] Invoked command in '/home/nacho/colcon_workspaces/smarc_ws/build/mqtt_bridge' returned '0': PYTHONPATH=/home/nacho/colcon_workspaces/smarc_ws/build/mqtt_bridge/prefix_override:/usr/lib/python3/dist-packages/colcon_core/task/python/colcon_distutils_commands:/home/nacho/colcon_workspaces/smarc_ws/install/mqtt_bridge/lib/python3.10/site-packages:${PYTHONPATH} /usr/bin/python3 -W ignore:setup.py install is deprecated -W ignore:easy_install command is deprecated setup.py develop --editable --build-directory /home/nacho/colcon_workspaces/smarc_ws/build/mqtt_bridge/build --no-deps symlink_data

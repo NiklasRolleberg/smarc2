@@ -1,0 +1,20 @@
+[3.816s] Invoking command in '/home/nacho/colcon_workspaces/smarc_ws/build/basic_depth_pitch_control': PYTHONPATH=/home/nacho/colcon_workspaces/smarc_ws/build/basic_depth_pitch_control/prefix_override:/usr/lib/python3/dist-packages/colcon_core/task/python/colcon_distutils_commands:/home/nacho/colcon_workspaces/smarc_ws/install/basic_depth_pitch_control/lib/python3.10/site-packages:${PYTHONPATH} /usr/bin/python3 -W ignore:setup.py install is deprecated -W ignore:easy_install command is deprecated setup.py develop --editable --build-directory /home/nacho/colcon_workspaces/smarc_ws/build/basic_depth_pitch_control/build --no-deps symlink_data
+[4.146s] running develop
+[4.393s] running egg_info
+[4.393s] writing basic_depth_pitch_control.egg-info/PKG-INFO
+[4.393s] writing dependency_links to basic_depth_pitch_control.egg-info/dependency_links.txt
+[4.393s] writing entry points to basic_depth_pitch_control.egg-info/entry_points.txt
+[4.393s] writing requirements to basic_depth_pitch_control.egg-info/requires.txt
+[4.393s] writing top-level names to basic_depth_pitch_control.egg-info/top_level.txt
+[4.393s] reading manifest file 'basic_depth_pitch_control.egg-info/SOURCES.txt'
+[4.393s] writing manifest file 'basic_depth_pitch_control.egg-info/SOURCES.txt'
+[4.393s] running build_ext
+[4.393s] Creating /home/nacho/colcon_workspaces/smarc_ws/install/basic_depth_pitch_control/lib/python3.10/site-packages/basic-depth-pitch-control.egg-link (link to .)
+[4.394s] Installing action_client_node script to /home/nacho/colcon_workspaces/smarc_ws/install/basic_depth_pitch_control/lib/basic_depth_pitch_control
+[4.397s] Installing action_server_node script to /home/nacho/colcon_workspaces/smarc_ws/install/basic_depth_pitch_control/lib/basic_depth_pitch_control
+[4.397s] Installing diving script to /home/nacho/colcon_workspaces/smarc_ws/install/basic_depth_pitch_control/lib/basic_depth_pitch_control
+[4.397s] Installing test_view script to /home/nacho/colcon_workspaces/smarc_ws/install/basic_depth_pitch_control/lib/basic_depth_pitch_control
+[4.398s] 
+[4.398s] Installed /home/nacho/colcon_workspaces/smarc_ws/build/basic_depth_pitch_control
+[4.399s] running symlink_data
+[4.548s] Invoked command in '/home/nacho/colcon_workspaces/smarc_ws/build/basic_depth_pitch_control' returned '0': PYTHONPATH=/home/nacho/colcon_workspaces/smarc_ws/build/basic_depth_pitch_control/prefix_override:/usr/lib/python3/dist-packages/colcon_core/task/python/colcon_distutils_commands:/home/nacho/colcon_workspaces/smarc_ws/install/basic_depth_pitch_control/lib/python3.10/site-packages:${PYTHONPATH} /usr/bin/python3 -W ignore:setup.py install is deprecated -W ignore:easy_install command is deprecated setup.py develop --editable --build-directory /home/nacho/colcon_workspaces/smarc_ws/build/basic_depth_pitch_control/build --no-deps symlink_data
