@@ -100,8 +100,8 @@ public:
         float x = p.pose.position.x - map.info.origin.position.x;
         float y = p.pose.position.y - map.info.origin.position.y;
 
-        int col = (int) x;
-        int row = (int) y;
+        int col = (int) x / map.info.resolution;
+        int row = (int) y / map.info.resolution;
 
         if(col >= 0 && col < (int) map.info.width &&
            row >= 0 && row < (int) map.info.height) {
