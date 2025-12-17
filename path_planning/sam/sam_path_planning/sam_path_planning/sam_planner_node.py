@@ -19,7 +19,6 @@ from message_filters import Subscriber, ApproximateTimeSynchronizer
 from rclpy.action import ActionClient
 
 # Path planning modules from smarc_modelling go here
-# from smarc_modelling.vehicles.SAM import SAM
 from smarc_modelling.motion_planning.MotionPrimitives.MainScript import MotionPlanningROS
 #from smarc_modelling.sam_sim import plot_results, Sol
 
@@ -67,7 +66,6 @@ class SamPathPlanner(HydropointServer, PathClient):
             action_type,
         )
 
-        # This has to be declared before calling the constructors
         self.declare_parameters()
 
         self._hydropoint = None
@@ -76,14 +74,11 @@ class SamPathPlanner(HydropointServer, PathClient):
         self.call_planner = False
         self.path_found = False
 
-        # self.set_parameters()
-
         self._tf_buffer = Buffer()
-        self._tf_listener = TransformListener(self._tf_buffer, self._node)
+        self._tf_listener = TransformListener(self._tf_buffer, self._node, spin_thread=False)
 
         # Declare your publishers here
         self.path_pub = self._node.create_publisher(Path, 'planned_path', 1)  # For Rviz
-        self.pose_pub = self._node.create_publisher(PoseStamped, 'planned_pose', 1)  # For Rviz
 
         # Declare your subscribers here
         # self.pose_sub = self.create_subscription(PoseStamped, 
@@ -92,6 +87,7 @@ class SamPathPlanner(HydropointServer, PathClient):
         # TODO: get state from TF instead of odom since we want mocap --> base_link
         self.odom_sub = self._node.create_subscription(Odometry, 
                                                  ControlTopics.MOCAP_STATE, self.state_cb, 1)
+        # self._node.get_logger().info(f"Created listener")
         
         # Synch subscribers here 
         self.lcg_fb = Subscriber(self._node, PercentStamped, SamTopics.LCG_FB_TOPIC)
@@ -102,6 +98,7 @@ class SamPathPlanner(HydropointServer, PathClient):
         self.rpm2_fb = Subscriber(self._node, ThrusterFeedback, SamTopics.THRUSTER2_FB_TOPIC)
         # self.rpm1_fb = Subscriber(self, ThrusterFeedback, 'with_header/thruster1_fb')
         # self.rpm2_fb = Subscriber(self, ThrusterFeedback, 'with_header/thruster2_fb')
+        self._node.get_logger().info(f"Subscribers created")
 
         self.ctrl_synch_msg = ApproximateTimeSynchronizer(
             [self.vbs_fb, self.lcg_fb],
@@ -110,13 +107,6 @@ class SamPathPlanner(HydropointServer, PathClient):
             allow_headerless=True
         )
         self.ctrl_synch_msg.registerCallback(self.ctrl_synch_cb)
-
-        # Action client to communicate with MPC
-        # self._action_client = ActionClient(self, TrajectoryMPC, ControlTopics.TRAJ_MPC)
-        
-        # Uncomment when MPC is ready to be used
-        # while not self._action_client.wait_for_server(timeout_sec=1.) and rclpy.ok():
-        #     self._logger.info(f"Planner waiting for {ControlTopics.TRAJ_MPC} server")
 
         self._goal_handle = None
 
@@ -145,8 +135,8 @@ class SamPathPlanner(HydropointServer, PathClient):
             self.y_min = self._node.declare_parameter("y_min", -2.5).value   # map
         if not node.has_parameter("z_min"):
             self.z_min = self._node.declare_parameter("z_min", -0.5).value   # map
-        if not node.has_parameter("TILESIZE"):
-            self.TILESIZE = self._node.declare_parameter("TILESIZE", 0.5).value   # map resolution
+        if not node.has_parameter("map_resolution"):
+            self.map_resolution = self._node.declare_parameter("map_resolution", 0.5).value   # map resolution
 
         # Variables
         self.sam_pose_t = None
@@ -233,23 +223,7 @@ class SamPathPlanner(HydropointServer, PathClient):
         result_msg = self.action_type.Result
         if self._received_waypoint and self.sam_pose_t != None and self.sam_control_t != None:
             self.logger.info(f"All inputs received")  
-
-            fmt_dict = json.loads(goal_handle.request.goal.data)
-
-            # if component is 0: #ActionComponent.GOAL:
-            hydropoint = PoseStamped()
-            hydropoint.header.frame_id = str(fmt_dict["hydropoint"]["frame_id"])
-            hydropoint.pose.position.x = float(fmt_dict["hydropoint"]["position"]["x"])
-            hydropoint.pose.position.y = float(fmt_dict["hydropoint"]["position"]["y"])
-            hydropoint.pose.position.z = float(fmt_dict["hydropoint"]["position"]["z"])
-            hydropoint.pose.orientation.x = float(fmt_dict["hydropoint"]["orientation"]["x"])
-            hydropoint.pose.orientation.y = float(fmt_dict["hydropoint"]["orientation"]["y"])
-            hydropoint.pose.orientation.z = float(fmt_dict["hydropoint"]["orientation"]["z"])
-            hydropoint.pose.orientation.w = float(fmt_dict["hydropoint"]["orientation"]["w"])
-
-            # self._hydropoint = self._json_ops.decode(goal_handle.request.goal, 0)
-            self._hydropoint = hydropoint
-            # self.logger.info(f"Hydropoint received: {self._hydropoint}")
+            self._hydropoint = self._json_parser.decode(goal_handle.request.goal, 0)
             
             # Call path planner and move on to feedback
             self.call_planner = True
@@ -288,7 +262,6 @@ class SamPathPlanner(HydropointServer, PathClient):
         feedback = self.action_type.Feedback
         # tol_check = self._tol_check(d)
         while not self.path_computed:
-            self.logger.debug(f"On feedback loop")
                 
             if goal_handle.is_cancel_requested:
                 self.logger.info("Goal was cancelled by client.")
@@ -296,7 +269,7 @@ class SamPathPlanner(HydropointServer, PathClient):
                 # self.publish_stop_setpoint()
                 return "cancelled"
             
-            feedback.feedback = self._json_ops.encode(d)
+            feedback.feedback = self._json_parser.encode(d)
             goal_handle.publish_feedback(feedback)
             d = self.compute_distance(pose_stamped)
             rate.sleep()
@@ -310,10 +283,7 @@ class SamPathPlanner(HydropointServer, PathClient):
 
     def compute_path(self):
 
-        self._node.get_logger().info(f"Compute path loop")
-
         if self.call_planner:
-
             self.call_planner = False
 
             # Do planning stuff here
@@ -328,7 +298,8 @@ class SamPathPlanner(HydropointServer, PathClient):
                     self.sam_pose_t.pose.pose.position.x,
                     self.sam_pose_t.pose.pose.position.y,
                     self.sam_pose_t.pose.pose.position.z + 0.5,
-                #    quat[0],quat[1],quat[2],quat[3],
+                    # quat[0],quat[1],quat[2],quat[3],
+                    # 0.8764858, 0.0438608, -0.0239613, 0.4788264, 
                     1,0,0,0,
                     self.sam_pose_t.twist.twist.linear.x,
                     self.sam_pose_t.twist.twist.linear.y,
@@ -395,10 +366,6 @@ class SamPathPlanner(HydropointServer, PathClient):
                 ])
 
             # === Motion Planner ===
-            ## Collect the map parameters
-            map_boundaries = (self.x_max, self.y_max, self.z_max, self.x_min, self.y_min, self.z_min)
-            map_resolution = self.TILESIZE
-
             #Print the states
             self._node.get_logger().info(f"Initial state:...{start_state}")
             self._node.get_logger().info(f"-----------")
@@ -408,7 +375,10 @@ class SamPathPlanner(HydropointServer, PathClient):
 
             # Call the planner
             self._node.get_logger().info(f'Calling planner')
-            trajectory, self.path_found = MotionPlanningROS(start_state, end_state, map_boundaries, map_resolution)
+            map_boundaries = (self.x_max, self.y_max, self.z_max, self.x_min, self.y_min, self.z_min)
+            trajectory, self.path_found, debugMsg = MotionPlanningROS(start_state, end_state, map_boundaries, self.map_resolution)
+
+            self._node._logger.info(f"Planner output msg: {debugMsg}")
 
             # If path found
             if self.path_found:
