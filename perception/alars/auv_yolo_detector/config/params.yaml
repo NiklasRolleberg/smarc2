@@ -1,43 +1,21 @@
 /**/auv_yolo_detector:
   ros__parameters:
-    mode: "sim"
-    inference_frequency: 1.0
-    confidence_threshold: 0.4
-    model_path: 'None'
+    namespace: "M350" #overridden by launch
+    device: 'cpu' #overridden by launch
 
-    camera:
-      fov: 82.0
+    detection:
+      blur_variance: 1.5 #0.01 for not asko, 1.5 for asko
+      inference_period: 0.1
+      confidence_threshold: 0.4
 
-    real_dimensions:
-      sam:
-        width: 2.0
-        height: 16.0
-    
-    frames:
-      real:
-        map: "map_gt" 
-        quadrotor_odom: "Quadrotor/odom"
-        sam_odom: "sam_auv_v1/odom"
-        camera: "Quadrotor/camera"
-      sim:
-        map: "map_gt" 
-        quadrotor_odom: "Quadrotor/odom"
-        sam_odom: "sam_auv_v1/odom"
-        camera: "Quadrotor/camera"
-    
+    sam:
+      width: 0.2
+      length: 1.5
+
     topics:
-      sub:
-        real:
-          raw_image: '/Quadrotor/gimbal_camera/image_raw'
-          camera_info: '/Quadrotor/gimbal_camera/camera_info'
-          drone_position: '/Quadrotor/smarc/odom' #/Quadrotor/smarc/odom
-        sim:
-          raw_image: /Quadrotor/core/fpcamera/image
-          camera_info: /Quadrotor/core/fpcamera/cam_info
-          drone_position: /Quadrotor/odom_gt #/Quadrotor/smarc/odom
+      rviz:
+        annotated_image: 'rviz/yolo_annotation'
+        bw_blurred_sam: 'rviz/blurred_sam'
+        edges: 'rviz/sam_edges'
 
-      pub:
-        annotated_image: 'image_annotated'
-        predicted_position:
-          sam: '/Quadrotor/pred_position/sam'
-          buoy: '/Quadrotor/pred_position/buoy'
+

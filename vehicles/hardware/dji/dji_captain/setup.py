@@ -21,6 +21,7 @@ setup(
     entry_points={
         'console_scripts': [
             'dji_captain = dji_captain.dji_captain:main',
+            'joy_tester = dji_captain.joy_tester:main',
         ],
     },
 )

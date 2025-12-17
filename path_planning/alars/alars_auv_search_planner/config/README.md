@@ -22,7 +22,7 @@ A brief explanation of each parameter:
 ## Movement params
 | **Parameter**               | **Description**                                                                                                        |
 | --------------------------- | ---------------------------------------------------------------------------------------------------------------------- |
-| `distance_threshold` | Threshold distance to waypoint that triggers next waypoint publication                        |
+| `distance_threshold` | Threshold distance to waypoint that triggers next waypoint publication. It also defindes spacing in straight paths.            |
 | `path_update_rate` | Frequency of waypoint publication; In 'as' mode, it's useless as it's the grid_map.update.rate that defines that                        |
 
 

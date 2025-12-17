@@ -3,7 +3,7 @@
 import rclpy, sys, math, time
 import numpy as np
 from enum import Enum
-
+from typing import Optional
 
 from rclpy.node import Node
 from rclpy.executors import MultiThreadedExecutor
@@ -27,7 +27,7 @@ from dji_msgs.msg import Topics as DjiTopics
 
 
 from smarc_utilities.georef_utils import convert_latlon_to_utm, convert_utm_to_latlon
-from tf_transformations import euler_from_quaternion, quaternion_from_euler
+from tf_transformations import euler_from_quaternion, quaternion_from_euler, quaternion_matrix
 from tf2_geometry_msgs import do_transform_pose_stamped
 
 
@@ -43,7 +43,7 @@ class PSDKTopics(Enum):
     ALTITUDE            = WRAPPER_NS + "altitude_sea_level"
     CONTROL_MODE        = WRAPPER_NS + "control_mode"
     BATTERY             = WRAPPER_NS + "battery" 
-    VELOCITY_GROUND_FSD  = WRAPPER_NS + "velocity_ground_fused"
+    VELOCITY_GROUND_FSD = WRAPPER_NS + "velocity_ground_fused"
     ANGULAR_RATE_GND_FSD= WRAPPER_NS + "angular_rate_ground_fused"
     ESC_DATA            = WRAPPER_NS + "esc_data"
     RC                  = WRAPPER_NS + "rc"
@@ -54,15 +54,9 @@ class PSDKTopics(Enum):
     LAND_SRV            = WRAPPER_NS + "land"
 
     FLUvel_JOY          = WRAPPER_NS + "flight_control_setpoint_FLUvelocity_yawrate"
-    ENUvel_JOY          = WRAPPER_NS + "flight_control_setpoint_ENUvelocity_yawrate"
-    ENUpos_JOY          = WRAPPER_NS + "flight_control_setpoint_ENUposition_yaw"    
+    # ENUvel_JOY          = WRAPPER_NS + "flight_control_setpoint_ENUvelocity_yawrate"
+    # ENUpos_JOY          = WRAPPER_NS + "flight_control_setpoint_ENUposition_yaw"    
 
-
-
-class ControlModes(Enum):
-    FLUvel = "FLU Velocity"
-    ENUvel = "ENU Velocity"
-    ENUpos = "ENU Position"
 
 
 class DjiCaptain():
@@ -93,20 +87,19 @@ class DjiCaptain():
 
 
         self._node.declare_parameter("robot_name", "M350")
-        self._node.declare_parameter("controller_deadzone", 0.1)
-        self._node.declare_parameter("controller_yawrate_multiplier", 0.3)
-        # give an error-causing default value to force the user to pass this parameter every time
-        # there is no safe assumption that can be made for this.
-        self._node.declare_parameter("home_altitude_above_water", -1.0)
-
         self.ROBOT_NAME : str = self._node.get_parameter("robot_name").get_parameter_value().string_value
         self._TF_NS : str = f"{self.ROBOT_NAME}/"
 
+        self._node.declare_parameter("controller_deadzone", 0.1)
         self._CONTROLLER_DEADZONE : float = self._node.get_parameter("controller_deadzone").get_parameter_value().double_value
+        self._node.declare_parameter("controller_yawrate_multiplier", 0.3)
         self._CONTROLLER_YAWRATE_MULTIPLIER : float = self._node.get_parameter("controller_yawrate_multiplier").get_parameter_value().double_value
         
-        self._HOME_ALT_ABOVE_WATER = self._node.get_parameter("home_altitude_above_water").get_parameter_value().double_value
 
+        # give an error-causing default value to force the user to pass this parameter every time
+        # there is no safe assumption that can be made for this.
+        self._node.declare_parameter("home_altitude_above_water", -1.0)
+        self._HOME_ALT_ABOVE_WATER = self._node.get_parameter("home_altitude_above_water").get_parameter_value().double_value
         if self._HOME_ALT_ABOVE_WATER <= 0:
             self.log(f"Warning: home_altitude_above_water parameter not set or invalid! It is {self._HOME_ALT_ABOVE_WATER}")
             self.log("YOU MUST PASS THIS PARAMETER AND MAKE SURE IT IS CORRECT!")
@@ -114,13 +107,11 @@ class DjiCaptain():
             sys.exit(1)
 
         
-        
-        self._control_mode = ControlModes.FLUvel
+
         self._move_to_setpoint : PoseStamped | None = None
         self._joy_timer : None | Timer = None
         self._FLU_vel_joy_pub = node.create_publisher(Joy, PSDKTopics.FLUvel_JOY.value, qos_profile=10)
-        self._ENU_vel_joy_pub = node.create_publisher(Joy, PSDKTopics.ENUvel_JOY.value, qos_profile=10)
-        self._ENU_pos_joy_pub = node.create_publisher(Joy, PSDKTopics.ENUpos_JOY.value, qos_profile=10)
+        
         
         self.MOVE_TO_SETPOINT_MAX_AGE : float = 1.0 #Usually .5, set to 1 for sim testing seconds, how long we keep the move to setpoint before we consider it stale
         self._MAX_SETPOINT_DISTANCE : float = 50.0 # meters, max distance from current position to accept a move to setpoint
@@ -143,16 +134,14 @@ class DjiCaptain():
         self.MAP_FRAME = self._TF_NS + DjiLinks.MAP
         self.BASE_FRAME = self._TF_NS + DjiLinks.BASE_LINK
         self.BASE_FLAT_FRAME = self._TF_NS + DjiLinks.BASE_FLAT
-        self.BASE_ENU_FRAME = self._TF_NS + DjiLinks.BASE_ENU
         self.HOME_FRAME = self._TF_NS + DjiLinks.HOME_POINT
-        self._utm_labeled_frame : str | None = None
         self.GIMBAL_FRAME = self._TF_NS + DjiLinks.GIMBAL_CAMERA_LINK
         self.WINCH_FRAME = self._TF_NS + DjiLinks.WINCH_LINK
 
+        self._utm_zb_label : str | None = None
 
         self._base_pose_in_home : PoseStamped | None = None
         self._base_pose_flat_in_home : PoseStamped | None = None
-        self._base_pose_ENU_in_home : PoseStamped | None = None
         self._home_point_in_utm : PointStamped | None = None
         self._home_geo_altitude : float | None = None
         self._gps_point_in_home : PointStamped | None = None
@@ -216,7 +205,7 @@ class DjiCaptain():
         self._tf_buffer = Buffer()
         self._tf_listener = TransformListener(self._tf_buffer, self._node, spin_thread=True)
 
-
+        self._last_pubbed_fluvel_joy : Joy | None = None
 
         node.create_subscription(
             NavSatFix,
@@ -400,7 +389,7 @@ class DjiCaptain():
     @property
     def status_str(self) -> str:
         s = "\nDjiCaptain Status:\n"
-        s += f"  Home in UTM: {format_point_stamped(self._home_point_in_utm)} ({self._utm_labeled_frame})\n"
+        s += f"  Home in UTM: {format_point_stamped(self._home_point_in_utm)} ({self._utm_zb_label})\n"
         s += f"\n  Position in Home: {format_pose_stamped(self._base_pose_in_home)}\n"
         
         if self._battery_percent is not None:
@@ -428,17 +417,26 @@ class DjiCaptain():
         s += f"  Angular Rate Ground: {format_vector3_stamped(self._angular_rate_ground)}\n"
         
         s += f"\n  Smarc Topics: {self._smarc_pub_status}\n"
+        
         s += f"  TF: {self._tf_pub_status}\n"
 
         s += f"\n  Got Control: {self._got_control}\n"
-        s += f"  Control Mode: {self._control_mode.value}\n"
+        
         if self.setpoint_received_at is None and self._move_to_setpoint is None:
             s += f"  No setpoint set.\n"
         elif self.setpoint_received_at is None and self._move_to_setpoint is not None:
             s += f"  Setpoint received time unknown, this is a bug! FIX THIS\n"
         elif self.setpoint_received_at is not None and self._move_to_setpoint is not None:
             s += f"  Current target setpoint: {format_pose_stamped(self._move_to_setpoint)} ({self.now_time - self.setpoint_received_at:.2f}s ago)\n"
+        
         s += f"  Flying: {self._flying}\n"
+
+        if self._last_pubbed_fluvel_joy is not None:
+            a = self._last_pubbed_fluvel_joy.axes
+            t = self._last_pubbed_fluvel_joy.header.stamp.sec + self._last_pubbed_fluvel_joy.header.stamp.nanosec * 1e-9
+            s += f"  Last FLUVel Joy (XYZ): [{a[0]:.2f}, {a[1]:.2f}, {a[2]:.2f}, {a[3]:.2f}] ({self.now_time - t:.2f}s ago)\n"
+        else:
+            s += f"  Last FLUVel Joy: None\n"
 
         if self._vehicle_health.data == SmarcTopics.VEHICLE_HEALTH_READY:
             s += f"  Vehicle Health: READY\n"
@@ -525,58 +523,21 @@ class DjiCaptain():
             self._move_to_setpoint = None
             return
 
-        if msg.header.frame_id != self.ODOM_FRAME:
-            try:
-                tf = self._tf_buffer.lookup_transform(
-                    self.ODOM_FRAME, 
-                    msg.header.frame_id, 
-                    Time(seconds=0),
-                    timeout=Duration(seconds=1)
-                )
-                self._move_to_setpoint = do_transform_pose_stamped(msg, tf)
-            except Exception as e:
-                s = f"Could not transform move to setpoint from {msg.header.frame_id} to {self.ODOM_FRAME}: {e}"
-                s+= f"\nIgnoring this setpoint:\n{msg}"
-                self.log(s)
-                self._move_to_setpoint = None
-                return
-        else:
-            self._move_to_setpoint = msg
-
-
-        # At this point, the setpoint is in ODOM=HOME frame.
-
-        # Check if the new setpoint is the same as the current one
-        if self._move_to_setpoint is not None:
-            curr = self._move_to_setpoint.pose.position
-            new = msg.pose.position
-            if abs(curr.x - new.x) > 1e-6 and \
-               abs(curr.y - new.y) > 1e-6 and \
-               abs(curr.z - new.z) > 1e-6:
-                self.log(f"New move to setpoint received: {format_pose_stamped(msg)}")
-
-        # Check if it is too far
-        if self._base_pose_in_home is not None and self._move_to_setpoint is not None:
-            dx = self._move_to_setpoint.pose.position.x - self._base_pose_in_home.pose.position.x
-            dy = self._move_to_setpoint.pose.position.y - self._base_pose_in_home.pose.position.y
-            dz = self._move_to_setpoint.pose.position.z - self._base_pose_in_home.pose.position.z
-            dist = math.sqrt(dx*dx + dy*dy + dz*dz)
-            if dist > self._MAX_SETPOINT_DISTANCE:
-                self.log(f"Move to setpoint is too far away ({dist:.1f}m), ignoring it.")
-                self._speak("Setpoint too far away, ignoring it.")
-                self._move_to_setpoint = None
-                return
-
-        # self.log(f"Move to setpoint received: {format_pose_stamped(self._move_to_setpoint)}")
+        # transform it into base link frame
+        try:
+            transform = self._tf_buffer.lookup_transform(
+                self.BASE_FLAT_FRAME,
+                msg.header.frame_id,
+                Time())
+            self._move_to_setpoint = do_transform_pose_stamped(msg, transform)
+        except Exception as e:
+            self.log(f"Failed to transform move to setpoint from {msg.header.frame_id} to {self.BASE_FLAT_FRAME}, ignoring it. Error: {e}")
+            self._move_to_setpoint = None
+            return
+        
         
         if self._joy_timer is None:
-            if self._control_mode == ControlModes.FLUvel:
-                self._joy_timer = self._node.create_timer(self.JOY_PUB_PERIOD, self._move_towards_setpoint_FLUvel)
-            elif self._control_mode == ControlModes.ENUvel:
-                self._joy_timer = self._node.create_timer(self.JOY_PUB_PERIOD, self._move_towards_setpoint_ENUvel)
-            elif self._control_mode == ControlModes.ENUpos:
-                self._joy_timer = self._node.create_timer(self.JOY_PUB_PERIOD, self._move_towards_setpoint_ENUpos)
-
+            self._joy_timer = self._node.create_timer(self.JOY_PUB_PERIOD, self._move_towards_setpoint_FLUvel)
             self.log("Joy timer started to move with joy.")
 
 
@@ -598,6 +559,7 @@ class DjiCaptain():
         joy_msg.header.stamp = self.now_stamp
         joy_msg.axes = joy
         self._FLU_vel_joy_pub.publish(joy_msg)
+        self._last_pubbed_fluvel_joy = joy_msg
 
     def _controller_callback(self, msg: Joy):
         if msg.header.stamp.sec == 0 and msg.header.stamp.nanosec == 0:
@@ -675,52 +637,13 @@ class DjiCaptain():
                 self.JOY_PUB_MAX = 0.0
             self.log(f"Joy max decreased to {self.JOY_PUB_MAX:.2f} (m/s)")
             self._speak(f"Joy max {self.JOY_PUB_MAX:.1f}")
-
-
-        control_modes = list(ControlModes)
-        if left:
-            self._control_mode = control_modes[(control_modes.index(self._control_mode) - 1) % len(control_modes)]
-            self.log(f"Control mode changed to {self._control_mode.value}")
-            self._speak(f"Control mode {self._control_mode.value}")
-        if right:
-            self._control_mode = control_modes[(control_modes.index(self._control_mode) + 1) % len(control_modes)]
-            self.log(f"Control mode changed to {self._control_mode.value}")
-            self._speak(f"Control mode {self._control_mode.value}")
-        
-
-            
+    
         if self._got_control and sticks_pushed:
             joy_msg = Joy()
             joy_msg.header.stamp = self.now_stamp
-            if self._control_mode == ControlModes.FLUvel:
-                # DJI expects Axes: [forward, left, up, yawrate]
-                self._pub_flu_vel_joy([RV, RH, LV, LH])
-
-            elif self._control_mode == ControlModes.ENUvel:
-                self.log("Moving with ENU velocity control mode, be careful! Right stick is real East/North!")
-                # DJI expects Axes: [east, north, up, yawrate]
-                joy_msg.axes = [RV, RH, LV, LH]
-                self._ENU_vel_joy_pub.publish(joy_msg)
-
-            elif self._control_mode == ControlModes.ENUpos:
-                self.log("Moving with ENU position control mode, be careful! Right stick is real East/North!")
-                if(self._heading_deg is None):
-                    self.log("No heading set, cannot move with ENUpos control mode.")
-                    return
-                if(self._base_pose_flat_in_home is None):
-                    self.log("No heading set, cannot move with ENUpos control mode.")
-                    return
-                if(LV is None or LH is None):
-                    self.log("No left stick, cannot move with ENUpos control mode.")
-                    return
-                
-                yaw = math.pi/2 - math.radians(self._heading_deg)
-                yaw_move = yaw + LH * self._CONTROLLER_YAWRATE_MULTIPLIER
-                altitude = self._base_pose_flat_in_home.pose.position.z
-                joy_msg.axes = [RV, RH, altitude + LV, yaw_move]
-                self._ENU_pos_joy_pub.publish(joy_msg)
-                
-
+            # DJI expects Axes: [forward, left, up, yawrate]
+            self._pub_flu_vel_joy([RV, RH, LV, LH])
+        
         
         
     def _cancel_joy_timer(self):
@@ -734,6 +657,7 @@ class DjiCaptain():
 
 
     def _move_towards_setpoint_FLUvel(self):
+        # assumes move_to_setpoint is in BASE_FLAT_FRAME already
 
         if self._move_to_setpoint is None or self.setpoint_received_at is None:
             self.log("No move to setpoint set, cannot move with joy.")
@@ -755,126 +679,60 @@ class DjiCaptain():
             self._cancel_joy_timer()
             return
         
-        tf = self._tf_buffer.lookup_transform(
-            target_frame = self.BASE_FLAT_FRAME,
-            source_frame = self._velocity_ground.header.frame_id,
-            time=Time(seconds=0),
-            timeout=Duration(seconds=1))
         
-        vel_pose = PoseStamped()
-        vel_pose.pose.position.x = self._velocity_ground.vector.x
-        vel_pose.pose.position.y = self._velocity_ground.vector.y
-        vel_pose.pose.position.z = self._velocity_ground.vector.z
-        FLU_vel = do_transform_pose_stamped(vel_pose, tf)
 
-        if (self._prev_joy_output is None):
-            self._prev_joy_output = np.array([FLU_vel.pose.position.x, FLU_vel.pose.position.y, FLU_vel.pose.position.z])
+        e_forw = self._move_to_setpoint.pose.position.x # error about each axis
+        e_left = self._move_to_setpoint.pose.position.y
+        e_updn = self._move_to_setpoint.pose.position.z # we like mirrors around a point
 
-        try:
-            tf_diff = self._tf_buffer.lookup_transform(
-                target_frame = self.BASE_FLAT_FRAME,
-                source_frame = self._move_to_setpoint.header.frame_id,
-                time=Time(seconds=0),
-                timeout=Duration(seconds=1))
-            target_in_base = do_transform_pose_stamped(self._move_to_setpoint, tf_diff)
-        except Exception as e:
-            self.log(f"Failed to transform move to setpoint from {self._move_to_setpoint.header.frame_id} to {self.BASE_FLAT_FRAME}, cancelling joy timer.: {e}")
+        if (abs(e_forw) < 0.1 and abs(e_left) < 0.1 and abs(e_updn) < 0.1):
+            self.log("Reached setpoint within 10cm on all axes, cancelling joy timer.")
+            self._cancel_joy_timer()
+            return
+
+        if np.linalg.norm([e_forw, e_left]) > self._MAX_SETPOINT_DISTANCE:
+            self.log(f"Setpoint is more than {self._MAX_SETPOINT_DISTANCE}m away horizontally, cancelling joy timer.")
             self._cancel_joy_timer()
             return
         
-        
-        k_pose = self._k_pose
-        r_sigma = self._r_sigma
+        if abs(e_updn) > self._MAX_SETPOINT_DISTANCE:
+            self.log(f"Setpoint is more than {self._MAX_SETPOINT_DISTANCE}m away vertically, cancelling joy timer.")
+            self._cancel_joy_timer()
+            return
 
-        e_forw = target_in_base.pose.position.x # error about each axis
-        e_left = target_in_base.pose.position.y
-        e_updn = target_in_base.pose.position.z # we like mirrors around a point
 
-        joy_forw = k_pose * e_forw
-        joy_left = k_pose * e_left
-        joy_updn = k_pose * e_updn
+        joy_forw = self._k_pose * e_forw
+        joy_left = self._k_pose * e_left
+        joy_updn = self._k_pose * e_updn
+
+        if (self._prev_joy_output is None):
+            max_speed = 0.1
+            self._prev_joy_output = np.array([0.0, 0.0, 0.0])
+            self.log(f"No previous joy output using low initial max speed of {max_speed} m/s for smooth start.")
+        else:
+            max_speed = self.JOY_PUB_MAX
 
         # limit the velocity to the maximum joy value
-        joy_net = np.array([joy_forw, joy_left, joy_updn])
-        joy_net = self._normalize_max_speed(joy_net)
+        joy_err = np.array([joy_forw, joy_left, joy_updn])
+        joy_err = self._normalize_max_speed(joy_err, max_speed)
 
-        joy_net = (1 - r_sigma) * joy_net + r_sigma * self._prev_joy_output
-        joy_net = self._normalize_max_speed(joy_net)
+        joy_net = (1 - self._r_sigma) * joy_err + self._r_sigma * self._prev_joy_output
+        joy_net = self._normalize_max_speed(joy_net, max_speed)
+
+        #self.log(f"\njoy_err: {joy_err}\njoy_pre: {self._prev_joy_output}\njoy_net: {joy_net}")
 
         J = [joy_net[0], joy_net[1], joy_net[2], 0.0]
         self._pub_flu_vel_joy(J)
-        self.log(f"Moving towards setpoint with FLUvel joy: {J}")
         self._prev_joy_output = np.array([joy_net[0], joy_net[1], joy_net[2]])
 
 
-    def _normalize_max_speed(self, joy_net):
+    def _normalize_max_speed(self, joy_net, max_speed):
         joy_norm = np.linalg.norm(joy_net)
-        if joy_norm > self.JOY_PUB_MAX:
-            joy_net = joy_net / joy_norm * self.JOY_PUB_MAX
+        if joy_norm > max_speed:
+            joy_net = joy_net / joy_norm * max_speed
         return joy_net
     
 
-    def _move_towards_setpoint_ENUpos(self):
-        if self._move_to_setpoint is None or self.setpoint_received_at is None:
-            self.log("No move to setpoint set, cannot move with joy.")
-            self._cancel_joy_timer()
-            return
-        
-        if(self._heading_deg is None):
-            self.log("No heading set, cannot move with joy.")
-            self._cancel_joy_timer()
-            return
-        
-        if self.now_time - self.setpoint_received_at > self.MOVE_TO_SETPOINT_MAX_AGE:
-            self.log(f"Move to setpoint message is older than {self.MOVE_TO_SETPOINT_MAX_AGE}s, cancelling joy timer.")
-            self._move_to_setpoint = None
-            self._cancel_joy_timer()
-            return
-        
-        if not self._got_control:
-            self.log("Not got control, cannot move with joy.")
-            self._cancel_joy_timer()
-            return
-        
-        try:
-            tf_diff = self._tf_buffer.lookup_transform(
-                target_frame = self.BASE_ENU_FRAME, #This is the frame centered on the baselink but locked to ENU rotationally
-                source_frame = self._move_to_setpoint.header.frame_id,
-                time=Time(seconds=0),
-                timeout=Duration(seconds=1))
-            target_in_base = do_transform_pose_stamped(self._move_to_setpoint, tf_diff)
-        except Exception as e:
-            self.log(f"Failed to transform move to setpoint from {self._move_to_setpoint.header.frame_id} to {self.BASE_FLAT_FRAME}, cancelling joy timer.: {e}")
-            self._cancel_joy_timer()
-            return
-        
-        try:
-            tf = self._tf_buffer.lookup_transform(
-                target_frame = self.ODOM_FRAME,
-                source_frame = self._move_to_setpoint.header.frame_id,
-                time=Time(seconds=0),
-                timeout=Duration(seconds=1))
-            target_in_odom = do_transform_pose_stamped(self._move_to_setpoint, tf)
-        except Exception as e:
-            self.log(f"Failed to transform move to setpoint from {self._move_to_setpoint.header.frame_id} to {self.ODOM_FRAME}, cancelling joy timer.: {e}")
-            self._cancel_joy_timer()
-            return
-        e_east = target_in_base.pose.position.x # error about each axis
-        e_north = target_in_base.pose.position.y
-        target_updn = target_in_odom.pose.position.z #Should be "relative to the global Cartesian frame where the aircraft has been initialized." This is in the ODOM frame, which I think is correct?
-        yaw = math.pi/2 - math.radians(self._heading_deg) #Should be the current yaw. Not 100% certain on this, but I think _heading_deg is in NED and needs to be in ENU. "The commanded yaw is assumed to be following REP 103, thus a FLU rotation wrt to ENU frame"
-
-        joy_msg = Joy()
-        joy_msg.header.stamp = self.now_stamp
-        joy_msg.axes = [e_east, e_north, target_updn, yaw]  # Axes: [east offset, north offset, up/down position, yaw position] 
-        joy_msg.buttons = []
-
-        self._ENU_pos_joy_pub.publish(joy_msg)
-
-
-    def _move_towards_setpoint_ENUvel(self):
-        self.log("_move_towards_setpoint_ENUvel not implemented yet.")
-        self._cancel_joy_timer()
     
 
     def _dji_rc_cb(self, msg: Joy):
@@ -1044,9 +902,9 @@ class DjiCaptain():
         self._gps_point_in_home.point.z = self._geo_altitude - self._home_geo_altitude
         self._gps_point_in_home.header.stamp = self.now_stamp
 
-        if self._utm_labeled_frame is None:
-            self._utm_labeled_frame = utm.header.frame_id
-            self.log(f"Setting UTM labeled frame to: {self._utm_labeled_frame}")
+        if self._utm_zb_label is None:
+            self._utm_zb_label = utm.header.frame_id
+            self.log(f"Setting UTM labeled frame to: {self._utm_zb_label}")
 
 
     def _rtk_cb(self, msg: NavSatFix):
@@ -1114,17 +972,10 @@ class DjiCaptain():
         tf_msg.transforms = []
         now = self.now_stamp
 
-        self._tf_pub_status = f"Published at {now.sec}.{now.nanosec} sec"
+        self._tf_pub_status = f"Publishing"
 
-        # 0 transforms for home -> map, home -> odom, utm_z_b -> utm
-        # for compatibility with other systems
+        # 0 transforms for home -> odom for compatibility with other systems
         # and so we can use "odom" for all things that relate to home point
-        map_in_home = TransformStamped()
-        map_in_home.header.stamp = now
-        map_in_home.header.frame_id = self.HOME_FRAME
-        map_in_home.child_frame_id = self.MAP_FRAME
-        tf_msg.transforms.append(map_in_home)
-
         odom_in_home = TransformStamped()
         odom_in_home.header.stamp = now
         odom_in_home.header.frame_id = self.HOME_FRAME
@@ -1135,6 +986,8 @@ class DjiCaptain():
         # until we have a better idea of where the gimbal is...
         # and we do this in the _flat_ frame, so roll and pitch are zeroed out
         # like the gimbal in theory does.
+        # this ignores the change in position due to drone attitude, but that is small
+        # and uncontrollable by us, so we'll ignore until that little bit matters.
         gimbal_in_base = TransformStamped()
         gimbal_in_base.header.stamp = now
         gimbal_in_base.header.frame_id = self.BASE_FLAT_FRAME
@@ -1144,22 +997,24 @@ class DjiCaptain():
         # same as above, winch in base_link
         winch_in_base = TransformStamped()
         winch_in_base.header.stamp = now
-        winch_in_base.header.frame_id = self.BASE_FLAT_FRAME
+        winch_in_base.header.frame_id = self.BASE_FRAME
         winch_in_base.child_frame_id = self.WINCH_FRAME
-        # Set offset for winch_link (example, not correct values):
-        winch_in_base.transform.translation.x = 0.0  # example values
-        winch_in_base.transform.translation.y = 0.0
-        winch_in_base.transform.translation.z = 0.5
+        # Set offset for winch_link
+        # roughly measured in cad model, from the center of the battery lock to right leg T junction, 
+        # assuming the T junction is in-line with base_link origin
+        winch_in_base.transform.translation.x = 0.0 
+        winch_in_base.transform.translation.y = -0.194 
+        winch_in_base.transform.translation.z = -0.322
         winch_in_base.transform.rotation.x = 0.0
         winch_in_base.transform.rotation.y = 0.0
         winch_in_base.transform.rotation.z = 0.0
         winch_in_base.transform.rotation.w = 1.0
         tf_msg.transforms.append(winch_in_base)
 
-        if self._utm_labeled_frame is not None: 
+        if self._utm_zb_label is not None: 
             utms = TransformStamped()
             utms.header.stamp = now
-            utms.header.frame_id = self._utm_labeled_frame
+            utms.header.frame_id = self._utm_zb_label
             utms.child_frame_id = DjiLinks.UTM 
             tf_msg.transforms.append(utms)
 
@@ -1174,6 +1029,15 @@ class DjiCaptain():
             home_tf.transform.translation.z = self._home_point_in_utm.point.z
             tf_msg.transforms.append(home_tf)
 
+            # home point in UTM, but at water surface
+            home_surface_tf = TransformStamped()
+            home_surface_tf.header.stamp = now
+            home_surface_tf.header.frame_id = DjiLinks.UTM
+            home_surface_tf.child_frame_id = self.MAP_FRAME
+            home_surface_tf.transform.translation.x = self._home_point_in_utm.point.x
+            home_surface_tf.transform.translation.y = self._home_point_in_utm.point.y
+            home_surface_tf.transform.translation.z = 0.0
+            tf_msg.transforms.append(home_surface_tf)
 
         if self._base_pose_in_home is not None:
             # Base in odom
@@ -1200,18 +1064,7 @@ class DjiCaptain():
             base_flat_in_home.transform.translation.z = self._base_pose_flat_in_home.pose.position.z
             tf_msg.transforms.append(base_flat_in_home)
 
-        if self._base_pose_ENU_in_home is not None:
-            # base ENU in odom
-            base_ENU_in_home = TransformStamped()
-            base_ENU_in_home.header.stamp = now
-            base_ENU_in_home.header.frame_id = self.ODOM_FRAME
-            base_ENU_in_home.child_frame_id = self.BASE_ENU_FRAME
-            base_ENU_in_home.transform.rotation = self._base_pose_ENU_in_home.pose.orientation
-            base_ENU_in_home.transform.translation.x = self._base_pose_ENU_in_home.pose.position.x
-            base_ENU_in_home.transform.translation.y = self._base_pose_ENU_in_home.pose.position.y
-            base_ENU_in_home.transform.translation.z = self._base_pose_ENU_in_home.pose.position.z
-            tf_msg.transforms.append(base_ENU_in_home)
-
+        
 
         if self._gps_point_in_home is not None:
             # GPS point in Home
@@ -1254,7 +1107,7 @@ class DjiCaptain():
         if self._base_pose_in_home is None or self._home_point_in_utm is None or self._gps_point_in_home is None:
             return
         
-        self._smarc_pub_status = f"Published at {self.now_stamp.sec}.{self.now_stamp.nanosec} sec"
+        self._smarc_pub_status = f"Published: "
 
         odom = Odometry()
         odom.header.stamp = self.now_stamp
@@ -1277,6 +1130,7 @@ class DjiCaptain():
             odom.twist.twist.angular.z = self._angular_rate_ground.vector.z
 
         self._odom_pub.publish(odom)
+        self._smarc_pub_status += "odom "
 
         # we need current position in latlon
         # so we first need to convert our odom-frame position to UTM
@@ -1284,7 +1138,7 @@ class DjiCaptain():
             self.log("Home point or base pose not set, cannot publish latlon position.")
             return
         base_in_utm = PointStamped()
-        base_in_utm.header.frame_id = self._utm_labeled_frame
+        base_in_utm.header.frame_id = self._utm_zb_label
         base_in_utm.point.x = self._base_pose_in_home.pose.position.x + self._home_point_in_utm.point.x
         base_in_utm.point.y = self._base_pose_in_home.pose.position.y + self._home_point_in_utm.point.y
         base_in_geopoint = convert_utm_to_latlon(base_in_utm)
@@ -1296,13 +1150,16 @@ class DjiCaptain():
         self._pos_latlon_pub.publish(base_in_geopoint)
 
         self._altitude_pub.publish(Float32(data = alt_above_water))
+        self._smarc_pub_status += "latlon altitude "
 
 
         if self._heading_deg is not None:
             self._heading_pub.publish(Float32(data=self._heading_deg))
+            self._smarc_pub_status += "heading "
 
         if self._course_deg is not None:
             self._course_pub.publish(Float32(data=self._course_deg))
+            self._smarc_pub_status += "course "
 
         if self._velocity_ground is not None:
             speed = math.sqrt(
@@ -1310,12 +1167,15 @@ class DjiCaptain():
                 self._velocity_ground.vector.y ** 2
             )
             self._speed_pub.publish(Float32(data=speed))
+            self._smarc_pub_status += "speed "
 
         if self._battery_percent is not None:
             self._battery_percent_pub.publish(Float32(data=self._battery_percent))
+            self._smarc_pub_status += "battery_percent "
 
-        if self._utm_labeled_frame is not None:
-            self._labeled_utm_frame_pub.publish(String(data=self._utm_labeled_frame))
+        if self._utm_zb_label is not None:
+            self._labeled_utm_frame_pub.publish(String(data=self._utm_zb_label))
+            self._smarc_pub_status += "labeled_utm_frame "
                         
         
 
@@ -1341,6 +1201,81 @@ def format_vector3_stamped(vec: Vector3Stamped|None) -> str:
         if( vec is None):
             return "None"
         return f"(x={vec.vector.x:.3f}, y={vec.vector.y:.3f}, z={vec.vector.z:.3f}, frame_id={vec.header.frame_id})"
+
+
+
+# thanks chat?
+def transform_velocity_vector(
+    tf_buffer: Buffer,
+    vel_src: Vector3Stamped,
+    target_frame: str,
+    *,
+    time: Optional[Time] = None,
+    timeout: Duration = Duration(seconds=0, nanoseconds=5_000_000),  # 5ms = 5,000,000ns
+) -> Vector3Stamped:
+    """
+    Rotate a velocity Vector3Stamped from vel_src.header.frame_id -> target_frame.
+
+    Notes
+    -----
+    - Velocity is a *pure vector*: only the rotation from the TF transform is applied.
+    - Translation is ignored (as it should be for vectors).
+    - If source and target frames match, the input is returned (header updated).
+    """
+    if not vel_src.header.frame_id:
+        raise ValueError("vel_src.header.frame_id must be set")
+
+    if vel_src.header.frame_id == target_frame:
+        out = Vector3Stamped()
+        out.header.stamp = vel_src.header.stamp
+        out.header.frame_id = target_frame
+        out.vector = vel_src.vector  # shallow copy is fine for geometry_msgs
+        return out
+
+    # Default to "latest available transform" time if not provided
+    if time is None:
+        time = Time(seconds=0)
+
+    try:
+        # Transform that maps vectors from source_frame -> target_frame
+        tf = tf_buffer.lookup_transform(
+            target_frame=target_frame,
+            source_frame=vel_src.header.frame_id,
+            time=time,
+            timeout=timeout,
+        )
+    except :
+        raise RuntimeError(f"TF lookup failed from {vel_src.header.frame_id} to {target_frame}") 
+
+    # Extract and (defensively) normalize quaternion
+    qx, qy, qz, qw = (
+        tf.transform.rotation.x,
+        tf.transform.rotation.y,
+        tf.transform.rotation.z,
+        tf.transform.rotation.w,
+    )
+    q = np.array([qx, qy, qz, qw], dtype=float)
+    n = np.linalg.norm(q)
+    if n == 0.0:
+        raise RuntimeError("TF rotation quaternion has zero norm")
+    q /= n
+
+    # 3x3 rotation matrix
+    R = quaternion_matrix(q)[0:3, 0:3]
+
+    v_src = np.array(
+        [vel_src.vector.x, vel_src.vector.y, vel_src.vector.z],
+        dtype=float,
+    )
+    v_tgt = R @ v_src
+
+    vel_out = Vector3Stamped()
+    # Keep the original measurement time; you can also choose tf.header.stamp
+    vel_out.header.stamp = vel_src.header.stamp
+    vel_out.header.frame_id = target_frame
+    vel_out.vector.x, vel_out.vector.y, vel_out.vector.z = v_tgt.tolist()
+    return vel_out
+
     
     
 def main():
