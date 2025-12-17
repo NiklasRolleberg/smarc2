@@ -497,6 +497,7 @@ class DiveControllerMPC(DiveControllerInterface):
                 self.ref = self.trajectory[self.traj_index:self.traj_index + self.N_horizon, :]
 
                 # DEBUG
+                self.ref[:,2] += 1
                 #self.ref[:,0] = 4
                 #self.ref[:,1] = 0
                 #self.ref[:,2] = 0
