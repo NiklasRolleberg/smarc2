@@ -42,13 +42,13 @@ class DiveControllerMPC(DiveControllerInterface):
         # Declare counter
         self.i = 0
         self.traj_len = 0
-        self.traj_index = 0
+        self.traj_index = 5
 
         # Extract the CasADi model
         sam = SAM_casadi(dt=self._dt)
 
         # Flag if you want to rebuild the OCP or not (if changes has been made to the MPC)
-        build = False
+        build = True
 
         # create nmpc object for the OCP
         self.N_horizon = 30  # Prediction horizon
@@ -478,9 +478,7 @@ class DiveControllerMPC(DiveControllerInterface):
             y_current = self._current_state.pose.pose.position.y
             z_current = self._current_state.pose.pose.position.z
 
-
-            # Check if we have enough trajectory left for the prediction horizon
-            if self.traj_index + self.N_horizon < self.traj_len:
+            if self.traj_index < self.traj_len:
                 # Get distance to current waypoint
                 d_current = np.sqrt((x_current - self.trajectory[self.traj_index,0])**2 + 
                                     (y_current - self.trajectory[self.traj_index,1])**2 +
@@ -496,17 +494,28 @@ class DiveControllerMPC(DiveControllerInterface):
                     self.traj_index += 1
 
                 # Get subtrajectory starting at closest waypoint
-                self.ref = self.trajectory[self.traj_index:self.traj_index + self.N_horizon, :]
+                # Check if we have enough trajectory left for the prediction horizon
+                if self.traj_index + self.N_horizon < self.traj_len:
+                    self.ref = self.trajectory[self.traj_index:self.traj_index + self.N_horizon, :]
+                else:
+                    # Padding the trajectory with the last entry of the
+                    # trajectory when we're close to the end
+                    padding = self.N_horizon - (self.traj_len - self.traj_index)
+                    terminal_ref = np.tile(self.trajectory[-1,:], (padding,1))
+                    self.ref = np.concatenate((self.trajectory[self.traj_index:,:], terminal_ref))
+
 
                 # DEBUG
                 #self.ref[:,0] = 4
                 #self.ref[:,1] = 0
-                #self.ref[:,2] = 1
+                #self.ref[:,2] = 0
                 self.ref[:,3] = 1
                 self.ref[:,4:] = 0
                 self.ref[:,13] = 50
                 self.ref[:,14] = 50
                 self.ref[:,15:] = 0
+
+                return
 
             else:
                 self._loginfo_once("Trajectory Tracking Complete")
@@ -516,6 +525,8 @@ class DiveControllerMPC(DiveControllerInterface):
         else:
             self.ref = np.zeros((self.N_horizon, (self.nx + self.nu)))
             self.ref[:, :] = self.wp_array
+
+            return
 
     def set_publishers(self, mpc_solution):
         """
