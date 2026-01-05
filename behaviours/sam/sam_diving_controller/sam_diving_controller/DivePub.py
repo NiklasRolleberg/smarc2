@@ -18,7 +18,7 @@ try:
 except:
     from IDivePub import IDivePub, MissionStates
 
-class SAMDivePub(IDivePub):
+class DivePub(IDivePub):
     """
     Implements the simple interface we defined in IDiveView for the SAM AUV.
     """

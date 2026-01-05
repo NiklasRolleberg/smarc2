@@ -197,17 +197,8 @@ class DiveSub():
         self._control_input['rudder'] = thrust_vector_fb_msg.thruster_horizontal_radians
 
     def _update_tf(self):
-        # FIXME: THIS IS AN ISSUE NOW.
-        # Requirements:
-        #   - Handle different goal frames (from unity GUI, mocap)
-        #   - Handle path following, which needs to transform the state, but there's no goal, bc. there's no waypoint.
-        #   - Flexible enough to change, but not too complicated either.
-        #   - Avoid hard coded things...
-        #if self._waypoint_global is None:
-        #    return
-        self._waypoint_global = Odometry()
-        self._waypoint_global.header.frame_id = 'KTHTank World/mocap'
-        #self._waypoint_global.header.frame_id = 'mocap'
+        if self._waypoint_global is None:
+            return
 
         try:
             self._tf_base_link_global = self._tf_buffer.lookup_transform(self._robot_base_link,

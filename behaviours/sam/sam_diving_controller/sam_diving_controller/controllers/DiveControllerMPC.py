@@ -48,7 +48,7 @@ class DiveControllerMPC(DiveControllerInterface):
         sam = SAM_casadi(dt=self._dt)
 
         # Flag if you want to rebuild the OCP or not (if changes has been made to the MPC)
-        build = True
+        build = False
 
         # create nmpc object for the OCP
         self.N_horizon = 30  # Prediction horizon
