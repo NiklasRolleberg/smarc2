@@ -100,7 +100,8 @@ class DiveSub():
         self._control_input['stern'] = self.param['tv_u_neutral']
         self._control_input['rudder'] = self.param['tv_u_neutral']
 
-        self.state_sub = node.create_subscription(msg_type=Odometry, topic=ControlTopics.STATES, callback=self._states_cb, qos_profile=10)
+        self.state_sub = node.create_subscription(msg_type=Odometry, topic='smarc/odom', callback=self._states_cb, qos_profile=10)
+        #self.state_sub = node.create_subscription(msg_type=Odometry, topic=ControlTopics.STATES, callback=self._states_cb, qos_profile=10)
         self.waypoint_sub = node.create_subscription(msg_type=PoseStamped, topic=ControlTopics.WAYPOINT, callback=self._wp_cb, qos_profile=10)
         self.joy_depth_setpoint_sub = node.create_subscription(msg_type=Float64, topic=ControlTopics.ELEV_SP_TOP, callback=self._joy_depth_setpoint_cb, qos_profile=10)
         self.depth_sub = node.create_subscription(msg_type=PoseWithCovarianceStamped, topic=DRTopics.DR_DEPTH_POSE_TOPIC, callback=self._depth_cb, qos_profile=10)
@@ -205,7 +206,8 @@ class DiveSub():
         #if self._waypoint_global is None:
         #    return
         self._waypoint_global = Odometry()
-        self._waypoint_global.header.frame_id = 'mocap'
+        self._waypoint_global.header.frame_id = 'KTHTank World/mocap'
+        #self._waypoint_global.header.frame_id = 'mocap'
 
         try:
             self._tf_base_link_global = self._tf_buffer.lookup_transform(self._robot_base_link,
