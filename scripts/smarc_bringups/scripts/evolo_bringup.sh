@@ -15,11 +15,12 @@ SIM = False
 if ["$SIM" == "True"]; then
     REALSIM=simulation
     ROBOT_NAME=evolo_v1
-    USE_SIM_TIME=False
+    USE_SIM_TIME=True
 else
     REALSIM=real
     #USE_SIM_TIME=False
-    USE_SIM_TIME=True #Useful for rosbags
+    USE_SIM_TIME=False #Useful for rosbags
+    LOCATION_SOURCE=MQTT #[SBG MQTT SERIAL]
 fi
 
 #Low controllers
@@ -67,10 +68,11 @@ fi
 
 # launch hardware drivers / connection to simulator
 if [ "$REALSIM" = "real" ]; then
+
     #Connection to evolo captain
     tmux new-window -t $SESSION:4 -n 'Evolo captain'
     tmux select-window -t $SESSION:4
-    tmux send-keys "ros2 launch evolo_mqtt_bridge evolo_mqtt_launch.py"
+    tmux send-keys "ros2 launch evolo_mqtt_bridge evolo_mqtt_launch.py" C-m
     #tmux send-keys "ros2 launch evolo_serial_bridge evolo_serial_launch.py"
 
     #SBG driver
@@ -78,16 +80,31 @@ if [ "$REALSIM" = "real" ]; then
     tmux select-window -t $SESSION:5
     tmux send-keys "TODO: lanuch SBG driver" C-m
 
-    #SBG to odom
+    #Odom
     tmux new-window -t $SESSION:6 -n 'SBG to Odom'
     tmux select-window -t $SESSION:6
     tmux split-window -h -t $SESSION:6.0
-    #Odom initializer
-    tmux select-pane -t $SESSION:6.0
-    tmux send-keys "ros2 run sbg_to_odom_initializer odom_initializer --ros-args -p use_sim_time:=$USE_SIM_TIME" C-m
-    #sbg to odom node
-    tmux select-pane -t $SESSION:6.1
-    tmux send-keys "ros2 run sbg_to_odom sbg_nav_to_evolo_odom --ros-args -p use_sim_time:=$USE_SIM_TIME" C-m
+
+    if [ "$LOCATION_SOURCE" = "SBG" ]; then
+        #Odom initializer
+        tmux select-pane -t $SESSION:6.0
+        tmux send-keys "ros2 run sbg_to_odom_initializer odom_initializer --ros-args -p use_sim_time:=$USE_SIM_TIME" C-m
+
+        #sbg to odom node
+        tmux select-pane -t $SESSION:6.1
+        tmux send-keys "ros2 run sbg_to_odom sbg_nav_to_evolo_odom --ros-args -p use_sim_time:=$USE_SIM_TIME" C-m
+    fi
+
+    if [ "$LOCATION_SOURCE" = "MQTT" ] || [ "$LOCATION_SOURCE" = "SERIAL" ]; then
+        #Odom initializer
+        tmux select-pane -t $SESSION:6.0
+        tmux send-keys "ros2 launch evolo_captain_interface evolo_captain_odom_initializer_launch.py" C-m
+
+        #sbg to odom node
+        tmux select-pane -t $SESSION:6.1
+        tmux send-keys "ros2 launch evolo_captain_interface evolo_captain_odom_launch.py" C-m
+    fi
+
 
     #Lidar driver
     tmux new-window -t $SESSION:7 -n 'lidar driver'
@@ -108,7 +125,7 @@ if [ "$REALSIM" = "real" ]; then
     tmux new-window -t $SESSION:10 -n 'gimbal driver'
     tmux select-window -t $SESSION:10
     tmux send-keys "TODO launch gimbal driver"
-else
+else #Sim
     tmux new-window -t $SESSION:4 -n 'tcp-endpoint'
     tmux select-window -t $SESSION:4
     tmux send-keys "ros2 run ros_tcp_endpoint default_server_endpoint --ros-args -p ROS_IP:=127.0.0.1"
@@ -127,7 +144,7 @@ if [ "$REALSIM" = "real" ]; then
     tmux select-pane -t $SESSION:11.1
     tmux send-keys "TDODO launch geofence check"
     
-else
+else #sim
     # fake health monitoring node
     tmux new-window -t $SESSION:11 -n 'vehicle_health'
     tmux select-window -t $SESSION:11
@@ -157,8 +174,8 @@ tmux select-pane -t $SESSION:13.0
 tmux send-keys "ros2 launch pointcloud_preprocessing pointcloud_preprocessing_launch_boat.py" C-m
 #occupancy grid
 tmux select-pane -t $SESSION:13.1
-tmux send-keys "ros2 run clustering_segmentation clustering_segmentation --ros-args -p use_sim_time:=$USE_SIM_TIME" C-m
-
+#tmux send-keys "ros2 run clustering_segmentation clustering_segmentation --ros-args -p use_sim_time:=$USE_SIM_TIME" C-m
+tmux send-keys "ros2 run clustering_segmentation clustering_segmentation --ros-args -p use_sim_time:=$USE_SIM_TIME -p DynamicStatic_clusters_segmentation:=True" C-m
 
 # Logging window.
 tmux new-window -t $SESSION:14 -n 'logging'
