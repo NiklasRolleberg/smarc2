@@ -68,6 +68,7 @@ class DiveControllerMPC(DiveControllerInterface):
         # dive sub node, because it's not yet spinning and thus doesn't get the
         # topics yet.
         self._initialized = False
+        self._prev_commanding = False
 
         self.ref_is_traj = ref_is_trajectory# Flag to indicate if the reference is a trajectory or not
         self._loginfo("Dive Controller created")
@@ -88,6 +89,15 @@ class DiveControllerMPC(DiveControllerInterface):
         # mission_state == RUNNING blocked the whole controller and it wouldn't
         # get the waypoint either.
         mission_state = self._dive_sub.get_mission_state()
+
+        has_ref = self.get_reference()  # you already call this later; do it once
+        commanding = (mission_state == MissionStates.RUNNING) and has_ref
+
+        # Marker for mission start and end
+        if commanding != self._prev_commanding:
+            self._dive_pub.publish_mission_event(commanding, mission_state)
+            self._prev_commanding = commanding
+
         if mission_state == MissionStates.RECEIVED:
             self._loginfo_once("Mission Received")
             self._set_actuators_neutral()
@@ -103,17 +113,10 @@ class DiveControllerMPC(DiveControllerInterface):
             self._set_actuators_neutral()
             return
 
-        # if mission_state != MissionStates.RUNNING:
-        #    self._loginfo_once("Mission not running")
-        #    self._set_actuators_neutral()
-        #    return
-        #self._loginfo("mission running")
-
-
         # Engage actuators in case they were off before.
         self._dive_pub.set_actuator_states(ActuatorStates.ENGAGED, "DP")
 
-        if not self.get_reference():
+        if not has_ref:
             return
 
         self._loginfo("mission running")
