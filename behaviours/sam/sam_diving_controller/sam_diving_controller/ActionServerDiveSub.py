@@ -687,7 +687,7 @@ class MPCPathServer(PathServer, DiveSub):
         feedback = self.action_type.Feedback
         start_time = self._node.get_clock().now()
 
-        while self.current_idx < self.path_len:
+        while self.current_idx < self.path_len-1:
             current_time = self._node.get_clock().now()
             elapsed = (current_time - start_time).nanoseconds / 1e9  # seconds
             self.set_mission_state(MissionStates.RUNNING, "AS")

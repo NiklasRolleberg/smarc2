@@ -92,7 +92,7 @@ def _build_mpc_wp_following(node, rates: Rates) -> Components:
     dive_pub = DivePub(node, dive_sub, param)
     dive_controller = DiveControllerMPC(node, dive_pub, dive_sub, param,
                                         ref_is_trajectory=False,
-                                        rates.dive_controller)
+                                        rate=rates.dive_controller,)
     convenience_pub = ConveniencePub(node, dive_sub, dive_controller)
 
     return Components(

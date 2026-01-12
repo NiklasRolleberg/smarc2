@@ -65,6 +65,9 @@ class ConveniencePub(IDivePub):
         if self._state_msg is None:
             return
 
+        now = self._node.get_clock().now()
+        self._state_msg.header.stamp = now.to_msg()
+
         self._state_pub.publish(self._state_msg)
 
     def _update_ref(self) -> None:
@@ -72,6 +75,9 @@ class ConveniencePub(IDivePub):
 
         if self._ref_msg is None:
             return
+
+        now = self._node.get_clock().now()
+        self._ref_msg.header.stamp = now.to_msg()
 
         self._ref_pub.publish(self._ref_msg)
 
@@ -89,6 +95,9 @@ class ConveniencePub(IDivePub):
         if self._input_msg is None:
             return
 
+        now = self._node.get_clock().now()
+        self._input_msg.header.stamp = now.to_msg()
+
         self._input_pub.publish(self._input_msg)
 
     def _update_ref_input(self) -> None:
@@ -96,6 +105,9 @@ class ConveniencePub(IDivePub):
 
         if self._ref_input_msg is None:
             return
+
+        now = self._node.get_clock().now()
+        self._ref_input_msg.header.stamp = now.to_msg()
 
         self._ref_input_pub.publish(self._ref_input_msg)
 
@@ -111,44 +123,15 @@ class ConveniencePub(IDivePub):
 
     def _publish_predicted_path(self):
         x_pred = self._dive_controller.get_mpc_pred()
-#        current_attitude = np.array([1, 0, 0, 0])
-#
-#        now = self._node.get_clock().now()
         predicted_path_msg = self._create_path_msg(x_pred, self._mocap_frame)
-#        predicted_path_msg = Path()
-#        predicted_path_msg.header.stamp = now.to_msg()
-#        predicted_path_msg.header.frame_id = self._mocap_frame
-#
-#        for i, predicted_state in enumerate(x_pred):
-#            # Calculate future time offset
-#            future_time = now + rclpy.duration.Duration(seconds=i * 0.1)
-#
-#            # Create PoseStamped
-#            pose_stamped = self._vector2PoseMsg(self._mocap_frame, predicted_state[0:3], predicted_state[3:7])
-#            pose_stamped.header.stamp = future_time.to_msg()
-#            pose_stamped.header.frame_id = self._mocap_frame
-#
-#            predicted_path_msg.poses.append(pose_stamped)
+
         self._mpc_pred_pub.publish(predicted_path_msg)
 
 
     def _publish_mpc_path_ref(self):
         path_ref = self._dive_controller.get_mpc_path_ref()
-#        current_attitude = np.array([1, 0, 0, 0])
         mpc_path_msg = self._create_path_msg(path_ref, self._mocap_frame)
-#        mpc_path_msg.header.stamp = now.to_msg()
-#        mpc_path_msg.header.frame_id = self._mocap_frame
-#
-#        for i, path_state in enumerate(path_ref):
-#            # Calculate future time offset
-#            future_time = now + rclpy.duration.Duration(seconds=i * 0.1)
-#
-#            # Create PoseStamped
-#            pose_stamped = self._vector2PoseMsg(self._mocap_frame, path_state[0:3], path_state[3:7])
-#            pose_stamped.header.stamp = future_time.to_msg()
-#            pose_stamped.header.frame_id = self._mocap_frame
-#
-#            mpc_path_msg.poses.append(pose_stamped)
+
         self._mpc_path_pub.publish(mpc_path_msg)
 
 
@@ -238,7 +221,8 @@ class ConveniencePub(IDivePub):
                  f"LCG: {self._input_msg.lcg:.3f}, "\
                  f"TV stern: {self._input_msg.thrustervertical:.3f}, "\
                  f"TV rudder: {self._input_msg.thrusterhorizontal:.3f}, "\
-                 f"RPM: {self._input_msg.thrusterrpm:.3f}\n"
+                 f"RPM1: {self._input_msg.thrusterrpm1:.3f}\n" \
+                 f"RPM2: {self._input_msg.thrusterrpm2:.3f}\n"
 
 
         if self._error_msg is None:

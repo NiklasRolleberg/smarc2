@@ -197,11 +197,12 @@ class DiveControllerMPC(DiveControllerInterface):
         s += f"NMPC solver status: {status}\n"
         # s += f"NMPC solve time: {(end_time - start_time)*1000:.1f} ms\n"
         # s += f"Traj. index: {self._dive_sub.current_idx}/{self.traj_len}:\n" if self.ref_is_traj else f""
-        s += f"current state: x: {x_current[0]}, y: {x_current[1]}, z: {x_current[2]}\n"
-        s += f"MPC pred: x: {simX[0]}, y: {simX[1]}, z: {simX[2]}\n"
+        s += f"current state: x: {x_current[0]:.3f}, y: {x_current[1]:.3f}, z: {x_current[2]:.3f}\n"
+        s += f"MPC pred: x: {simX[0]:.3f}, y: {simX[1]:.3f}, z: {simX[2]:.3f}\n"
         s += f"traj idx: {self.traj_index}/{self.traj_len}, ref: {self.ref[0,:6]}\n"
-        s += f"u_vbs = {mpc_solution[13]}, u_lcg = {mpc_solution[14]} u_stern = {mpc_solution[15]} u_rudder = {mpc_solution[16]} u_rpm1 = {mpc_solution[17]} u_rpm2 = {mpc_solution[18]}\n"
-
+        s += f"u_vbs = {mpc_solution[13]:.3f}, u_lcg = {mpc_solution[14]:.3f} \
+             u_stern = {mpc_solution[15]:.3f} u_rudder = {mpc_solution[16]:.3f} \
+             u_rpm1 = {mpc_solution[17]:.3f} u_rpm2 = {mpc_solution[18]:.3f}\n"
 
         self._loginfo(s)
 
@@ -478,7 +479,8 @@ class DiveControllerMPC(DiveControllerInterface):
             y_current = self._current_state.pose.pose.position.y
             z_current = self._current_state.pose.pose.position.z
 
-            if self.traj_index < self.traj_len:
+            if self.traj_index < self.traj_len-1:
+
                 # Get distance to current waypoint
                 d_current = np.sqrt((x_current - self.trajectory[self.traj_index,0])**2 + 
                                     (y_current - self.trajectory[self.traj_index,1])**2 +
@@ -490,7 +492,7 @@ class DiveControllerMPC(DiveControllerInterface):
                                 (z_current - self.trajectory[self.traj_index+1,2])**2)
 
                 # Set trajectory index accordingly
-                if d_next < d_current:
+                if d_next <= d_current:
                     self.traj_index += 1
 
                 # Get subtrajectory starting at closest waypoint
@@ -565,7 +567,8 @@ class DiveControllerMPC(DiveControllerInterface):
         self._input.lcg = u_lcg
         self._input.thrustervertical = u_stern
         self._input.thrusterhorizontal = u_rudder
-        self._input.thrusterrpm = float(u_rpm1)
+        self._input.thrusterrpm1 = float(u_rpm1)
+        self._input.thrusterrpm2 = float(u_rpm2)
 
         # Convenience Topics
         # FIXME: This if statement is weird.
@@ -584,12 +587,18 @@ class DiveControllerMPC(DiveControllerInterface):
             self._ref.pitch = euler_angles[1]
             self._ref.yaw = euler_angles[2]
 
+            self._ref.qx = self.ref[0, 4]
+            self._ref.qy = self.ref[0, 5]
+            self._ref.qz = self.ref[0, 6]
+            self._ref.qw = self.ref[0, 3]
+
             self._control_ref = ControlInput()
             self._control_ref.vbs = self.ref[0,13]
             self._control_ref.lcg = self.ref[0,14]
             self._control_ref.thrustervertical = self.ref[0,15]
             self._control_ref.thrusterhorizontal = self.ref[0,16]
-            self._control_ref.thrusterrpm = float(self.ref[0,17])
+            self._control_ref.thrusterrpm1 = float(self.ref[0,17])
+            self._control_ref.thrusterrpm2 = float(self.ref[0,18])
 
 
 
