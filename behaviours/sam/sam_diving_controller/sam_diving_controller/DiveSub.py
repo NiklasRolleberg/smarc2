@@ -101,7 +101,8 @@ class DiveSub():
         self._control_input['stern'] = self.param['tv_u_neutral']
         self._control_input['rudder'] = self.param['tv_u_neutral']
 
-        self.state_sub = node.create_subscription(msg_type=Odometry, topic=ControlTopics.STATES, callback=self._states_cb, qos_profile=10)
+        self.state_sub = node.create_subscription(msg_type=Odometry, topic='odom_tf', callback=self._states_cb, qos_profile=10)
+        #self.state_sub = node.create_subscription(msg_type=Odometry, topic=ControlTopics.STATES, callback=self._states_cb, qos_profile=10)
         self.waypoint_sub = node.create_subscription(msg_type=PoseStamped, topic=ControlTopics.WAYPOINT, callback=self._wp_cb, qos_profile=10)
         self.joy_depth_setpoint_sub = node.create_subscription(msg_type=Float64, topic=ControlTopics.ELEV_SP_TOP, callback=self._joy_depth_setpoint_cb, qos_profile=10)
         self.depth_sub = node.create_subscription(msg_type=PoseWithCovarianceStamped, topic=DRTopics.DR_DEPTH_POSE_TOPIC, callback=self._depth_cb, qos_profile=10)
@@ -197,16 +198,8 @@ class DiveSub():
         self._control_input['rudder'] = thrust_vector_fb_msg.thruster_horizontal_radians
 
     def _update_tf(self):
-        # FIXME: THIS IS AN ISSUE NOW.
-        # Requirements:
-        #   - Handle different goal frames (from unity GUI, mocap)
-        #   - Handle path following, which needs to transform the state, but there's no goal, bc. there's no waypoint.
-        #   - Flexible enough to change, but not too complicated either.
-        #   - Avoid hard coded things...
         if self._waypoint_global is None:
             return
-        #self._waypoint_global = Odometry()
-        #self._waypoint_global.header.frame_id = 'mocap'
 
         try:
             self._tf_base_link_global = self._tf_buffer.lookup_transform(self._robot_base_link,

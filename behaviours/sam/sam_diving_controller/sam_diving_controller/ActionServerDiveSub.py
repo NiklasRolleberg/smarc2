@@ -15,6 +15,8 @@ from smarc_msgs.action import BaseAction
 from smarc_mission_msgs.msg import Topics as MissionTopics
 from smarc_msgs.msg import Topics as SMaRCTopics
 
+from nav_msgs.msg import Odometry, Path
+
 from smarc_utilities.georef_utils import convert_latlon_to_utm
 
 from geometry_msgs.msg import PoseStamped 
@@ -620,6 +622,11 @@ class MPCPathServer(PathServer, DiveSub):
         """
         Convert path from list to numpy array.
         """
+
+        # Set global waypoint to trigger update_tf in DiveSub. Ugly, but works for now.
+        self._waypoint_global = Odometry()
+        self._waypoint_global.header.frame_id = 'KTHTank/mocap'
+        #self._waypoint_global.header.frame_id = 'mocap'
         
         path = []
         for i in range(0, len(goal_path.trajectory)):
@@ -684,14 +691,14 @@ class MPCPathServer(PathServer, DiveSub):
         feedback = self.action_type.Feedback
         start_time = self._node.get_clock().now()
 
-        while self.current_idx < self.path_len:
+        while self.current_idx < self.path_len-1:
             current_time = self._node.get_clock().now()
             elapsed = (current_time - start_time).nanoseconds / 1e9  # seconds
             self.set_mission_state(MissionStates.RUNNING, "AS")
 
             #self.logger.info(f"elapsed: {elapsed}")
 
-            if elapsed > 50:
+            if elapsed > 250:
                 self.logger.info("Goal was cancelled by timeout.")
                 goal_handle.abort()
                 return "cancelled"
