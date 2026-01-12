@@ -45,6 +45,9 @@ class PathClient(SMARCActionClient):
         self.logger.set_level(rclpy.logging.LoggingSeverity.INFO)
         self.goal_processed = False
 
+        # if not self._setup(num_iters=100):
+        #     return
+
         # Wait for server
         # while not self._client.wait_for_server(timeout_sec=1.) and rclpy.ok():
         #     self.logger.info(f"Node {action_name} waiting for go_to_hydropoint server")
