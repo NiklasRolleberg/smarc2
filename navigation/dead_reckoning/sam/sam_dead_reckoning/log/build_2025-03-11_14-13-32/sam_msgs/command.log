@@ -1,4 +1,0 @@
-Invoking command in '/home/nacho/colcon_workspaces/smarc_ws/build/sam_msgs': CMAKE_PREFIX_PATH=/opt/ros/humble /usr/bin/cmake --build /home/nacho/colcon_workspaces/smarc_ws/build/sam_msgs -- -j20 -l20
-Invoked command in '/home/nacho/colcon_workspaces/smarc_ws/build/sam_msgs' returned '0': CMAKE_PREFIX_PATH=/opt/ros/humble /usr/bin/cmake --build /home/nacho/colcon_workspaces/smarc_ws/build/sam_msgs -- -j20 -l20
-Invoking command in '/home/nacho/colcon_workspaces/smarc_ws/build/sam_msgs': CMAKE_PREFIX_PATH=/opt/ros/humble /usr/bin/cmake --install /home/nacho/colcon_workspaces/smarc_ws/build/sam_msgs
-Invoked command in '/home/nacho/colcon_workspaces/smarc_ws/build/sam_msgs' returned '0': CMAKE_PREFIX_PATH=/opt/ros/humble /usr/bin/cmake --install /home/nacho/colcon_workspaces/smarc_ws/build/sam_msgs
