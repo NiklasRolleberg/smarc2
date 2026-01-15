@@ -101,20 +101,22 @@ class HydropointClient(SMARCActionClient):
 
 
     def mocap_hydro_cb(self, mocap_goal: PoseStamped):
+        
+        if not self.goal_processed:
 
-        if self.state != ActionClientState.SENT:
+            if self.state != ActionClientState.SENT:
 
-            # if not self.goal_processed:
-            if self.state == ActionClientState.RUNNING:
-            #    self.goal_processed = True
-                self._node.destroy_subscription(self.mocap_goal_sub)
-                return
+                if self.state == ActionClientState.ACCEPTED or self.state == ActionClientState.RUNNING:
+                    self.goal_processed = True
+                    self._node.destroy_subscription(self.mocap_goal_sub)
+                    return
 
-            else:
-                # self.logger.info(f"Sending goal {mocap_goal}")
-                goal_msg = BaseAction.Goal()
-                goal_msg.goal = self._json_ops.encode(mocap_goal)
-                self.send_goal(goal_msg)
+                self.goal_msg = BaseAction.Goal()
+                self.goal_msg.goal = self._json_ops.encode(mocap_goal)
+                
+                self.logger.info(f"Sending goal {mocap_goal}")
+                self.send_goal(self.goal_msg)
+
 
 
     def declare_parameters(self):
