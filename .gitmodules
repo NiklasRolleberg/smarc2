@@ -57,3 +57,6 @@
 [submodule "documentation/smarc2-obsidian"]
 	path = documentation/smarc2-obsidian
 	url = git@github.com:smarc-project/smarc2-obsidian.git
+[submodule "drivers/pingdspinger"]
+	path = drivers/pingdspinger
+	url = git@github.com:NinjaTuna007/pingdspinger.git
