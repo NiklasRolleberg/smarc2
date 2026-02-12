@@ -224,7 +224,9 @@ class SamPathPlanner(HydropointServer, PathClient):
         result_msg = self.action_type.Result
         if self._received_waypoint and self.sam_pose_t != None and self.sam_control_t != None:
             self.logger.info(f"All inputs received")  
-            self._hydropoint = self._json_parser.decode(goal_handle.request.goal, 0)
+            self._hydropoint = self.pose_stamped
+            # self._json_ops.decode(goal_handle.request.goal, 0)
+            self.logger.info(f"Hydropoint received: {self._hydropoint}")
             
             # Call path planner and move on to feedback
             self.call_planner = True
@@ -270,7 +272,7 @@ class SamPathPlanner(HydropointServer, PathClient):
                 # self.publish_stop_setpoint()
                 return "cancelled"
             
-            feedback.feedback = self._json_parser.encode(d)
+            feedback.feedback = self._json_ops.encode(d)
             goal_handle.publish_feedback(feedback)
             d = self.compute_distance(pose_stamped)
             rate.sleep()
@@ -317,31 +319,28 @@ class SamPathPlanner(HydropointServer, PathClient):
                     0., 0., 0., 0
                 ])
 
-            r = R.from_quat([quat_frd[0], quat_frd[1], quat_frd[2], quat_frd[3]])
-            roll, pitch, yaw = r.as_euler('xyz', degrees=True)
-            self._node.get_logger().info(f"Yaw: {yaw:.2f}, Pitch: {pitch:.2f}, Roll: {roll}")
 
             # Goal recevied by the ac. Set received to false
             self.sam_goal_t = self._hydropoint
 
             # Getting the current orientation of the goal
-            q0_goal_before = self.sam_goal_t.pose.orientation.w
-            q1_goal_before = self.sam_goal_t.pose.orientation.x
-            q2_goal_before = self.sam_goal_t.pose.orientation.y
-            q3_goal_before = self.sam_goal_t.pose.orientation.z
-            r = R.from_quat([q1_goal_before, q2_goal_before, q3_goal_before, q0_goal_before])
-            roll, pitch, yaw = r.as_euler('xyz', degrees=True)
-            self._node.get_logger().info(f"Yaw:...{yaw:.2f}, Pitch:{pitch:.2f}, Roll:{roll}")
+            # Normalize orientation quaternion and transform from FLU to FRD
+            quat_flu_goal = np.array([self.sam_goal_t.pose.orientation.x,
+                    self.sam_goal_t.pose.orientation.y,
+                    self.sam_goal_t.pose.orientation.z,
+                    self.sam_goal_t.pose.orientation.w], dtype=float)
+            quat_flu_goal = quat_flu_goal/np.linalg.norm(quat_flu_goal)
+
+            r_original = R.from_quat(quat_flu_goal)
+            quat_frd_goal = (r_original * r_roll_180).as_quat()  # Local frame rotation
 
             # # === End state ===
             end_state = np.array([
                     self.sam_goal_t.pose.position.x,
                     self.sam_goal_t.pose.position.y,
                     self.sam_goal_t.pose.position.z,
-                    self.sam_goal_t.pose.orientation.w,
-                    self.sam_goal_t.pose.orientation.x,
-                    self.sam_goal_t.pose.orientation.y,
-                    self.sam_goal_t.pose.orientation.z,
+                    quat_frd_goal[3],quat_frd_goal[0],quat_frd_goal[1],quat_frd_goal[2],
+                    # 1,0,0,0,
                     0, 0, 0,
                     0, 0, 0,
                     50, 50, 0, 0, 0, 0
@@ -350,8 +349,15 @@ class SamPathPlanner(HydropointServer, PathClient):
             # === Motion Planner ===
             #Print the states
             self._node.get_logger().info(f"Initial state:...{start_state}")
+            r = R.from_quat([quat_frd[0], quat_frd[1], quat_frd[2], quat_frd[3]])
+            roll, pitch, yaw = r.as_euler('xyz', degrees=True)
+            self._node.get_logger().info(f"Yaw: {yaw:.2f}, Pitch: {pitch:.2f}, Roll: {roll}")
             self._node.get_logger().info(f"-----------")
+
             self._node.get_logger().info(f"Final State:...{end_state}")
+            r = R.from_quat([quat_frd_goal[0],quat_frd_goal[1],quat_frd_goal[2],quat_frd_goal[3]])
+            roll, pitch, yaw = r.as_euler('xyz', degrees=True)
+            self._node.get_logger().info(f"Yaw:...{yaw:.2f}, Pitch:{pitch:.2f}, Roll:{roll}")
 
             # For debugging
 
