@@ -109,7 +109,7 @@ class A_Chilling(VehicleBehaviour):
 
             self.task_handler.clear_task_queue()
 
-            #reser mission_status flag
+            #reset mission_status flag
             self.task_handler.set_mission_status(WaraPSTaskStates.NONE.value)
             
             return Status.FAILURE
@@ -291,6 +291,8 @@ class A_ActionClient(Behaviour):
         ]
 
         self.last_feedback_time = None
+        self._goal_start_time = None
+        self.task_timeout = None
 
         self._logger = self._client._node.get_logger()
             
@@ -306,6 +308,8 @@ class A_ActionClient(Behaviour):
 
 
         self.feedback_message = None
+        self._goal_start_time = None
+        self.task_timeout = None
         self._task_handler.set_current_task_status("started")
         self._task_handler.publish_feedback_to_current_task("Action client initialised. Waiting for task to start...")
         
@@ -399,10 +403,12 @@ class A_ActionClient(Behaviour):
                     self._task_handler.publish_feedback_to_current_task(str(self.feedback_message))
                     self.last_feedback_time = current_time
                 return Status.FAILURE
-
             
             #log the mission plan
             self._logger.info(f"Mission Plan: {mplan}")
+
+            # extract task timeout from the params if it's there, otherwise default to None
+            self.task_timeout = mplan["timeout"] if "timeout" in mplan else None
 
             msg_str = json.dumps(mplan)
 
@@ -423,12 +429,25 @@ class A_ActionClient(Behaviour):
             mission_msg.goal.data = msg_str
             self._client.send_goal(mission_msg)
 
+            # Start timeout tracking
+            self._goal_start_time = self._bt.now_seconds
+
             # self._logger.info("yall I sent dat task")
             self.feedback_message = "Goal sent to action client."
             self._task_handler.publish_feedback_to_current_task(str(self.feedback_message))
             return Status.RUNNING
         
         if s in self._running_states:
+            # Check for timeout
+            if self.task_timeout is not None and self._goal_start_time is not None:
+                elapsed_time = current_time - self._goal_start_time
+                if elapsed_time > self.task_timeout:
+                    self.feedback_message = f"Action timed out after {elapsed_time:.1f}s (timeout: {self.task_timeout}s). Cancelling goal."
+                    self._logger.warning(self.feedback_message)
+                    self._task_handler.publish_feedback_to_current_task(str(self.feedback_message))
+                    self._task_handler.clear_current_task()                        
+                    return Status.FAILURE
+            
             self.feedback_message = self._client.feedback_message
             if current_time - self.last_feedback_time > 1.0:
             # publish feedback every second
