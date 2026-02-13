@@ -23,7 +23,11 @@ setup(
     tests_require=['pytest'],
     entry_points={
         'console_scripts': [
-            'move_path_server = evolo_move_path.evolo_move_path_server:main',
+            'move_path_server_potential_field = evolo_move_path.evolo_move_path_server_potential_field:main',
+	        'move_path_client = evolo_move_path.client:main',
+            'sim_minimal = evolo_move_path.sim_minimal:main',
+            'move_path_server_a_star = evolo_move_path.evolo_move_path_server_a_star:main',
+            'move_path_server_dubins_curves = evolo_move_path.evolo_move_path_server_dubins_curve:main',
         ],
     },
 )
