@@ -423,7 +423,12 @@ class A_ActionClient(Behaviour):
             self._logger.info(f"Mission Plan: {mplan}")
 
             # extract task timeout from the params if it's there, otherwise default to None
-            self.task_timeout = mplan["timeout"] if "timeout" in mplan else None
+            # -1 means no timeout
+            if "timeout" in mplan:
+                timeout_value = mplan["timeout"]
+                self.task_timeout = None if timeout_value == -1 else timeout_value
+            else:
+                self.task_timeout = None
 
             msg_str = json.dumps(mplan)
 
