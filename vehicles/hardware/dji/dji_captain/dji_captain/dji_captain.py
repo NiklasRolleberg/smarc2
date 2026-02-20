@@ -12,7 +12,7 @@ from rclpy.timer import Timer
 from tf2_ros import Buffer, TransformListener
 
 
-from std_msgs.msg import Float32, Int8, String
+from std_msgs.msg import Float32, Int8, String, Bool
 from std_srvs.srv import Trigger
 from sensor_msgs.msg import NavSatFix, Joy, BatteryState, JoyFeedback
 from nav_msgs.msg import Odometry
@@ -168,6 +168,7 @@ class DjiCaptain():
         self._flying : bool = False
         self._carrying_payload : bool = False
         self._battery_percent : float | None = None
+        self._cam_processor_happy : bool = False
         
         # this could be a param, but really we likely will never run this on anything except
         # the M350 which has a nominal 3kg max payload, so hardcoding it here is fine.
@@ -303,6 +304,13 @@ class DjiCaptain():
             DjiTopics.LOAD_CELL_WEIGHT_TOPIC,
             self._load_cell_callback,
             qos_profile=10)
+
+        node.create_subscription(
+            Bool,
+            DjiTopics.CAM_PROCESSOR_HAPPY_TOPIC,
+            self._cam_processor_happy_callback,
+            qos_profile=10
+        )
         
 
         
@@ -403,47 +411,25 @@ class DjiCaptain():
     @property
     def status_str(self) -> str:
         s = "\nDjiCaptain Status:\n"
-        s += f"  Home in UTM: {format_point_stamped(self._home_point_in_utm)} ({self._utm_zb_label})\n"
-        s += f"\n  Position in Home: {format_pose_stamped(self._base_pose_in_home)}\n"
-        
         if self._battery_percent is not None:
             s += f"  Battery Percent: {self._battery_percent:.2f} (ready:{self.READY_BATTERY_PERCENTAGE}, error:{self.ERROR_BATTERY_PERCENTAGE})\n"
         else:
             s += f"  Battery Percent: N/A\n"
         
+        s += f"  Cam Proc Happy: {self._cam_processor_happy}\n"
+
         if self._load_cell_weight is not None:
             s += f"  Load Cell Weight: {self._load_cell_weight:.2f} kg (max: {self._MAX_LOAD_KG} kg)\n"
         else:
             s += f"  Load Cell Weight: N/A\n"
+
+        s += f"  Got Control: {self._got_control}\n"
+        s += f"  Flying: {self._flying}\n"
         
         if self._base_pose_in_home is not None:
             s += f"  Altitude from water: {self.altitude_above_water:.2f} m\n"
         else:
             s += f"  Altitude from water: N/A, base pose in home not known!\n"
-
-        if self._heading_deg is not None: s += f"  Heading: {self._heading_deg:.2f}\n"
-        else: s += f"  Heading: N/A\n"
-
-        if self._course_deg is not None: s += f"  Course: {self._course_deg:.2f}\n"
-        else: s += f"  Course: N/A\n"
-
-        s += f"  Velocity Ground: {format_vector3_stamped(self._velocity_ground)}\n"
-        s += f"  Angular Rate Ground: {format_vector3_stamped(self._angular_rate_ground)}\n"
-        
-        s += f"\n  Smarc Topics: {self._smarc_pub_status}\n"
-        
-        s += f"  TF: {self._tf_pub_status}\n"
-
-        s += f"\n  Got Control: {self._got_control}\n"
-        
-        if self.setpoint_received_at is None and self._move_to_setpoint is None:
-            s += f"  No setpoint set.\n"
-        elif self.setpoint_received_at is None and self._move_to_setpoint is not None:
-            s += f"  Setpoint received time unknown, this is a bug! FIX THIS\n"
-        elif self.setpoint_received_at is not None and self._move_to_setpoint is not None:
-            s += f"  Current target setpoint: {format_pose_stamped(self._move_to_setpoint)} ({self.now_time - self.setpoint_received_at:.2f}s ago)\n"
-        
-        s += f"  Flying: {self._flying}\n"
 
         if self._last_pubbed_fluvel_joy is not None:
             a = self._last_pubbed_fluvel_joy.axes
@@ -458,6 +444,33 @@ class DjiCaptain():
             s += f"  Vehicle Health: ERROR\n"
         else:
             s += f"  Vehicle Health: WAITING\n"
+
+        s += "========================\n"
+
+        s += f"  Home in UTM: {format_point_stamped(self._home_point_in_utm)} ({self._utm_zb_label})\n"
+        s += f"  Position in Home: {format_pose_stamped(self._base_pose_in_home)}\n"
+        
+        if self._heading_deg is not None: s += f"  Heading: {self._heading_deg:.2f}\n"
+        else: s += f"  Heading: N/A\n"
+
+        if self._course_deg is not None: s += f"  Course: {self._course_deg:.2f}\n"
+        else: s += f"  Course: N/A\n"
+
+        s += f"  Velocity Ground: {format_vector3_stamped(self._velocity_ground)}\n"
+        s += f"  Angular Rate Ground: {format_vector3_stamped(self._angular_rate_ground)}\n"
+        
+        s += f"  Smarc Topics:{self._smarc_pub_status}\n"
+        
+        s += f"  TF: {self._tf_pub_status}\n"
+
+        if self.setpoint_received_at is None and self._move_to_setpoint is None:
+            s += f"  No setpoint set.\n"
+        elif self.setpoint_received_at is None and self._move_to_setpoint is not None:
+            s += f"  Setpoint received time unknown, this is a bug! FIX THIS\n"
+        elif self.setpoint_received_at is not None and self._move_to_setpoint is not None:
+            s += f"  Current target setpoint: {format_pose_stamped(self._move_to_setpoint)} ({self.now_time - self.setpoint_received_at:.2f}s ago)\n"
+        
+
 
         return s
     
@@ -510,6 +523,9 @@ class DjiCaptain():
 
     def _load_cell_callback(self, msg: Float32):
         self._load_cell_weight = msg.data
+
+    def _cam_processor_happy_callback(self, msg: Bool):
+        self._cam_processor_happy = msg.data
 
 
     def _move_to_setpoint_callback(self, msg: PoseStamped):
