@@ -134,7 +134,6 @@ class AlarsBT():
             )
 
             self._goal : dict = {
-                "initial_travel_alt": None,
                 "search_position": {
                     "latitude": None,
                     "longitude": None,
