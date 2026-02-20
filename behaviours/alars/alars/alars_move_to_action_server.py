@@ -173,7 +173,18 @@ class MoveToAction():
                 goal_position[1] = self_position[1]
 
         goal_error = goal_position - self_position
-        goal_error_mag = np.linalg.norm(goal_error)
+        if self._VERTICAL_FIRST_MODE:
+            # consider only the vertical error first
+            vertical_error = abs(goal_error[2])
+            if vertical_error < self._goal_tolerance:
+                # vertically close enough, consider the full 3D error now
+                goal_error_mag = np.linalg.norm(goal_error)
+            else:
+                goal_error_mag = vertical_error
+        else:
+            # otherwise, sphere
+            goal_error_mag = np.linalg.norm(goal_error)
+
         self._distance_remaining = float(goal_error_mag)
 
         # maybe we reached already
