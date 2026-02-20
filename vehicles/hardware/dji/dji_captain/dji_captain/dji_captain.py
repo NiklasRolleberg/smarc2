@@ -106,6 +106,13 @@ class DjiCaptain():
             self.log("Captain will not run. Exiting.")
             sys.exit(1)
 
+        self._node.declare_parameter("min_altitude_above_water", 1.5)
+        self.MIN_ALTITUDE_ABOVE_WATER = self._node.get_parameter("min_altitude_above_water").get_parameter_value().double_value
+        if self.MIN_ALTITUDE_ABOVE_WATER <= 0:
+            self.log(f"Warning: min_altitude_above_water parameter not set or invalid! It is {self.MIN_ALTITUDE_ABOVE_WATER}")
+            self.log("Setting it to 1.5m to prevent damage to the vehicle, but you should set it to something appropriate for your mission!")
+            self.MIN_ALTITUDE_ABOVE_WATER = 1.5
+
         
 
         self._move_to_setpoint : PoseStamped | None = None
@@ -385,6 +392,13 @@ class DjiCaptain():
     def setpoint_received_at(self) -> float|None:
         return self._move_to_setpoint.header.stamp.sec + self._move_to_setpoint.header.stamp.nanosec * 1e-9 if self._move_to_setpoint is not None else None
     
+    @property
+    def altitude_above_water(self) -> float:
+        if self._base_pose_in_home is not None:
+            return self._base_pose_in_home.pose.position.z + self._HOME_ALT_ABOVE_WATER
+        else:
+            return -1.0
+    
     
     @property
     def status_str(self) -> str:
@@ -403,7 +417,7 @@ class DjiCaptain():
             s += f"  Load Cell Weight: N/A\n"
         
         if self._base_pose_in_home is not None:
-            s += f"  Altitude from water: {self._base_pose_in_home.pose.position.z + self._HOME_ALT_ABOVE_WATER:.2f} m\n"
+            s += f"  Altitude from water: {self.altitude_above_water:.2f} m\n"
         else:
             s += f"  Altitude from water: N/A, base pose in home not known!\n"
 
@@ -962,6 +976,11 @@ class DjiCaptain():
             if weight_error:
                 self._vehicle_health.data = SmarcTopics.VEHICLE_HEALTH_ERROR
                 self.log(f"WEIGHT ABOVE LIMIT: {self._load_cell_weight:.2f} > {self._MAX_LOAD_KG:.2f}")
+
+            water_altitude_error = self.altitude_above_water < self.MIN_ALTITUDE_ABOVE_WATER
+            if water_altitude_error:
+                self._vehicle_health.data = SmarcTopics.VEHICLE_HEALTH_ERROR
+                self.log(f"TOO CLOSE TO WATER: {self.altitude_above_water:.2f} < {self.MIN_ALTITUDE_ABOVE_WATER:.2f}")
 
 
         self._vehicle_health_pub.publish(self._vehicle_health)
