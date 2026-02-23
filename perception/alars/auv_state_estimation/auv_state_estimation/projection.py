@@ -105,7 +105,7 @@ class ProjectionNode(Node):
         yaw = self.determine_orientation(intersection_points_map)
 
         self.broadcast_estimated_auv_tf(stamp, intersection_points_cam[:, 0], yaw - np.pi/2)
-        self.publish_head_and_obb_markers(stamp, intersection_points_map, yaw)
+        self.publish_head_and_obb_markers(stamp, intersection_points_map.T, yaw)
         self.publish_ray_marker(stamp, intersection_points_cam[:, 0])
     
     def determine_orientation(self, points_3d):
@@ -171,7 +171,7 @@ class ProjectionNode(Node):
         obb = PolygonStamped()
         obb.header.frame_id = self.map_frame
         obb.header.stamp = stamp
-        for px, py, pz in points[1:]:
+        for px, py, pz in points:
             point32 = Point32()
             point32.x = px
             point32.y = py
