@@ -11,16 +11,16 @@ BT_LOG_MODE=compact # can be 'compact' or 'verbose'
 
 
 #Simulation
-SIM = False
-if ["$SIM" == "True"]; then
+SIM=True
+if [ "$SIM" = "True" ]; then
     REALSIM=simulation
-    ROBOT_NAME=evolo_v1
+    ROBOT_NAME=evolo
     USE_SIM_TIME=True
 else
     REALSIM=real
     #USE_SIM_TIME=False
-    USE_SIM_TIME=False #Useful for rosbags
-    LOCATION_SOURCE=MQTT #[SBG MQTT SERIAL]
+    USE_SIM_TIME=True #Useful for rosbags
+    LOCATION_SOURCE=SBG #[SBG MQTT SERIAL]
 fi
 
 #Low controllers
@@ -46,23 +46,23 @@ tmux select-layout -t $SESSION:2 tiled
 tmux select-pane -t $SESSION:2.0
 tmux send-keys "sleep 4; ros2 run evolo_move_to move_to_server --ros-args -r __ns:=/$ROBOT_NAME -p use_sim_time:=$USE_SIM_TIME" C-m
 tmux select-pane -t $SESSION:2.1
-tmux send-keys "sleep 4; ros2 run evolo_move_path move_path_server --ros-args -r __ns:=/$ROBOT_NAME -p use_sim_time:=$USE_SIM_TIME" C-m
+tmux send-keys "sleep 4; ros2 run evolo_move_path move_path_server_dubins_curves --ros-args -r __ns:=/$ROBOT_NAME -p use_sim_time:=$USE_SIM_TIME" C-m
 #tmux select-pane -t $SESSION:2.2
 #tmux send-keys "sleep 4; ros2 run lolo_emergency_action server --ros-args -r __ns:=/$ROBOT_NAME -p use_sim_time:=$USE_SIM_TIME" C-m
 #tmux select-pane -t $SESSION:2.3
 #tmux send-keys "sleep 4; ros2 run lolo_loiter server --ros-args -r __ns:=/$ROBOT_NAME -p use_sim_time:=$USE_SIM_TIME" C-m
 
 # Mqtt bridge.
-tmux new-window -t $SESSION:3 -n 'mqtt_bridge'
+tmux new-window -t $SESSION:3 -n 'mqtt'
 tmux select-window -t $SESSION:3
 
 # To connect to smarc MQTT broker
 if [ "$REALSIM" = "real" ]; then
     tmux new-window -t $SESSION:3 -n 'mqtt'
     tmux select-window -t $SESSION:3
-    tmux send-keys "sleep 7; ros2 launch str_json_mqtt_bridge waraps_bridge.launch broker_addr:=20.240.40.232 broker_port:=1884 robot_name:=$ROBOT_NAME domain:=$AGENT_TYPE realsim:=$REALSIM use_sim_time:=$USE_SIM_TIME context:=$CONTEXT"
+    tmux send-keys "sleep 7; ros2 launch str_json_mqtt_bridge waraps_bridge.launch broker_addr:=20.240.40.232 broker_port:=1884 robot_name:=$ROBOT_NAME domain:=$AGENT_TYPE realsim:=$REALSIM use_sim_time:=$USE_SIM_TIME context:=$CONTEXT" C-m
 else
-    tmux send-keys "sleep 7; ros2 launch str_json_mqtt_bridge waraps_bridge.launch broker_addr:=127.0.0.1 broker_port:=1883 robot_name:=$ROBOT_NAME domain:=$AGENT_TYPE realsim:=$REALSIM use_sim_time:=$USE_SIM_TIME context:=$CONTEXT"
+    tmux send-keys "sleep 7; ros2 launch str_json_mqtt_bridge waraps_bridge.launch broker_addr:=20.240.40.232 broker_port:=1884 robot_name:=$ROBOT_NAME domain:=$AGENT_TYPE realsim:=$REALSIM use_sim_time:=$USE_SIM_TIME context:=$CONTEXT" C-m
 fi
 
 
@@ -72,7 +72,7 @@ if [ "$REALSIM" = "real" ]; then
     #Connection to evolo captain
     tmux new-window -t $SESSION:4 -n 'Evolo captain'
     tmux select-window -t $SESSION:4
-    tmux send-keys "ros2 launch evolo_mqtt_bridge evolo_mqtt_launch.py" C-m
+    tmux send-keys "ros2 launch evolo_mqtt_bridge evolo_mqtt_launch.py"
     #tmux send-keys "ros2 launch evolo_serial_bridge evolo_serial_launch.py"
 
     #SBG driver
@@ -81,7 +81,7 @@ if [ "$REALSIM" = "real" ]; then
     tmux send-keys "TODO: lanuch SBG driver" C-m
 
     #Odom
-    tmux new-window -t $SESSION:6 -n 'SBG to Odom'
+    tmux new-window -t $SESSION:6 -n 'Localization to Odom'
     tmux select-window -t $SESSION:6
     tmux split-window -h -t $SESSION:6.0
 
@@ -98,11 +98,11 @@ if [ "$REALSIM" = "real" ]; then
     if [ "$LOCATION_SOURCE" = "MQTT" ] || [ "$LOCATION_SOURCE" = "SERIAL" ]; then
         #Odom initializer
         tmux select-pane -t $SESSION:6.0
-        tmux send-keys "ros2 launch evolo_captain_interface evolo_captain_odom_initializer_launch.py" C-m
+        tmux send-keys "ros2 launch evolo_captain_interface evolo_captain_odom_initializer_launch.py use_sim_time:=$USE_SIM_TIME" C-m
 
         #sbg to odom node
         tmux select-pane -t $SESSION:6.1
-        tmux send-keys "ros2 launch evolo_captain_interface evolo_captain_odom_launch.py" C-m
+        tmux send-keys "ros2 launch evolo_captain_interface evolo_captain_odom_launch.py use_sim_time:=$USE_SIM_TIME" C-m
     fi
 
 
@@ -128,7 +128,7 @@ if [ "$REALSIM" = "real" ]; then
 else #Sim
     tmux new-window -t $SESSION:4 -n 'tcp-endpoint'
     tmux select-window -t $SESSION:4
-    tmux send-keys "ros2 run ros_tcp_endpoint default_server_endpoint --ros-args -p ROS_IP:=127.0.0.1"
+    tmux send-keys "ros2 run ros_tcp_endpoint default_server_endpoint --ros-args -p ROS_IP:=127.0.0.1" C-m
 fi
 
 if [ "$REALSIM" = "real" ]; then
@@ -171,7 +171,7 @@ tmux split-window -h -t $SESSION:13.0
 
 #Pointcloud preprocessing
 tmux select-pane -t $SESSION:13.0
-tmux send-keys "ros2 launch pointcloud_preprocessing pointcloud_preprocessing_launch_boat.py" C-m
+tmux send-keys "ros2 launch pointcloud_preprocessing pointcloud_preprocessing_launch_evolo.py use_sim_time:=$USE_SIM_TIME" C-m
 #occupancy grid
 tmux select-pane -t $SESSION:13.1
 #tmux send-keys "ros2 run clustering_segmentation clustering_segmentation --ros-args -p use_sim_time:=$USE_SIM_TIME" C-m

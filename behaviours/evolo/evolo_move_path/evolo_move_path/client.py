@@ -11,7 +11,7 @@ class EvoloMovePathClient(Node):
     def __init__(self):
         super().__init__('evolo_move_path_client')
         self._action_client = ActionClient(self, BaseAction, 'move_path')
-        self.marker_pub = self.create_publisher(MarkerArray, '/waypoints_viz', 10)
+        self.marker_pub = self.create_publisher(MarkerArray, 'waypoints_viz', 10)
 
     def publish_waypoints(self, waypoint_list):
         marker_array = MarkerArray()
@@ -45,23 +45,18 @@ class EvoloMovePathClient(Node):
         payload = {
             'speed': 'high',
             'waypoints': [
-                {'latitude': 58.8397422670, 'longitude': 17.6534623045, 'tolerance': 5.0},
-                {'latitude': 58.8400922670, 'longitude': 17.6540122932, 'tolerance': 5.0},
-                {'latitude': 58.8403922670, 'longitude': 17.6533123075, 'tolerance': 5.0},
-                {'latitude': 58.8398922670, 'longitude': 17.6528123177, 'tolerance': 5.0},
-                {'latitude': 58.8397922670, 'longitude': 17.6543122871, 'tolerance': 5.0}
-            ],
-            'obstacles': [
-                # {'latitude': 58.8399222670, 'longitude': 17.6537422987, 'radius': 8.0},
-                # {'latitude': 58.8402422670, 'longitude': 17.6536623004, 'radius': 10.0},
-                # {'latitude': 58.8399422670, 'longitude': 17.6530123137, 'radius': 6.0}
+                {'latitude': 58.8397422670, 'longitude': 17.6534623045, 'tolerance': 3.0},
+                {'latitude': 58.8400922670, 'longitude': 17.6540122932, 'tolerance': 3.0},
+                {'latitude': 58.8403922670, 'longitude': 17.6533123075, 'tolerance': 3.0},
+                {'latitude': 58.8398922670, 'longitude': 17.6528123177, 'tolerance': 3.0},
+                {'latitude': 58.8397922670, 'longitude': 17.6543122871, 'tolerance': 3.0}
             ]
         }
         
         goal_msg.goal = String()
         goal_msg.goal.data = json.dumps(payload)
 
-        self.get_logger().info("Send mission with obstacles...")
+        self.get_logger().info("Send mission...")
         self._send_goal_future = self._action_client.send_goal_async(
             goal_msg,
             feedback_callback=self.feedback_callback
