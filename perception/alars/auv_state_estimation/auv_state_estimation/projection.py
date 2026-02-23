@@ -171,7 +171,7 @@ class ProjectionNode(Node):
         obb = PolygonStamped()
         obb.header.frame_id = self.map_frame
         obb.header.stamp = stamp
-        for px, py, pz in points:
+        for px, py, pz in points[1:]:
             point32 = Point32()
             point32.x = px
             point32.y = py
