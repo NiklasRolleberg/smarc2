@@ -51,7 +51,7 @@ class twist_control(Node):
         self.odom_feedback_time = None
 
         #Control inputs.
-        self.create_subscription(TwistStamped, evoloTopics.TWIST_SETPOINT , self.twist_cb, 1)
+        self.create_subscription(TwistStamped, evoloTopics.EVOLO_TWIST_SETPOINT , self.twist_cb, 1)
 
         #Feedback
         self.create_subscription(Odometry, SmarcTopics.ODOM_TOPIC , self.odom_cb, 1)
