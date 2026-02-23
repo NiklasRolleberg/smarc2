@@ -235,7 +235,7 @@ class AlarsBT():
         if tip is None:
             tip_str = "-"
         else:
-            tip_str = f"{tip.name}({tip.status})"
+            tip_str = f"{tip.name}({tip.status}):{tip.feedback_message}"
         str = ""
         str += f"Tip: {tip_str}"
         str += "\nStates:"
