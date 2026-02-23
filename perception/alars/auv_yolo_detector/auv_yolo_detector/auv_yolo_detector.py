@@ -19,6 +19,7 @@ from ultralytics.engine.results import OBB, Results
 from sensor_msgs.msg import Image
 from geometry_msgs.msg import PointStamped
 from tf2_ros import Buffer, TransformListener
+from std_msgs.msg import Bool
 from std_srvs.srv import Trigger
 from geometry_msgs.msg import PolygonStamped, Point32
 
@@ -62,6 +63,9 @@ class YOLODetector(Node):
         self.sam_head_obb_pub = self.create_publisher(PolygonStamped,
                                                       self.model_params["topics.predicted_position.sam_head_obb"],10)
 
+        
+        self.cam_processor_happy_pub = self.create_publisher(Bool, Topics.CAM_PROCESSOR_HAPPY_TOPIC, 10)
+        self.create_timer(1.0, lambda: self.cam_processor_happy_pub.publish(Bool(data = self.image_is_fresh)))
 
         
         # models 
@@ -82,6 +86,15 @@ class YOLODetector(Node):
         # create detector services
         self.create_service(Trigger, Topics.ENABLE_ALARS_DETECTOR_SERVICE_TOPIC , self.handle_enable_detector)
         self.create_service(Trigger, Topics.DISABLE_ALARS_DETECTOR_SERVICE_TOPIC , self.handle_disable_detector)
+
+    @property
+    def image_is_fresh(self) -> bool:
+        if self.image is None:
+            return False
+        image_time = self.image.header.stamp.sec + self.image.header.stamp.nanosec * 1e-9
+        now = self.get_clock().now()
+        now_time = now.to_msg().sec + now.to_msg().nanosec * 1e-9
+        return now_time - image_time < 5
 
     
     def classify_callback(self):

@@ -24,6 +24,9 @@ string ESTIMATED_AUV_HEAD_OBB_TOPIC = 'alars_detection/auv_head_obb' # PolygonSt
 string ESTIMATED_MIDDLE_TOPIC = 'alars_detection/middle' # PointStamped
 string ESTIMATED_CNN_HOOK_ANCHOR_TOPIC = 'alars_detection/cnn' # PointStamped
 string ESTIMATED_CNN_AFTER_CATCH_FLY_DIRECTION_TOPIC = 'alars_detection/cnn_vec' # PointStamped
+# instead of captain subbing to image and so on
+# let the consumer of camera data tell it if the camera is good, detection can happen etc.
+string CAM_PROCESSOR_HAPPY_TOPIC = 'alars_detection/cam_processor_happy' # Bool
 
 # object detectors in 3D
 string ESTIMATED_HOOK_TOPIC = 'alars_detection/hook_est' #PoseStamped
