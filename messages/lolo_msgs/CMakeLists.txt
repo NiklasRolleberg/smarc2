@@ -25,6 +25,8 @@ rosidl_generate_interfaces(${PROJECT_NAME}
   "msg/VolzServo.msg"
   "msg/Topics.msg"
   "msg/Links.msg"
+  "msg/FuelCelldataFCU.msg"
+  "msg/FuelCelldataSYS.msg"
   DEPENDENCIES geometry_msgs sensor_msgs std_msgs
  )
 

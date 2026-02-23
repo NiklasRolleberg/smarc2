@@ -119,3 +119,8 @@ string USBL_CORRECTION_TOPIC = "sensors/usbl/correction"
 string USBL_RELATIVE_TOPIC = "sensors/usbl/relative_pose"
 
 string LEAK_TOPIC = "sensor/leak"
+
+
+# Fuel cell
+string FUELCELL_FCU_TOPIC = "fuelcell/FCU"
+string FUELCELL_SYS_TOPIC = "fuelcell/SYS"
