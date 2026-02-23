@@ -1,0 +1,12 @@
+/**/projection_node:
+  ros__parameters:
+    namespace: "M350"   
+
+    z_water: 0.0
+
+    topics:
+      camera_info: "gimbal_camera/camera/cam_info"
+      rviz:
+        camera_rays: "rviz/projection_rays"
+        projected_auv_head: "rviz/projected_auv_head"
+        projected_auv_obb: "rviz/projected_auv_obb"

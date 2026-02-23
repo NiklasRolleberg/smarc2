@@ -26,3 +26,6 @@ string WINCH_LINK = 'winch_link' # should be right-leg T junction
 
 # Used by hook_estimator
 string HOOK_LINK = 'hook_link'
+
+# Used by projection/filter
+string ESTIMATED_AUV = 'estimated_auv'

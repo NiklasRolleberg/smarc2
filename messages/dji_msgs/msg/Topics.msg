@@ -19,6 +19,8 @@ string FISHEYE_CAMERA_RAW_TOPIC = 'fisheye_camera/camera/image_raw' # Image
 # If this is not the case, FIX IT.
 string ESTIMATED_BUOY_TOPIC = 'alars_detection/buoy' # PointStamped, 
 string ESTIMATED_AUV_TOPIC = 'alars_detection/auv' # PointStamped
+string ESTIMATED_AUV_OBB_TOPIC = 'alars_detection/auv_obb' # PolygonStamped
+string ESTIMATED_AUV_HEAD_OBB_TOPIC = 'alars_detection/auv_head_obb' # PolygonStamped
 string ESTIMATED_MIDDLE_TOPIC = 'alars_detection/middle' # PointStamped
 string ESTIMATED_CNN_HOOK_ANCHOR_TOPIC = 'alars_detection/cnn' # PointStamped
 string ESTIMATED_CNN_AFTER_CATCH_FLY_DIRECTION_TOPIC = 'alars_detection/cnn_vec' # PointStamped
