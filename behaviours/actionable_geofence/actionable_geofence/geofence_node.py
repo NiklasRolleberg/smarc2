@@ -4,7 +4,7 @@ import rclpy
 
 from rclpy.node import Node
 from rclpy.executors import MultiThreadedExecutor
-from rclpy.time import Time
+from builtin_interfaces.msg import Time as TimeMsg
 
 from geographic_msgs.msg import GeoPoint, GeoPath, GeoPointStamped
 from geographic_msgs.srv import GetGeoPath
@@ -19,7 +19,7 @@ class GeofenceNode():
         self._node = node
 
         self._gps_subscriber = self._node.create_subscription(GeoPoint, SmarcTopics.POS_LATLON_TOPIC, self.pos_latlon_cb, 10)
-        self._geofence_ok_publisher = self._node.create_publisher(Time, SmarcTopics.GEOFENCE_OK_TOPIC, 10)
+        self._geofence_ok_publisher = self._node.create_publisher(TimeMsg, SmarcTopics.GEOFENCE_OK_TOPIC, 10)
 
         self._start_as = GentlerActionServer(
             node,
@@ -162,7 +162,7 @@ def is_point_inside_polygon(point: GeoPoint, vertices: list[GeoPoint]) -> bool:
 
 
 
-def __main__():
+def main():
     rclpy.init()
     node = Node("geofence_node")
     geofence_node = GeofenceNode(node)
@@ -174,3 +174,7 @@ def __main__():
         node.get_logger().info("Shutting down")
         node.destroy_node()
         rclpy.shutdown()
+
+
+if __name__ == "__main__":
+    main()
