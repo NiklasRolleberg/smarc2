@@ -17,7 +17,6 @@ from py_trees.trees import BehaviourTree
 
 from std_msgs.msg import String, Float32, Int32
 from geographic_msgs.msg import GeoPointStamped, GeoPoint
-from nav_msgs.msg import Odometry
 from geometry_msgs.msg import  PointStamped
 
 
@@ -38,7 +37,7 @@ class AlarsBT():
             
             self._node : Node = node
 
-            self.move_to_search_action = A_ActionClient(node, action_client_name='move_to', bt_action_name='move_to_search')
+            self.search_height_action = A_ActionClient(node, action_client_name='move_to', bt_action_name='search_height')
             self.search_action = A_ActionClient(node, 'alars_search')
 
             self.localize_auv_action = A_ActionClient(node, action_client_name='alars_localize', bt_action_name='localize_auv')
@@ -54,6 +53,7 @@ class AlarsBT():
 
             
             self._action_clients = [
+                self.search_height_action,
                 self.move_to_delivery_action,
                 self.search_action,
                 self.localize_auv_action,
@@ -134,7 +134,6 @@ class AlarsBT():
             )
 
             self._goal : dict = {
-                "initial_travel_alt": None,
                 "search_position": {
                     "latitude": None,
                     "longitude": None,
@@ -190,6 +189,7 @@ class AlarsBT():
         try:
             if not (goal_request.keys() >= self._goal.keys()):
                 self.log("Goal request missing required fields, rejecting.")
+                self.log(f"Missing fields: {self._goal.keys() - goal_request.keys()}")
                 return False
         except Exception as e:
             self.log(f"Exception while checking goal request fields: {e}")
@@ -239,18 +239,25 @@ class AlarsBT():
     
     @property
     def _status_str(self) -> str:
-        str = "\n\nStates:"
+        tip = self._bt.tip() if self._bt is not None else None
+        if tip is None:
+            tip_str = "-"
+        else:
+            tip_str = f"{tip.name}({tip.status})"
+        str = ""
+        str += f"Tip: {tip_str}"
+        str += "\nStates:"
         str += f"\n Delivered: {self.delivered}"
         if self._load_cell_weight is not None:
-            str += f"\n Captured AUV (load cell): {self.captured_auv}({self._load_cell_weight})"
+            str += f"\n Captured(kg): {self.captured_auv}({self._load_cell_weight})"
         elif self._load_cell_raw is not None:
-            str += f"\n Captured AUV (load cell raw): {self.captured_auv}({self._load_cell_raw})"
+            str += f"\n Captured(raw): {self.captured_auv}({self._load_cell_raw})"
         else:
-            str += f"\n Captured AUV: {self.captured_auv} (no load cell data)"
-        str += f"\n AUV in view: {self.auv_in_view}"
-        str += f"\n AUV geopoint known: {self._auv_geopoint_known}"
-        str += f"\n Buoy geopoint known: {self._buoy_geopoint_known}"
-        str += f"\n First search done: {self.first_search_done}"
+            str += f"\n Captured AUV: {self.captured_auv} (none)"
+        str += f"\n AUV visible: {self.auv_in_view}"
+        str += f"\n AUV GP: {self._auv_geopoint_known}"
+        str += f"\n Buoy GP: {self._buoy_geopoint_known}"
+        str += f"\n 1st search done: {self.first_search_done}"
         return str
 
 
@@ -312,7 +319,6 @@ class AlarsBT():
         except:
             self.log("Failed to set move_to delivery goal.")
             return False
-        
 
 
     
@@ -377,6 +383,25 @@ class AlarsBT():
         self._buoy_geopoint_stamped.position.altitude = 0.0
         self._buoy_geopoint_stamped.header.stamp = self._node.get_clock().now().to_msg()
         return True
+    
+    def _set_goal_search_height(self) -> bool:
+        if self._drone_geopoint is None:
+            self.log("Drone geopoint not known, cannot set search height.")
+            return False
+        try:
+            g = {"waypoint": {
+                    "latitude": self._drone_geopoint.latitude,
+                    "longitude": self._drone_geopoint.longitude,
+                    "altitude": float(self._goal["search_position"]["altitude"]),
+                    "tolerance": 1.0
+                    }   
+                }
+            self.search_height_action.set_goal(json.dumps(g))
+            self.log("Set search height goal.")
+            return True
+        except Exception as e:
+            self.log(f"Failed to set search height goal: {e}")
+            return False
     
     def _set_goal_search(self) -> bool:
         if self.first_search_done:
@@ -468,6 +493,8 @@ class AlarsBT():
         # if this is the first time searching, we use the given search position
         # in the goal, otherwise we search from where we are
         search = Sequence("SQ Search AUV", memory=True)
+        search.add_child(FuncToStatus("Set search height goal", self._set_goal_search_height))
+        search.add_child(self.search_height_action)
         search.add_child(FuncToStatus("Set search goal", self._set_goal_search))
         search.add_child(self.search_action)
         root.add_child(search)
@@ -476,7 +503,7 @@ class AlarsBT():
 
     
     def _give_feedback(self) -> str:
-        return "No feedback implemented yet."
+        return self._status_str
 
 
 def main():

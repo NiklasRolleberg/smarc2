@@ -44,6 +44,12 @@ if [[ -z "$HOME_ABOVE_WATER" ]]; then
     exit 1
 fi
 
+if ! [[ "$HOME_ABOVE_WATER" =~ ^[0-9]+\.[0-9]+$ ]]; then
+    echo "HOME_ABOVE_WATER must be a floating point number! Adding a decimal point for you..."
+    HOME_ABOVE_WATER="${HOME_ABOVE_WATER}.0"
+    echo "HOME_ABOVE_WATER is set to $HOME_ABOVE_WATER"
+fi
+
 # New variables for wasp_bt.launch and wasp_mqtt_agent.launch
 AGENT_TYPE=air
 PULSE_RATE=10.0

@@ -114,7 +114,7 @@ class RecoverAction():
         # |          |
         # B----O-----C 
         # A-B = dipping altitude
-        # B-C = forward distance
+        # B-C = forward distance, at forward altitude
         # C-D = raising altitude
         # O = where the object and buoy are, perpendicular to screen
         
