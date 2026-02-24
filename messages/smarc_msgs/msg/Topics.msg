@@ -17,6 +17,8 @@ string ALTITUDE_TOPIC = 'smarc/altitude' #float32
 string BT_STATUS_TOPIC = 'smarc/bt_status' #string
 
 
+string GET_GEOFENCE_SERVICE_TOPIC = 'smarc/srv/get_geofence` # geographic_msgs/srv/GetGeoPath
+string GEOFENCE_OK_TOPIC = 'smarc/geofence_ok' # builting_interfaces/msg/Time
 
 ################
 # WARA-PS Topics
