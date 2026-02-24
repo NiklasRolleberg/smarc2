@@ -16,28 +16,39 @@ from dji_msgs.msg import Links
 
 class ProjectionNode(Node):
     def __init__(self, name = 'projection_node'):
-        super().__init__(name,
-                allow_undeclared_parameters=True,
-                automatically_declare_parameters_from_overrides=True)
-        self.get_params()
-
-        # Publishers
-        self.pub_head = self.create_publisher(PoseStamped, 
-                                                            self.model_params["topics.rviz.projected_auv_head"], 10)
-        self.ray_pub = self.create_publisher(Marker,self.model_params["topics.rviz.camera_rays"], 10)   
-        self.pub_obb = self.create_publisher(PolygonStamped, 
-                                                            self.model_params["topics.rviz.projected_auv_obb"], 10)
-
-        # Subscribers
-        self.sub_cam = self.create_subscription(CameraInfo,
-                                                self.model_params["topics.camera_info"],self.cam_info_cb,10)
-        self.sub_obb = self.create_subscription(PolygonStamped,
-                                                self.model_params["topics.predicted_position.sam_head_obb"],self.project,10)
-
+        super().__init__(name)
         
-        self.map_frame = self.model_params["frames.map"]
-        self.cam_frame = self.model_params["frames.camera"]
-        self.z_water = self.model_params["z_water"]
+        self.declare_parameters(
+            namespace="",
+            parameters=[
+                ("z_water", 0.0),
+                ("topics.camera_info", "gimbal_camera/camera/cam_info"),
+                ("topics.predicted_position.sam_head_obb", Topics.ESTIMATED_AUV_HEAD_OBB_TOPIC),
+                ("topics.rviz.camera_rays", "rviz/projection_rays"),
+                ("topics.rviz.projected_auv_head", "rviz/projected_auv_head"),
+                ("topics.rviz.projected_auv_obb", "rviz/projected_auv_obb"),
+                ("frames.map", Links.MAP),                      
+                ("frames.camera", Links.GIMBAL_CAMERA_LINK),      
+                ("frames.estimated_auv", Links.ESTIMATED_AUV)])
+
+        # Parameters
+        self.z_water = float(self.get_parameter("z_water").value)  # water plane height in map frame
+        # Topics
+        self.topic_camera_info = self.get_parameter("topics.camera_info").value
+        self.topic_sam_head_obb = self.get_parameter("topics.predicted_position.sam_head_obb").value
+        self.topic_rays = self.get_parameter("topics.rviz.camera_rays").value
+        self.topic_head = self.get_parameter("topics.rviz.projected_auv_head").value
+        self.topic_obb = self.get_parameter("topics.rviz.projected_auv_obb").value
+
+        # Frames
+        map_frame = self.get_parameter("frames.map").value
+        cam_frame = self.get_parameter("frames.camera").value
+        estimated_auv_frame = self.get_parameter("frames.estimated_auv").value
+
+        namepsace = self.get_namespace().strip("/")
+        self.map_frame = f'{namepsace}/{map_frame}'
+        self.cam_frame = f'{namepsace}/{cam_frame}'
+        self.estimated_auv_frame = f'{namepsace}/{estimated_auv_frame}'
 
         # Cam parameters
         self.cam_info = False
@@ -50,6 +61,15 @@ class ProjectionNode(Node):
         self.tf_buffer = tf2_ros.Buffer()
         self.tf_listener = tf2_ros.TransformListener(self.tf_buffer, self)
         self.tf_broadcaster = tf2_ros.TransformBroadcaster(self)
+
+        # Publishers
+        self.pub_head = self.create_publisher(PoseStamped, self.topic_head, 10)
+        self.ray_pub  = self.create_publisher(Marker, self.topic_rays, 10)
+        self.pub_obb  = self.create_publisher(PolygonStamped, self.topic_obb, 10)
+
+        # Subscribers
+        self.sub_cam = self.create_subscription(CameraInfo, self.topic_camera_info, self.cam_info_cb, 10)
+        self.sub_obb = self.create_subscription(PolygonStamped, self.topic_sam_head_obb, self.project, 10)
 
     def cam_info_cb(self, msg: CameraInfo):
 
@@ -124,7 +144,7 @@ class ProjectionNode(Node):
         tf_msg = TransformStamped()
         tf_msg.header.stamp = stamp
         tf_msg.header.frame_id = self.cam_frame  
-        tf_msg.child_frame_id = self.model_params.get("frames.estimated_auv", self.cam_frame + "/estimated_auv")
+        tf_msg.child_frame_id = self.estimated_auv_frame
         tf_msg.transform.translation.x = position[0]
         tf_msg.transform.translation.y = position[1]
         tf_msg.transform.translation.z = position[2]
@@ -191,54 +211,6 @@ class ProjectionNode(Node):
             point32.z = pz
             obb_marker.polygon.points.append(point32)
         self.pub_obb.publish(obb_marker)"""
-    
-    def get_params(self):
-
-        # Overridden by yaml
-        self.declare_parameter("namespace", "M350")
-        self.declare_parameter("topics.camera_info", "gimbal_camera/camera/cam_info")
-        self.declare_parameter("topics.rviz.camera_rays", "rviz/projection_rays")
-        self.declare_parameter("topics.rviz.projected_auv_head", "rviz/projected_auv_head")
-        self.declare_parameter("topics.rviz.projected_auv_obb", "rviz/projected_auv_obb")
-        self.declare_parameter("z_water", 0.0)
- 
-        # expected types of parameters and create parameters dictionary 
-        namespace = "/" + self.get_parameter("namespace").value
-        expected_types = {
-            "z_water": (float, int),
-            "topics.camera_info": str,
-            "topics.predicted_position.sam_head_obb": str,
-
-            "topics.rviz.camera_rays": str,
-            "topics.rviz.projected_auv_head": str,
-            "topics.rviz.projected_auv_obb": str,
-
-            "frames.map": str,
-            "frames.camera": str,
-            "frames.estimated_auv": str,
-        }
-        frames_topics = {
-            "topics.camera_info": namespace + "/" + self.get_parameter("topics.camera_info").value,
-            "topics.predicted_position.sam_head_obb": namespace + "/" + Topics.ESTIMATED_AUV_HEAD_OBB_TOPIC,
-
-            "topics.rviz.camera_rays": namespace + "/" + self.get_parameter("topics.rviz.camera_rays").value,
-            "topics.rviz.projected_auv_head": namespace + "/" + self.get_parameter("topics.rviz.projected_auv_head").value,
-            "topics.rviz.projected_auv_obb": namespace + "/" + self.get_parameter("topics.rviz.projected_auv_obb").value,
-
-            "frames.map": namespace.removeprefix("/") + "/" + Links.MAP,
-            "frames.camera": namespace.removeprefix("/") + "/" + Links.GIMBAL_CAMERA_LINK,
-
-            "frames.estimated_auv": namespace.removeprefix("/") + "/" + Links.ESTIMATED_AUV,
-        }
-        self.model_params = {
-            k: self.get_parameter(k).value if not k.startswith("frames") and not k.startswith("topics")
-            else frames_topics[k]
-            for k in expected_types
-        }
-        # check parameter types
-        for key, expected in expected_types.items():
-            if not isinstance(self.model_params[key], expected):
-                raise TypeError(f"{key} should be {expected}, got {type(self.model_params[key]).__name__}")
 
 
 def main():

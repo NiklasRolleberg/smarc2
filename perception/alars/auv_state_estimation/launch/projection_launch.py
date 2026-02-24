@@ -11,8 +11,10 @@ def generate_launch_description():
         "namespace",
         default_value="M350"
     )
+    use_sim_time_arg = DeclareLaunchArgument('use_sim_time', default_value='false')
 
     namespace = LaunchConfiguration("namespace")
+    use_sim_time = LaunchConfiguration("use_sim_time")
 
     params_file = PathJoinSubstitution([
         FindPackageShare("auv_state_estimation"),
@@ -28,11 +30,12 @@ def generate_launch_description():
         parameters=[
             params_file,
             {"namespace": namespace},
-            {"use_sim_time": True}
+            {"use_sim_time": use_sim_time}
         ],
     )
 
     return LaunchDescription([
         namespace_arg,
+        use_sim_time_arg,
         projection_node
     ])
