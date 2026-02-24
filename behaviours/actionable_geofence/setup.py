@@ -21,6 +21,7 @@ setup(
     entry_points={
         'console_scripts': [
             'geofence_node = actionable_geofence.geofence_node:main',
+            'test_action = actionable_geofence.geofence_node:test_action',
         ],
     },
 )
