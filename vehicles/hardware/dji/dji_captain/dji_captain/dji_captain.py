@@ -122,7 +122,7 @@ class DjiCaptain():
         
         
         self.MOVE_TO_SETPOINT_MAX_AGE : float = 1.0 #Usually .5, set to 1 for sim testing seconds, how long we keep the move to setpoint before we consider it stale
-        self._MAX_SETPOINT_DISTANCE : float = 50.0 # meters, max distance from current position to accept a move to setpoint
+        self.MAX_SETPOINT_DISTANCE : float = 50.0 # meters, max distance from current position to accept a move to setpoint
         self.JOY_PUB_MAX = 1.5
         self.JOY_PUB_PERIOD = .1
 
@@ -293,7 +293,7 @@ class DjiCaptain():
         node.create_subscription(
             Joy,
             DjiTopics.CONTROLLER_INPUT_TOPIC,
-            self._controller_callback,
+            self._gamepad_callback,
             qos_profile=10)
 
         node.create_subscription(
@@ -397,7 +397,9 @@ class DjiCaptain():
             
         
 
-
+    ############
+    # Properties
+    ############
     @property
     def now_stamp(self):
         return self._node.get_clock().now().to_msg()
@@ -484,13 +486,14 @@ class DjiCaptain():
 
         return s
     
-    
+    ############
+    # Feedback
+    ############
     def log(self, msg: str):
         if msg == self._prev_log_msg:
             return
         self._node.get_logger().info(msg)
         self._prev_log_msg = msg
-
 
     def logerr(self, msg: str):
         self._node.get_logger().error(msg)
@@ -498,7 +501,18 @@ class DjiCaptain():
     def logwarn(self, msg: str):
         self._node.get_logger().warn(msg)
 
+    def _buzz(self, intensity: float = 1.0):
+        self._controller_vibrator_pub.publish(JoyFeedback(
+                type=JoyFeedback.TYPE_RUMBLE,
+                id=0,
+                intensity=intensity))
+        
+    def _speak(self, msg: str):
+        self._speak_pub.publish(String(data=msg))
 
+    ############
+    # DJI Services
+    ############
     def _take_control(self):
         def on_result(f):
             self.log(f"Take control service called, success: {f.result().success}, message: {f.result().message}")
@@ -535,6 +549,9 @@ class DjiCaptain():
         future.add_done_callback(on_result)
 
 
+    ############
+    # Tiny callbacks
+    ############
     def _geo_alt_cb(self, msg: Float32):
         self._geo_altitude = msg.data
 
@@ -547,11 +564,20 @@ class DjiCaptain():
     def _geofence_status_callback(self, msg: GeofenceStatusStamped):
         self._geofence_status = msg
 
+    def _battery_callback(self, msg: BatteryState):
+        self._battery_percent = msg.percentage*100
 
+
+
+
+
+    ############
+    # Motion commands
+    ############
     def _move_to_setpoint_callback(self, msg: PoseStamped):
         # check if the message even has anything in it
         if msg.pose.position.x == 0 and msg.pose.position.y == 0 and msg.pose.position.z == 0:
-            self.log(f"Move to setpoint message is all zeros, ignoring it.\nSetpoint msg:\n{msg}")
+            self.logwarn(f"Move to setpoint message is all zeros, ignoring it.\nSetpoint msg:\n{msg}")
             self._move_to_setpoint = None
             return
         
@@ -561,7 +587,7 @@ class DjiCaptain():
         if msg_time > self.now_time + 2.0:
             s = f"Move to setpoint message time is >2s in the future, ignoring it. Probably because the publisher and captain have different time sources."
             s += f"\nCurrent time: {self.now_time}\nSetpoint Time: {msg_time}"
-            self.log(s)
+            self.logwarn(s)
             self._move_to_setpoint = None
             return
         
@@ -569,7 +595,7 @@ class DjiCaptain():
         if self.now_time - msg_time > self.MOVE_TO_SETPOINT_MAX_AGE:
             s = f"Move to setpoint message is older than {self.MOVE_TO_SETPOINT_MAX_AGE}s, ignoring it."
             s += f"\nCurrent time: {self.now_time}\nSetpoint Time: {msg_time}"
-            self.log(s)
+            self.logwarn(s)
             self._move_to_setpoint = None
             return
 
@@ -581,7 +607,7 @@ class DjiCaptain():
                 Time())
             self._move_to_setpoint = do_transform_pose_stamped(msg, transform)
         except Exception as e:
-            self.log(f"Failed to transform move to setpoint from {msg.header.frame_id} to {self.BASE_FLAT_FRAME}, ignoring it. Error: {e}")
+            self.logwarn(f"Failed to transform move to setpoint from {msg.header.frame_id} to {self.BASE_FLAT_FRAME}, ignoring it. Error: {e}")
             self._move_to_setpoint = None
             return
         
@@ -591,14 +617,6 @@ class DjiCaptain():
             self.log("Joy timer started to move with joy.")
 
 
-    def _buzz(self, intensity: float = 1.0):
-        self._controller_vibrator_pub.publish(JoyFeedback(
-                type=JoyFeedback.TYPE_RUMBLE,
-                id=0,
-                intensity=intensity))
-        
-    def _speak(self, msg: str):
-        self._speak_pub.publish(String(data=msg))
 
     def _pub_flu_vel_joy(self, joy: list[float]):
         if abs(joy[0]) < 1e-5 and abs(joy[1]) < 1e-5 and abs(joy[2]) < 1e-5:
@@ -610,8 +628,100 @@ class DjiCaptain():
         joy_msg.axes = joy
         self._FLU_vel_joy_pub.publish(joy_msg)
         self._last_pubbed_fluvel_joy = joy_msg
+        
+        
+        
+    def _cancel_joy_timer(self):
+        self._move_to_setpoint = None
+        self._prev_joy_output = None
+        self.log("Setpoint discarded.")
+        if self._joy_timer is not None:
+            self._joy_timer.cancel()
+            self._joy_timer = None
+            self.log("Joy timer cancelled.")
 
-    def _controller_callback(self, msg: Joy):
+
+    def _move_towards_setpoint_FLUvel(self):
+        # assumes move_to_setpoint is in BASE_FLAT_FRAME already
+
+        if self._move_to_setpoint is None or self.setpoint_received_at is None:
+            self.log("No move to setpoint set, cannot move with joy.")
+            self._cancel_joy_timer()
+            return
+
+        if self.now_time - self.setpoint_received_at > self.MOVE_TO_SETPOINT_MAX_AGE:
+            self.log(f"Move to setpoint message is older than {self.MOVE_TO_SETPOINT_MAX_AGE}s, cancelling joy timer.")
+            self._cancel_joy_timer()
+            return
+        
+        if not self._got_control:
+            self.log("Not got control, cannot move with joy.")
+            self._cancel_joy_timer()
+            return
+        
+        if(self._velocity_ground == None):
+            self.log(f"Ground Velocity not defined, cancelling Joy")
+            self._cancel_joy_timer()
+            return
+        
+        
+
+        e_forw = self._move_to_setpoint.pose.position.x # error about each axis
+        e_left = self._move_to_setpoint.pose.position.y
+        e_updn = self._move_to_setpoint.pose.position.z # we like mirrors around a point
+
+        if (abs(e_forw) < 0.1 and abs(e_left) < 0.1 and abs(e_updn) < 0.1):
+            self.log("Reached setpoint within 10cm on all axes, cancelling joy timer.")
+            self._cancel_joy_timer()
+            return
+
+        if np.linalg.norm([e_forw, e_left]) > self.MAX_SETPOINT_DISTANCE:
+            self.log(f"Setpoint is more than {self.MAX_SETPOINT_DISTANCE}m away horizontally, cancelling joy timer.")
+            self._cancel_joy_timer()
+            return
+        
+        if abs(e_updn) > self.MAX_SETPOINT_DISTANCE:
+            self.log(f"Setpoint is more than {self.MAX_SETPOINT_DISTANCE}m away vertically, cancelling joy timer.")
+            self._cancel_joy_timer()
+            return
+
+
+        joy_forw = self._k_pose * e_forw
+        joy_left = self._k_pose * e_left
+        joy_updn = self._k_pose * e_updn
+
+        if (self._prev_joy_output is None):
+            max_speed = 0.1
+            self._prev_joy_output = np.array([0.0, 0.0, 0.0])
+            self.log(f"No previous joy output using low initial max speed of {max_speed} m/s for smooth start.")
+        else:
+            max_speed = self.JOY_PUB_MAX
+
+        # limit the velocity to the maximum joy value
+        joy_err = np.array([joy_forw, joy_left, joy_updn])
+        joy_err = self._normalize_max_speed(joy_err, max_speed)
+
+        joy_net = (1 - self._r_sigma) * joy_err + self._r_sigma * self._prev_joy_output
+        joy_net = self._normalize_max_speed(joy_net, max_speed)
+
+        #self.log(f"\njoy_err: {joy_err}\njoy_pre: {self._prev_joy_output}\njoy_net: {joy_net}")
+
+        J = [joy_net[0], joy_net[1], joy_net[2], 0.0]
+        self._pub_flu_vel_joy(J)
+        self._prev_joy_output = np.array([joy_net[0], joy_net[1], joy_net[2]])
+
+
+    def _normalize_max_speed(self, joy_net, max_speed):
+        joy_norm = np.linalg.norm(joy_net)
+        if joy_norm > max_speed:
+            joy_net = joy_net / joy_norm * max_speed
+        return joy_net
+    
+
+    ###########
+    # External human hands
+    ###########
+    def _gamepad_callback(self, msg: Joy):
         if msg.header.stamp.sec == 0 and msg.header.stamp.nanosec == 0:
             # malformed...
             return
@@ -693,104 +803,14 @@ class DjiCaptain():
             joy_msg.header.stamp = self.now_stamp
             # DJI expects Axes: [forward, left, up, yawrate]
             self._pub_flu_vel_joy([RV, RH, LV, LH])
-        
-        
-        
-    def _cancel_joy_timer(self):
-        self._move_to_setpoint = None
-        self._prev_joy_output = None
-        self.log("Setpoint discarded.")
-        if self._joy_timer is not None:
-            self._joy_timer.cancel()
-            self._joy_timer = None
-            self.log("Joy timer cancelled.")
 
-
-    def _move_towards_setpoint_FLUvel(self):
-        # assumes move_to_setpoint is in BASE_FLAT_FRAME already
-
-        if self._move_to_setpoint is None or self.setpoint_received_at is None:
-            self.log("No move to setpoint set, cannot move with joy.")
-            self._cancel_joy_timer()
-            return
-
-        if self.now_time - self.setpoint_received_at > self.MOVE_TO_SETPOINT_MAX_AGE:
-            self.log(f"Move to setpoint message is older than {self.MOVE_TO_SETPOINT_MAX_AGE}s, cancelling joy timer.")
-            self._cancel_joy_timer()
-            return
-        
-        if not self._got_control:
-            self.log("Not got control, cannot move with joy.")
-            self._cancel_joy_timer()
-            return
-        
-        if(self._velocity_ground == None):
-            self.log(f"Ground Velocity not defined, cancelling Joy")
-            self._cancel_joy_timer()
-            return
-        
-        
-
-        e_forw = self._move_to_setpoint.pose.position.x # error about each axis
-        e_left = self._move_to_setpoint.pose.position.y
-        e_updn = self._move_to_setpoint.pose.position.z # we like mirrors around a point
-
-        if (abs(e_forw) < 0.1 and abs(e_left) < 0.1 and abs(e_updn) < 0.1):
-            self.log("Reached setpoint within 10cm on all axes, cancelling joy timer.")
-            self._cancel_joy_timer()
-            return
-
-        if np.linalg.norm([e_forw, e_left]) > self._MAX_SETPOINT_DISTANCE:
-            self.log(f"Setpoint is more than {self._MAX_SETPOINT_DISTANCE}m away horizontally, cancelling joy timer.")
-            self._cancel_joy_timer()
-            return
-        
-        if abs(e_updn) > self._MAX_SETPOINT_DISTANCE:
-            self.log(f"Setpoint is more than {self._MAX_SETPOINT_DISTANCE}m away vertically, cancelling joy timer.")
-            self._cancel_joy_timer()
-            return
-
-
-        joy_forw = self._k_pose * e_forw
-        joy_left = self._k_pose * e_left
-        joy_updn = self._k_pose * e_updn
-
-        if (self._prev_joy_output is None):
-            max_speed = 0.1
-            self._prev_joy_output = np.array([0.0, 0.0, 0.0])
-            self.log(f"No previous joy output using low initial max speed of {max_speed} m/s for smooth start.")
-        else:
-            max_speed = self.JOY_PUB_MAX
-
-        # limit the velocity to the maximum joy value
-        joy_err = np.array([joy_forw, joy_left, joy_updn])
-        joy_err = self._normalize_max_speed(joy_err, max_speed)
-
-        joy_net = (1 - self._r_sigma) * joy_err + self._r_sigma * self._prev_joy_output
-        joy_net = self._normalize_max_speed(joy_net, max_speed)
-
-        #self.log(f"\njoy_err: {joy_err}\njoy_pre: {self._prev_joy_output}\njoy_net: {joy_net}")
-
-        J = [joy_net[0], joy_net[1], joy_net[2], 0.0]
-        self._pub_flu_vel_joy(J)
-        self._prev_joy_output = np.array([joy_net[0], joy_net[1], joy_net[2]])
-
-
-    def _normalize_max_speed(self, joy_net, max_speed):
-        joy_norm = np.linalg.norm(joy_net)
-        if joy_norm > max_speed:
-            joy_net = joy_net / joy_norm * max_speed
-        return joy_net
-    
-
-    
 
     def _dji_rc_cb(self, msg: Joy):
         # if RC is touched by user, we give up control
         if not self._got_control: return
 
         if msg.axes[0] != 0.0 or msg.axes[1] != 0.0 or msg.axes[2] != 0.0 or msg.axes[3] != 0.0:
-            self.log("RC touched, giving up control.")
+            self.logwarn("RC touched, giving up control.")
             self._got_control = False # even if the service call fails, we assume we lost control!
             self._release_control_srv.call_async(Trigger.Request()).add_done_callback(
                 lambda future: self.log(f"Release control service called, success: {future.result().success}, message: {future.result().message}")
@@ -799,6 +819,9 @@ class DjiCaptain():
         # self.log(f"RC buttons: {msg.buttons}")
 
 
+    ############
+    # State Callbacks
+    ############
     def _velocity_ground_callback(self, msg: Vector3Stamped):
         if self._velocity_ground is None:
             self._velocity_ground = Vector3Stamped()
@@ -846,12 +869,6 @@ class DjiCaptain():
             self._speak("Taken control.")
             self._got_control = True
         
-
-
-    def _battery_callback(self, msg: BatteryState):
-        self._battery_percent = msg.percentage*100
-            
-
     def _position_fused_callback(self, msg: PositionFused):
         if self._home_point_in_utm is None:
             self.log("Home point not set, ignoring position fused until it is...")
@@ -959,7 +976,7 @@ class DjiCaptain():
 
     def _rtk_cb(self, msg: NavSatFix):
         if self._geo_altitude is None or self._home_point_in_utm is None or self._home_geo_altitude is None:
-            self.log(f"Geo Altitude({self._geo_altitude is not None}) or Home({self._home_point_in_utm is not None}) or home geo altitude({self._home_geo_altitude is not None}) not set, cannot process GPS message.")
+            self.log(f"Geo Altitude({self._geo_altitude is not None}) or Home({self._home_point_in_utm is not None}) or home geo altitude({self._home_geo_altitude is not None}) not set, cannot process RTK message yet.")
             return
         
         if self._rtk_point_in_home is None:
@@ -976,7 +993,11 @@ class DjiCaptain():
         self._rtk_point_in_home.point.z = self._geo_altitude - self._home_geo_altitude
         self._rtk_point_in_home.header.stamp = self.now_stamp
 
-        
+    
+
+    ############
+    # Health and TF publishing
+    ############
     def _publish_vehicle_health(self):
         self._vehicle_health.data = SmarcTopics.VEHICLE_HEALTH_WAITING
 
