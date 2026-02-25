@@ -121,8 +121,12 @@ class DjiCaptain():
         self._FLU_vel_joy_pub = node.create_publisher(Joy, PSDKTopics.FLUvel_JOY.value, qos_profile=10)
         
         
-        self.MOVE_TO_SETPOINT_MAX_AGE : float = 1.0 #Usually .5, set to 1 for sim testing seconds, how long we keep the move to setpoint before we consider it stale
+        self.MOVE_TO_SETPOINT_MAX_AGE : float = 1.0 #How long we keep the move to setpoint before we consider it stale
         self.MAX_SETPOINT_DISTANCE : float = 50.0 # meters, max distance from current position to accept a move to setpoint
+        # if new setpoint time is close to current setpoint time
+        # we check if new setpoint is similar enough to current setpoint
+        self.CHECK_SETPOINT_SIMILARITY_TIME_THRESHOLD : float = 0.3 
+        self.CHECK_SETPOINT_SIMILARITY_COSINE_THRESHOLD : float = math.cos(math.radians(90))
         self.JOY_PUB_MAX = 1.5
         self.JOY_PUB_PERIOD = .1
 
@@ -605,13 +609,40 @@ class DjiCaptain():
                 self.BASE_FLAT_FRAME,
                 msg.header.frame_id,
                 Time())
-            self._move_to_setpoint = do_transform_pose_stamped(msg, transform)
+            new_setpoint = do_transform_pose_stamped(msg, transform)
         except Exception as e:
             self.logwarn(f"Failed to transform move to setpoint from {msg.header.frame_id} to {self.BASE_FLAT_FRAME}, ignoring it. Error: {e}")
             self._move_to_setpoint = None
             return
         
+        # check if the new setpoint is roughly in the same direction as the current setpoint
+        # so we can prevent quick back-and-forth if sth is publishing setpoints in a loop...
+        # at this point, both setpoints are in base_flat_frame
+        if self._move_to_setpoint is not None:
+            # only relevant to check if the points are coming in at a high rate
+            # if there is time between, we can turn around np
+            # if there is very little time between, we dont want to turn around at 10hz or sth dumb
+            time_between_setpoints = self.now_time - self.setpoint_received_at if self.setpoint_received_at is not None else None
+            if time_between_setpoints is not None and time_between_setpoints < self.CHECK_SETPOINT_SIMILARITY_TIME_THRESHOLD:
+                old_vec = np.array([
+                    self._move_to_setpoint.pose.position.x,
+                    self._move_to_setpoint.pose.position.y,
+                    self._move_to_setpoint.pose.position.z])
+                new_vec = np.array([
+                    new_setpoint.pose.position.x,
+                    new_setpoint.pose.position.y,
+                    new_setpoint.pose.position.z])
+                old_norm = np.linalg.norm(old_vec)
+                new_norm = np.linalg.norm(new_vec)
+                if old_norm > 0 and new_norm > 0:
+                    cos_angle = np.dot(old_vec, new_vec) / (old_norm * new_norm)
+                    if cos_angle < self.CHECK_SETPOINT_SIMILARITY_COSINE_THRESHOLD:
+                        self.logwarn(f"New setpoint is too soon, too different. Ignoring. dT: {time_between_setpoints:.2f}s, Cosine of angle: {cos_angle:.2f}")
+                        return
+
         
+        # finally, good point, do it
+        self._move_to_setpoint = new_setpoint
         if self._joy_timer is None:
             self._joy_timer = self._node.create_timer(self.JOY_PUB_PERIOD, self._move_towards_setpoint_FLUvel)
             self.log("Joy timer started to move with joy.")
