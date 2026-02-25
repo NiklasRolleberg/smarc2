@@ -1,5 +1,6 @@
 #!/usr/bin/python3
 
+from enum import Enum
 import rclpy
 
 from rclpy.node import Node
@@ -11,16 +12,24 @@ from geographic_msgs.msg import GeoPoint, GeoPath, GeoPointStamped
 from geographic_msgs.srv import GetGeoPath
 
 from smarc_msgs.msg import Topics as SmarcTopics
+from smarc_msgs.msg import GeofenceStatusStamped
 from smarc_action_base.gentler_action_server import GentlerActionServer
 
 
+class PointInPolyResults(Enum):
+    INSIDE = 0
+    OUTSIDE_LATLON = 1
+    OUTSIDE_CEILING = 2
+    OUTSIDE_FLOOR = 3
+    INVALID = 4
 
 class GeofenceNode():
     def __init__(self, node: Node):
         self._node = node
 
-        self._gps_subscriber = self._node.create_subscription(GeoPoint, SmarcTopics.POS_LATLON_TOPIC, self.pos_latlon_cb, 10)
-        self._geofence_ok_publisher = self._node.create_publisher(TimeMsg, SmarcTopics.GEOFENCE_OK_TOPIC, 10)
+        self._geopoint_sub = self._node.create_subscription(GeoPoint, SmarcTopics.POS_LATLON_TOPIC, self.pos_latlon_cb, 10)
+        self._geofence_status_pub = self._node.create_publisher(GeofenceStatusStamped, SmarcTopics.GEOFENCE_STATUS_TOPIC, 10)
+        self._geofence_msg = GeofenceStatusStamped()
 
         self._start_as = GentlerActionServer(
             node,
@@ -69,27 +78,47 @@ class GeofenceNode():
 
 
     def publish_geofence_ok(self):
+        self._geofence_msg.time = self._node.get_clock().now().to_msg()
+
         if self._robot_position is None or self._robot_position_time is None: 
             self._node.get_logger().info("No robot position received yet...")
+            self._geofence_msg.status = GeofenceStatusStamped.STATUS_INACTIVE
+            self._geofence_status_pub.publish(self._geofence_msg)
             return
         
         if self._geofence_vertices is None or len(self._geofence_vertices) < 3: 
             self._node.get_logger().info("No valid geofence defined yet...")
+            self._geofence_msg.status = GeofenceStatusStamped.STATUS_INACTIVE
+            self._geofence_status_pub.publish(self._geofence_msg)
             return
 
         if self._robot_position_time + self._max_position_duration < self._node.get_clock().now():
             self._node.get_logger().info(f"Robot position is older than {self._max_position_age}s, not publishing geofence_ok")
+            self._geofence_msg.status = GeofenceStatusStamped.STATUS_INACTIVE
+            self._geofence_status_pub.publish(self._geofence_msg)
             return
 
-        if self._point_in_fence(self._robot_position):
-            geofence_ok_msg = self._robot_position_time.to_msg()
-            self._node.get_logger().info(f"Robot is INSIDE t={self._robot_position_time.seconds_nanoseconds()[0]}s")
+        fence_status = self._point_in_fence(self._robot_position)
+        if fence_status == PointInPolyResults.INSIDE:
+            self._node.get_logger().info(f"Robot is INSIDE t={self._robot_position_time.seconds_nanoseconds()[0]:.2f}s")
+            self._geofence_msg.status = GeofenceStatusStamped.STATUS_INSIDE
+        elif fence_status == PointInPolyResults.OUTSIDE_LATLON:
+            self._node.get_logger().warn(f"Robot is OUTSIDE(latlon) t={self._robot_position_time.seconds_nanoseconds()[0]:.2f}s")
+            self._geofence_msg.status = GeofenceStatusStamped.STATUS_OUTSIDE
+            self._geofence_msg.outside_reason = GeofenceStatusStamped.REASON_FENCE
+        elif fence_status == PointInPolyResults.OUTSIDE_CEILING:
+            self._node.get_logger().warn(f"Robot is OUTSIDE(ceiling) t={self._robot_position_time.seconds_nanoseconds()[0]:.2f}s")
+            self._geofence_msg.status = GeofenceStatusStamped.STATUS_OUTSIDE
+            self._geofence_msg.outside_reason = GeofenceStatusStamped.REASON_CEILING
+        elif fence_status == PointInPolyResults.OUTSIDE_FLOOR:
+            self._node.get_logger().warn(f"Robot is OUTSIDE(floor) t={self._robot_position_time.seconds_nanoseconds()[0]:.2f}s")
+            self._geofence_msg.status = GeofenceStatusStamped.STATUS_OUTSIDE
+            self._geofence_msg.outside_reason = GeofenceStatusStamped.REASON_FLOOR
         else:
-            self._node.get_logger().warn(f"Robot is OUTSIDE t={self._robot_position_time.seconds_nanoseconds()[0]}s")
-            geofence_ok_msg = TimeMsg(sec=-1, nanosec=0)
+            self._node.get_logger().error(f"Invalid geofence status for robot position t={self._robot_position_time.seconds_nanoseconds()[0]:.2f}s")
+            self._geofence_msg.status = GeofenceStatusStamped.STATUS_INACTIVE
         
-        self._geofence_ok_publisher.publish(geofence_ok_msg)
-
+        self._geofence_status_pub.publish(self._geofence_msg)
 
 
     def _on_goal_received_start(self, goal_request: dict) -> bool:
@@ -118,22 +147,24 @@ class GeofenceNode():
         self._node.get_logger().info("Geofence cleared")
         return True
     
-    def _point_in_fence(self, point: GeoPoint) -> bool:
-        if self._geofence_vertices is None: return False
-        if len(self._geofence_vertices) < 3: return False
+    def _point_in_fence(self, point: GeoPoint) -> PointInPolyResults:
+        if self._geofence_vertices is None: return PointInPolyResults.INVALID
+        if len(self._geofence_vertices) < 3: return PointInPolyResults.INVALID
         if self._ceiling_altitude is not None:
-            if point.altitude > self._ceiling_altitude: return False
+            if point.altitude > self._ceiling_altitude: return PointInPolyResults.OUTSIDE_CEILING
         if self._floor_altitude is not None:
-            if point.altitude < self._floor_altitude: return False
+            if point.altitude < self._floor_altitude: return PointInPolyResults.OUTSIDE_FLOOR
 
-        return is_point_inside_polygon(point, self._geofence_vertices)
+        in_poly = is_point_inside_polygon(point, self._geofence_vertices)
+        if not in_poly: return PointInPolyResults.OUTSIDE_LATLON
+        return PointInPolyResults.INSIDE
     
 
     def _get_fence_srv_cb(self, request: GetGeoPath.Request, response: GetGeoPath.Response):
-        if self._geofence_vertices is None:
+        if self._geofence_vertices is None or len(self._geofence_vertices) < 3:
             response.success = False
-            response.status = "No geofence defined"
-            self._node.get_logger().info("Get geofence request received but no geofence defined, returning False")
+            response.status = "No geofence defined or geofence has less than 3 vertices"
+            self._node.get_logger().info("Get geofence request received but no geofence defined or geofence has less than 3 vertices, returning False")
             return response
         
         # return the fence either way
@@ -146,19 +177,19 @@ class GeofenceNode():
         valid_end = not (request.goal.altitude == 0.0 and request.goal.latitude == 0.0 and request.goal.longitude == 0.0)
 
         if valid_start and not valid_end:
-            response.success = self._point_in_fence(request.start)
+            response.success = self._point_in_fence(request.start) == PointInPolyResults.INSIDE
             response.status = "Start point is valid" if response.success else "Start point is outside geofence"
             self._node.get_logger().info(response.status)
             return response
         
         if valid_end and not valid_start:
-            response.success = self._point_in_fence(request.goal)
+            response.success = self._point_in_fence(request.goal) == PointInPolyResults.INSIDE
             response.status = "Goal point is valid" if response.success else "Goal point is outside geofence"
             self._node.get_logger().info(response.status)
             return response
         
         if valid_end and valid_start:
-            response.success = self._point_in_fence(request.start) and self._point_in_fence(request.goal)
+            response.success = self._point_in_fence(request.start) == PointInPolyResults.INSIDE and self._point_in_fence(request.goal) == PointInPolyResults.INSIDE
             response.status = "Start and goal points are valid" if response.success else "Start and/or goal point is outside geofence"
             self._node.get_logger().info(response.status)
             return response
