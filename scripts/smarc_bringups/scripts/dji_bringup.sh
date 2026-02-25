@@ -65,6 +65,9 @@ tmux -2 new-session -d -s $SESSION
 # C-b <NUM> will change to the tab.
 # default window is 0
 
+############
+# 0 Captains
+############
 tmux new-window -t $SESSION:0 -n 'Captains'
 tmux rename-window "Captains"
 # only launch if not the simulator
@@ -103,7 +106,9 @@ else
 fi
 
 
-# action servers
+############
+# 1 Action Servers
+############
 tmux new-window -t $SESSION:1 -n 'ALARSActions'
 tmux rename-window "ALARSActions"
 tmux select-window -t $SESSION:1
@@ -144,6 +149,9 @@ tmux send-keys "ros2 run alars alars_move_to_action_server --ros-args -r __ns:=/
 -p use_sim_time:=$USE_SIM_TIME" C-m
 
 
+############
+# 2 Wasp BT
+############
 # bt
 tmux new-window -t $SESSION:2 -n 'BT'
 tmux rename-window "BT"
@@ -156,6 +164,9 @@ use_sim_time:=$USE_SIM_TIME \
 bt_health_timeout:=5.0" C-m
 
 
+############
+# 3 Alars BT and status
+############
 # alars-bt
 LOADED_WEIGHT_KG=1.8 # real empty sam + hook + rope weight is 1.78kg, just the hook and rope is 0.79kg
 tmux new-window -t $SESSION:3 -n 'alars-bt'
@@ -173,6 +184,9 @@ tmux select-pane -t $SESSION:3.1
 tmux send-keys "ros2 topic echo ${ROBOT_NAME}/alars_bt/status std_msgs/msg/String --field data" C-m
 
 
+############
+# 4 Camera and detection
+############
 # camera and detection node
 tmux new-window -t $SESSION:4 -n 'Camera'
 tmux rename-window "Cam"
@@ -180,16 +194,6 @@ tmux select-window -t $SESSION:4
 tmux split-window -h -t $SESSION:4.0
 
 tmux select-pane -t $SESSION:4.0
-# Li-Fan's HSV based detector
-# AUV_DETECTOR_CONFIG_FILENAME=auv_detector_field_calibration.yaml
-# if [[ $USE_SIM_TIME = "True" ]]; then
-# AUV_DETECTOR_CONFIG_FILENAME=auv_detector_sim_calibration.yaml
-# fi
-# AUV_DETECTOR_CONFIG_FILE=$(ros2 pkg prefix auv_detector --share)/config/$AUV_DETECTOR_CONFIG_FILENAME
-# tmux send-keys "ros2 run auv_detector auv_buoy_detector --ros-args \
-# -r __ns:=/$ROBOT_NAME -p use_sim_time:=$USE_SIM_TIME \
-# --params-file $AUV_DETECTOR_CONFIG_FILE" C-m
-
 # Fransisco's YOLO detector
 YOLO_DEVICE=0
 if [[ $USE_SIM_TIME = "True" ]]; then
@@ -199,7 +203,6 @@ tmux send-keys "ros2 launch auv_yolo_detector yolo_detector_launch.py \
 namespace:=$ROBOT_NAME \
 device:=$YOLO_DEVICE \
 use_sim_time:=$USE_SIM_TIME" C-m
-
 
 # the cam driver is needed just for the real thing
 # for basic usb webcam
@@ -229,28 +232,18 @@ if [[ $USE_SIM_TIME = "False" ]]; then
     -r __ns:=/$ROBOT_NAME/fisheye_camera" C-m
 fi
 
+############
+# 5 AUX Nodes like geofence etc.
+############
+tmux new-window -t $SESSION:5 -n 'Aux'
+tmux rename-window "Aux"
+tmux select-window -t $SESSION:5
+tmux send-keys "ros2 run actionable_geofence geofence_node --ros-args -r __ns:=/$ROBOT_NAME -p use_sim_time:=$USE_SIM_TIME" C-m
 
-# mqtt bridge
-tmux new-window -t $SESSION:8 -n 'MQTTBridge'
-tmux rename-window "MQTTBridge"
-tmux select-window -t $SESSION:8
-tmux send-keys "ros2 launch str_json_mqtt_bridge waraps_bridge.launch robot_name:=$ROBOT_NAME domain:=air realsim:=$REALSIM broker_addr:=$MQTT_ADDR broker_port:=$MQTT_PORT context:=alars" C-m
 
-
-# only needed when running the sim
-if [[ $USE_SIM_TIME = "True" ]]; then
-    # ROS2Bridge
-    tmux new-window -t $SESSION:9 -n 'SimConn'
-    tmux select-window -t $SESSION:9
-    tmux send-keys "ros2 run ros_tcp_endpoint default_server_endpoint --ros-args -p tcp_ip:=localhost -p tcp_port:=10000" C-m
-    if [[ $ON_LINUX = "True" ]]; then
-        # mqtt broker
-        tmux split-window -h -t $SESSION:9.0
-        tmux select-pane -t $SESSION:9.1
-        tmux send-keys "mosquitto -p $MQTT_PORT" C-m
-    fi
-fi
-
+############
+# 7 Drivers
+############
 if [[ $USE_SIM_TIME = "False" ]]; then
     # new window for load_cell_driver
     tmux new-window -t $SESSION:7 -n 'LoadCell'
@@ -258,6 +251,31 @@ if [[ $USE_SIM_TIME = "False" ]]; then
     tmux select-window -t $SESSION:7
     tmux send-keys "ros2 run nau7802_ros2_driver nau7802_ros2_driver --ros-args -r __ns:=/$ROBOT_NAME" C-m
 fi
+
+
+############
+# 8 mqtt bridge, ros_tcp_endpoint, and mosquitto broker as needed
+############
+tmux new-window -t $SESSION:8 -n 'Bridges'
+tmux rename-window "Bridges"
+tmux select-window -t $SESSION:8
+tmux send-keys "ros2 launch str_json_mqtt_bridge waraps_bridge.launch robot_name:=$ROBOT_NAME domain:=air realsim:=$REALSIM broker_addr:=$MQTT_ADDR broker_port:=$MQTT_PORT context:=alars" C-m
+
+# only needed when running the sim
+if [[ $USE_SIM_TIME = "True" ]]; then
+    # ROS2Bridge
+    tmux select-window -t $SESSION:8
+    tmux split-window -h -t $SESSION:8.0
+    tmux select-pane -t $SESSION:8.1
+    tmux send-keys "ros2 run ros_tcp_endpoint default_server_endpoint --ros-args -p tcp_ip:=localhost -p tcp_port:=10000" C-m
+    if [[ $ON_LINUX = "True" ]]; then
+        # mqtt broker
+        tmux split-window -h -t $SESSION:8.1
+        tmux select-pane -t $SESSION:8.2
+        tmux send-keys "mosquitto -p $MQTT_PORT" C-m
+    fi
+fi
+
 
 # Set default window to either the captain 
 # or the psdk node depending on real/sim
