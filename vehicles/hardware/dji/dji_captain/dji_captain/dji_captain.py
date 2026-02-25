@@ -22,6 +22,7 @@ from tf2_msgs.msg import TFMessage
 
 from psdk_interfaces.msg import PositionFused, ControlMode, EscData, EscStatusIndividual
 from smarc_msgs.msg import Topics as SmarcTopics
+from smarc_msgs.msg import GeofenceStatusStamped
 from dji_msgs.msg import Links as DjiLinks
 from dji_msgs.msg import Topics as DjiTopics
 
@@ -115,8 +116,8 @@ class DjiCaptain():
 
         
 
-        self._move_to_setpoint : PoseStamped | None = None
-        self._joy_timer : None | Timer = None
+        self._move_to_setpoint : Optional[PoseStamped] = None
+        self._joy_timer : Optional[Timer] = None
         self._FLU_vel_joy_pub = node.create_publisher(Joy, PSDKTopics.FLUvel_JOY.value, qos_profile=10)
         
         
@@ -125,7 +126,7 @@ class DjiCaptain():
         self.JOY_PUB_MAX = 1.5
         self.JOY_PUB_PERIOD = .1
 
-        self._prev_joy_output : None | np.ndarray = None
+        self._prev_joy_output : Optional[np.ndarray] = None
 
         self.READY_BATTERY_PERCENTAGE = 25
         self.READY_HEIGHT_ABOVE_GROUND = 2
@@ -145,20 +146,20 @@ class DjiCaptain():
         self.GIMBAL_FRAME = self._TF_NS + DjiLinks.GIMBAL_CAMERA_LINK
         self.WINCH_FRAME = self._TF_NS + DjiLinks.WINCH_LINK
 
-        self._utm_zb_label : str | None = None
+        self._utm_zb_label : Optional[str] = None
 
-        self._base_pose_in_home : PoseStamped | None = None
-        self._base_pose_flat_in_home : PoseStamped | None = None
-        self._home_point_in_utm : PointStamped | None = None
+        self._base_pose_in_home : Optional[PoseStamped] = None
+        self._base_pose_flat_in_home : Optional[PoseStamped] = None
+        self._home_point_in_utm : Optional[PointStamped] = None
         self._home_geo_altitude : float | None = None
-        self._gps_point_in_home : PointStamped | None = None
-        self._rtk_point_in_home : PointStamped | None = None
-        self._velocity_ground : Vector3Stamped | None = None
-        self._angular_rate_ground : Vector3Stamped | None = None
+        self._gps_point_in_home : Optional[PointStamped] = None
+        self._rtk_point_in_home : Optional[PointStamped] = None
+        self._velocity_ground : Optional[Vector3Stamped] = None
+        self._angular_rate_ground : Optional[Vector3Stamped] = None
         self._vehicle_health = Int8()
         self._vehicle_health.data = SmarcTopics.VEHICLE_HEALTH_WAITING
 
-        self._esc_data : EscData | None = None
+        self._esc_data : Optional[EscData] = None
 
         self._geo_altitude : float | None = None
         self._heading_deg : float | None = None
@@ -167,14 +168,16 @@ class DjiCaptain():
         self._got_control : bool = False
         self._flying : bool = False
         self._carrying_payload : bool = False
-        self._battery_percent : float | None = None
+        self._battery_percent : Optional[float] = None
         self._cam_processor_happy : bool = False
+        self._geofence_status : Optional[GeofenceStatusStamped] = None
+        self.MAX_GEOFENCE_STATUS_AGE = 1.0 # seconds
         
         # this could be a param, but really we likely will never run this on anything except
         # the M350 which has a nominal 3kg max payload, so hardcoding it here is fine.
         # I set it to 4kg to have some momentary overshoot margins due to motion etc.
         self._MAX_LOAD_KG : float = 4.0 # kg, max payload we consider safe to carry
-        self._load_cell_weight : float | None = None
+        self._load_cell_weight : Optional[float] = None
 
 
 
@@ -309,6 +312,13 @@ class DjiCaptain():
             Bool,
             DjiTopics.CAM_PROCESSOR_HAPPY_TOPIC,
             self._cam_processor_happy_callback,
+            qos_profile=10
+        )
+
+        node.create_subscription(
+            GeofenceStatusStamped,
+            SmarcTopics.GEOFENCE_STATUS_TOPIC,
+            self._geofence_status_callback,
             qos_profile=10
         )
         
@@ -482,6 +492,13 @@ class DjiCaptain():
         self._prev_log_msg = msg
 
 
+    def logerr(self, msg: str):
+        self._node.get_logger().error(msg)
+
+    def logwarn(self, msg: str):
+        self._node.get_logger().warn(msg)
+
+
     def _take_control(self):
         def on_result(f):
             self.log(f"Take control service called, success: {f.result().success}, message: {f.result().message}")
@@ -526,6 +543,9 @@ class DjiCaptain():
 
     def _cam_processor_happy_callback(self, msg: Bool):
         self._cam_processor_happy = msg.data
+
+    def _geofence_status_callback(self, msg: GeofenceStatusStamped):
+        self._geofence_status = msg
 
 
     def _move_to_setpoint_callback(self, msg: PoseStamped):
@@ -959,45 +979,79 @@ class DjiCaptain():
         
     def _publish_vehicle_health(self):
         self._vehicle_health.data = SmarcTopics.VEHICLE_HEALTH_WAITING
-        
-        if self._base_pose_in_home is None or self._home_point_in_utm is None or self._gps_point_in_home is None or self._esc_data is None:
+
+        if self._home_point_in_utm is None or self._base_pose_in_home is None:
+            self.logwarn(f"Home point or position fused not received yet, waiting.")
             self._vehicle_health_pub.publish(self._vehicle_health)
             return
+        
+        if self._gps_point_in_home is None or self._home_point_in_utm is None:
+            self.logwarn(f"GPS point in home or home point in UTM not set, waiting.")
+            self._vehicle_health_pub.publish(self._vehicle_health)
+            return
+        
+        if self._esc_data is None:
+            self.logwarn(f"ESC data not received yet, waiting.")
+            self._vehicle_health_pub.publish(self._vehicle_health)
+            return
+        
+        if self._battery_percent is None:
+            self.logwarn(f"Battery percentage not received yet, waiting.")
+            self._vehicle_health_pub.publish(self._vehicle_health)
+            return
+        else:
+            if self._battery_percent < self.READY_BATTERY_PERCENTAGE:
+                self.logwarn(f"Battery below ready: {self._battery_percent:.2f}% < {self.READY_BATTERY_PERCENTAGE:.2f}%")
+                self._vehicle_health_pub.publish(self._vehicle_health)
+                return
+            elif self._battery_percent < self.ERROR_BATTERY_PERCENTAGE:
+                self.logerr(f"Battery below error: {self._battery_percent:.2f}% < {self.ERROR_BATTERY_PERCENTAGE:.2f}%")
+                self._vehicle_health.data = SmarcTopics.VEHICLE_HEALTH_ERROR
+                self._vehicle_health_pub.publish(self._vehicle_health)
+                return
+            
+        if self._load_cell_weight is None:
+            self.logwarn(f"Load cell weight not received yet, waiting.")
+            self._vehicle_health_pub.publish(self._vehicle_health)
+            return
+        elif self._load_cell_weight > self._MAX_LOAD_KG:
+            self.logerr(f"Load cell weight above max: {self._load_cell_weight:.2f} kg > {self._MAX_LOAD_KG:.2f} kg")
+            self._vehicle_health.data = SmarcTopics.VEHICLE_HEALTH_ERROR
+            self._vehicle_health_pub.publish(self._vehicle_health)
+            return
+            
 
-        position_ok = self._home_point_in_utm is not None and self._base_pose_in_home is not None
-        gps_ok = self._gps_point_in_home is not None and self._home_point_in_utm is not None
-        battery_ok = self._battery_percent is not None and self._battery_percent > self.READY_BATTERY_PERCENTAGE
-        control_ok = self._got_control
-        weight_ok = self._load_cell_weight is None or self._load_cell_weight < self._MAX_LOAD_KG
+        # if we made it here, then we got all the sensor happy
 
-        if all([position_ok, gps_ok, battery_ok, control_ok, weight_ok]):
+        if self._got_control:
             self._vehicle_health.data = SmarcTopics.VEHICLE_HEALTH_READY
 
 
-        # collect all the rpms and currents into lists
-        speeds = [esc.speed for esc in list(self._esc_data.esc)[:self.NUM_PROPS]]
-        # currents = [esc.current for esc in list(self._esc_data.esc)[:self.NUM_PROPS]]
-        # check if all of the rpms are above the idle rpm
-        # we cant check position above home, because it is very possible that we launched high and flew down...
-        self._flying = all(rpm > self.ESC_IDLE_RPM for rpm in speeds)
+        prop_rpms = [esc.speed for esc in list(self._esc_data.esc)[:self.NUM_PROPS]]
+        self._flying = all(rpm > self.ESC_IDLE_RPM for rpm in prop_rpms)
 
-
+        
         if self._flying:
-            battery_error = self._battery_percent is not None and self._battery_percent < self.ERROR_BATTERY_PERCENTAGE
-            if battery_error:
-                self._vehicle_health.data = SmarcTopics.VEHICLE_HEALTH_ERROR
-                self.log(f"BATTERY BELOW LIMIT: {self._battery_percent:.2f} < {self.ERROR_BATTERY_PERCENTAGE:.2f}")
-
-            weight_error = self._load_cell_weight is not None and self._load_cell_weight > self._MAX_LOAD_KG
-            if weight_error:
-                self._vehicle_health.data = SmarcTopics.VEHICLE_HEALTH_ERROR
-                self.log(f"WEIGHT ABOVE LIMIT: {self._load_cell_weight:.2f} > {self._MAX_LOAD_KG:.2f}")
-
             water_altitude_error = self.altitude_above_water < self.MIN_ALTITUDE_ABOVE_WATER
             if water_altitude_error:
-                self._vehicle_health.data = SmarcTopics.VEHICLE_HEALTH_ERROR
-                self.log(f"TOO CLOSE TO WATER: {self.altitude_above_water:.2f} < {self.MIN_ALTITUDE_ABOVE_WATER:.2f}")
+                self._vehicle_health.data = SmarcTopics.VEHICLE_HEALTH_WAITING
+                self.logerr(f"TOO CLOSE TO WATER: {self.altitude_above_water:.2f} < {self.MIN_ALTITUDE_ABOVE_WATER:.2f}")
 
+            if self._geofence_status is not None:
+                msg_time = self._geofence_status.time.sec + self._geofence_status.time.nanosec * 1e-9
+                if self.now_time - msg_time < self.MAX_GEOFENCE_STATUS_AGE:
+                    if self._geofence_status.status == GeofenceStatusStamped.STATUS_OUTSIDE:
+                        self._vehicle_health.data = SmarcTopics.VEHICLE_HEALTH_WAITING
+                        s = f"Geofence violation:"
+                        if self._geofence_status.status == GeofenceStatusStamped.STATUS_OUTSIDE:
+                            s += " OUTSIDE geofence!"
+                        if self._geofence_status.outside_reason == GeofenceStatusStamped.REASON_FENCE:
+                            s += " OUTSIDE FENCE!"
+                        if self._geofence_status.outside_reason == GeofenceStatusStamped.REASON_FLOOR:
+                            s += " BELOW FLOOR!"
+                        if self._geofence_status.outside_reason == GeofenceStatusStamped.REASON_CEILING:
+                            s += " ABOVE CEILING!"
+                        self.logerr(s)
 
         self._vehicle_health_pub.publish(self._vehicle_health)
             
