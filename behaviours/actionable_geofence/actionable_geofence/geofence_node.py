@@ -33,7 +33,7 @@ class GeofenceNode():
 
         self._start_as = GentlerActionServer(
             node,
-            "start_geofence",
+            "smarc_start_geofence",
             self._on_goal_received_start,
             self._on_cancel_received_start,
             lambda: None,
@@ -44,7 +44,7 @@ class GeofenceNode():
 
         self._stop_as = GentlerActionServer(
             node,
-            "stop_geofence",
+            "smarc_stop_geofence",
             lambda _: self._on_cancel_received_start(), # "start the stop action" == "cancel the start action"
             lambda: True,
             lambda: None,
@@ -129,8 +129,15 @@ class GeofenceNode():
                 return False
             
             self._geofence_vertices = [(GeoPoint(latitude=wp['latitude'], longitude=wp['longitude'])) for wp in wps]
-            self._ceiling_altitude = goal_request['ceiling_altitude']
-            self._floor_altitude = goal_request['floor_altitude']
+            ceiling = goal_request['ceiling_altitude']
+            floor = goal_request['floor_altitude']
+            if ceiling > floor:
+                self._ceiling_altitude = goal_request['ceiling_altitude'] 
+                self._floor_altitude = goal_request['floor_altitude']
+            else:
+                self._node.get_logger().warn("Ceiling altitude is not greater than floor altitude, ignoring altitude limits")
+                self._ceiling_altitude = None
+                self._floor_altitude = None
             self._fence_start_time = self._node.get_clock().now().to_msg()
             self._node.get_logger().info(f"Geofence defined with {len(self._geofence_vertices)} vertices, ceiling altitude {self._ceiling_altitude}, floor altitude {self._floor_altitude}")
             return True
