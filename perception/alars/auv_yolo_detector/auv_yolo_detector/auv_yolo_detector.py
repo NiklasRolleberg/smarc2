@@ -21,6 +21,7 @@ from geometry_msgs.msg import PointStamped
 from tf2_ros import Buffer, TransformListener
 from std_msgs.msg import Bool
 from std_srvs.srv import Trigger
+from geometry_msgs.msg import PolygonStamped, Point32
 
 from dji_msgs.msg import Topics
 from dji_msgs.msg import Links
@@ -57,6 +58,11 @@ class YOLODetector(Node):
                                 self.model_params["topics.predicted_position.sam"], 10)
         self.buoy_position_pub = self.create_publisher(PointStamped, 
                                 self.model_params["topics.predicted_position.buoy"], 10)
+        self.sam_obb_pub = self.create_publisher(PolygonStamped,
+                                                 self.model_params["topics.predicted_position.sam_obb"],10)
+        self.sam_head_obb_pub = self.create_publisher(PolygonStamped,
+                                                      self.model_params["topics.predicted_position.sam_head_obb"],10)
+
         
         self.cam_processor_happy_pub = self.create_publisher(Bool, Topics.CAM_PROCESSOR_HAPPY_TOPIC, 10)
         self.create_timer(1.0, lambda: self.cam_processor_happy_pub.publish(Bool(data = self.image_is_fresh)))
@@ -114,6 +120,16 @@ class YOLODetector(Node):
             # publish positions (head and buoy)
             if sam_pixels is not None:
                 self.published_normalized_position(head, (self.image.width,self.image.height), "sam")
+                
+                # publish obb
+                cls = result.obb.cls
+                sam_index = np.nonzero(cls == 0).flatten()
+                corners = result.obb.xyxyxyxy[sam_index[0]].cpu().numpy() # 4 corners of bounding box, shape = (4,2)
+                self.publish_normalized_points(corners, (self.image.width,self.image.height), label="obb")
+
+                # publish all 5 points (head + corners)
+                all_points = np.vstack((head.reshape(1,2), corners))
+                self.publish_normalized_points(all_points, (self.image.width,self.image.height), label="all_points")
             if buoy_pixels is not None:
                 self.published_normalized_position(buoy_pixels, (self.image.width,self.image.height), "buoy")
      
@@ -315,7 +331,26 @@ class YOLODetector(Node):
         if label == 'sam': self.sam_position_pub.publish(point)
         elif label == 'buoy': self.buoy_position_pub.publish(point)
         else: self.get_logger().error('Position not published, label argument should be "sam" or "buoy"')
-
+    
+    def publish_normalized_points(self, points: np.ndarray, wh: tuple, label=None):
+        """
+        Same as published_normalized_position but for the 4 corners of the bounding box or the 5 points (head + corners).
+        It takes the corners and head pixel coordinates, normalizes them and publishes them as a PolygonStamped message
+        """
+        poly = PolygonStamped()
+        poly.header.stamp = self.image.header.stamp 
+        poly.header.frame_id = self.model_params["frames.camera"]
+        w, h = wh
+        for px, py in points:
+            xn = float((px - w/2) / (w/2))
+            yn = float(-(py - h/2) / (h/2))
+            p = Point32()
+            p.x = xn
+            p.y = yn
+            poly.polygon.points.append(p)
+        if label == "obb": self.sam_obb_pub.publish(poly)
+        elif label == "all_points": self.sam_head_obb_pub.publish(poly)
+        else: self.get_logger().error(f'Label not recognized: {label}')
     
     def handle_enable_detector(self, request, response):
         # Toggle the detector enabled flag
@@ -357,6 +392,8 @@ class YOLODetector(Node):
             "topics.rviz.edges": str,
 
             "topics.predicted_position.sam": str,
+            "topics.predicted_position.sam_obb": str,
+            "topics.predicted_position.sam_head_obb": str,
             "topics.predicted_position.buoy": str,
             "topics.raw_image": str,
 
@@ -370,6 +407,8 @@ class YOLODetector(Node):
             "topics.rviz.edges": namespace + "/"  + self.get_parameter("topics.rviz.edges").value,
 
             "topics.predicted_position.sam": namespace + "/" + Topics.ESTIMATED_AUV_TOPIC,
+            "topics.predicted_position.sam_obb": namespace + "/" + Topics.ESTIMATED_AUV_OBB_TOPIC,
+            "topics.predicted_position.sam_head_obb": namespace + "/" + Topics.ESTIMATED_AUV_HEAD_OBB_TOPIC,
             "topics.predicted_position.buoy": namespace + "/" + Topics.ESTIMATED_BUOY_TOPIC,
             "topics.raw_image": namespace + "/" + Topics.GIMBAL_CAMERA_RAW_TOPIC,
 
