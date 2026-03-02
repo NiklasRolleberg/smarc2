@@ -58,10 +58,12 @@ class YOLODetector(Node):
                                 self.model_params["topics.predicted_position.sam"], 10)
         self.buoy_position_pub = self.create_publisher(PointStamped, 
                                 self.model_params["topics.predicted_position.buoy"], 10)
+        self.sam_head_pub = self.create_publisher(PolygonStamped,
+                                                   self.model_params["topics.predicted_position.sam_head"],10)
         self.sam_obb_pub = self.create_publisher(PolygonStamped,
                                                  self.model_params["topics.predicted_position.sam_obb"],10)
-        self.sam_head_obb_pub = self.create_publisher(PolygonStamped,
-                                                      self.model_params["topics.predicted_position.sam_head_obb"],10)
+        self.buoy_obb = self.create_publisher(PolygonStamped,
+                                              self.model_params["topics.predicted_position.buoy_obb"],10)
 
         
         self.cam_processor_happy_pub = self.create_publisher(Bool, Topics.CAM_PROCESSOR_HAPPY_TOPIC, 10)
@@ -118,20 +120,26 @@ class YOLODetector(Node):
             head = self.identify_head(result.obb, cv_image)
 
             # publish positions (head and buoy)
+            cls = result.obb.cls
             if sam_pixels is not None:
                 self.published_normalized_position(head, (self.image.width,self.image.height), "sam")
                 
+                self.publish_normalized_points(head.reshape(1, 2), (self.image.width,self.image.height), "sam_head")
+
                 # publish obb
-                cls = result.obb.cls
                 sam_index = np.nonzero(cls == 0).flatten()
                 corners = result.obb.xyxyxyxy[sam_index[0]].cpu().numpy() # 4 corners of bounding box, shape = (4,2)
-                self.publish_normalized_points(corners, (self.image.width,self.image.height), label="obb")
+                self.publish_normalized_points(corners, (self.image.width,self.image.height), label="sam_obb")
 
                 # publish all 5 points (head + corners)
-                all_points = np.vstack((head.reshape(1,2), corners))
-                self.publish_normalized_points(all_points, (self.image.width,self.image.height), label="all_points")
+                #all_points = np.vstack((head.reshape(1,2), corners))
+                #self.publish_normalized_points(all_points, (self.image.width,self.image.height), label="all_points")
             if buoy_pixels is not None:
                 self.published_normalized_position(buoy_pixels, (self.image.width,self.image.height), "buoy")
+
+                buoy_idx = np.nonzero(cls == 1).flatten()
+                corners = result.obb.xyxyxyxy[buoy_idx[0]].cpu().numpy() # 4 corners of bounding box, shape = (4,2)
+                self.publish_normalized_points(corners, (self.image.width,self.image.height), label="buoy_obb")
      
             # publish filtered annotated image as ros msg
             im = result.plot()
@@ -348,8 +356,9 @@ class YOLODetector(Node):
             p.x = xn
             p.y = yn
             poly.polygon.points.append(p)
-        if label == "obb": self.sam_obb_pub.publish(poly)
-        elif label == "all_points": self.sam_head_obb_pub.publish(poly)
+        if label == "sam_head": self.sam_head_pub.publish(poly)
+        elif label == "sam_obb": self.sam_obb_pub.publish(poly)
+        elif label == "buoy_obb": self.buoy_obb.publish(poly)
         else: self.get_logger().error(f'Label not recognized: {label}')
     
     def handle_enable_detector(self, request, response):
@@ -393,8 +402,9 @@ class YOLODetector(Node):
 
             "topics.predicted_position.sam": str,
             "topics.predicted_position.sam_obb": str,
-            "topics.predicted_position.sam_head_obb": str,
+            "topics.predicted_position.sam_head": str,
             "topics.predicted_position.buoy": str,
+            "topics.predicted_position.buoy_obb": str,
             "topics.raw_image": str,
 
             "frames.map": str,
@@ -408,8 +418,9 @@ class YOLODetector(Node):
 
             "topics.predicted_position.sam": namespace + "/" + Topics.ESTIMATED_AUV_TOPIC,
             "topics.predicted_position.sam_obb": namespace + "/" + Topics.ESTIMATED_AUV_OBB_TOPIC,
-            "topics.predicted_position.sam_head_obb": namespace + "/" + Topics.ESTIMATED_AUV_HEAD_OBB_TOPIC,
+            "topics.predicted_position.sam_head": namespace + "/" + Topics.ESTIMATED_AUV_HEAD_TOPIC,
             "topics.predicted_position.buoy": namespace + "/" + Topics.ESTIMATED_BUOY_TOPIC,
+            "topics.predicted_position.buoy_obb": namespace + "/" + Topics.ESTIMATED_BUOY_OBB_TOPIC,
             "topics.raw_image": namespace + "/" + Topics.GIMBAL_CAMERA_RAW_TOPIC,
 
             "frames.map": namespace.removeprefix("/") + "/" + Links.MAP,
