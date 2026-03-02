@@ -1,5 +1,6 @@
 from setuptools import find_packages, setup
-import glob, os
+import os
+from glob import glob
 
 package_name = 'evolo_move_path'
 
@@ -11,19 +12,32 @@ setup(
         ('share/ament_index/resource_index/packages',
             ['resource/' + package_name]),
         ('share/' + package_name, ['package.xml']),
-        (os.path.join('share', package_name, 'config'), glob.glob('config/*')),
-        (os.path.join('share', package_name, 'launch'), glob.glob('launch/*')),
+        
+        (os.path.join('share', package_name, 'config'), glob('config/*.yaml')),
+        (os.path.join('share', package_name, 'launch'), glob('launch/*.launch.py')),
+        (os.path.join('share', package_name, 'rviz'), glob('rviz/*.rviz')),
     ],
     install_requires=['setuptools'],
     zip_safe=True,
     maintainer='niklas',
     maintainer_email='nrol@kth.se',
-    description='TODO: Package description',
+    description='Evolo path following with potential fields and action server',
     license='MIT',
     tests_require=['pytest'],
     entry_points={
         'console_scripts': [
-            'move_path_server = evolo_move_path.evolo_move_path_server:main',
+            # Client
+            'move_path_client = evolo_move_path.client:main',
+            # Classical algorithms
+            'move_path_server_coordinate = evolo_move_path.evolo_move_path_server_coordinate:main',
+            'move_path_server_potential_field = evolo_move_path.evolo_move_path_server_potential_field:main',
+            'move_path_server_a_star = evolo_move_path.evolo_move_path_server_a_star:main',
+            'move_path_server_dubins_curves = evolo_move_path.evolo_move_path_server_dubins_curves:main',
+            # Discretized algorithms
+            'move_path_server_discrete_point = evolo_move_path.evolo_move_path_server_discrete_point:main',
+            'move_path_server_potential_field_discrete = evolo_move_path.evolo_move_path_server_potential_field_discrete:main',
+            # Other controller 
+            'move_path_server_potential_field_mpc = evolo_move_path.evolo_move_path_server_potential_field_mpc:main',
         ],
     },
 )

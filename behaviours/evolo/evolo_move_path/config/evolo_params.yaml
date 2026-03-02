@@ -1,0 +1,22 @@
+evolo_move_path_action_server:
+  ros__parameters:
+    frame_id: "evolo/odom"
+    timeout: 600.0  
+    
+    # Speed and limits
+    v_min: 8.0
+    v_max: 14.0
+    omega_max: 16.0
+    err_large_deg: 45.0
+    
+    # Pure Pursuit & Dubins
+    ld_base: 15.0
+    ld_gain: 0.5
+    ff_gain: 0.2
+    min_turning_radius: 30.0
+    dubins_step: 0.5
+
+    # Speed Map
+    speed_map_slow: 8.0
+    speed_map_medium: 11.0
+    speed_map_high: 14.0
