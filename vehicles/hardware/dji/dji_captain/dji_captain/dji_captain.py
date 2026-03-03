@@ -148,6 +148,7 @@ class DjiCaptain():
         self.BASE_FLAT_FRAME = self._TF_NS + DjiLinks.BASE_FLAT
         self.HOME_FRAME = self._TF_NS + DjiLinks.HOME_POINT
         self.GIMBAL_FRAME = self._TF_NS + DjiLinks.GIMBAL_CAMERA_LINK
+        self.FISHEYE_FRAME = self._TF_NS + DjiLinks.FISHEYE_CAMERA_LINK
         self.WINCH_FRAME = self._TF_NS + DjiLinks.WINCH_LINK
 
         self._utm_zb_label : Optional[str] = None
@@ -1133,7 +1134,30 @@ class DjiCaptain():
         gimbal_in_base.header.stamp = now
         gimbal_in_base.header.frame_id = self.BASE_FLAT_FRAME
         gimbal_in_base.child_frame_id = self.GIMBAL_FRAME
+        #TODO check this against the camera driver when that exists
+        # the camera itself is mounted backwards, as in, the "up" of the camera image is facing the back of the drone
+        # but all this is kinda wonky, since its on a gimbal, so we should probably be publishing the _base_ of the gimbal
+        # and the camera driver should be publishing the actual camera pose
+        # this will be fun with sim vs real when/if we ever move the gimbal from "look down" :)
+        gimbal_in_base.transform.rotation = quaternion_from_euler(0, 0, np.deg2rad(180))
+        gimbal_in_base.transform.translation.x = -0.1
+        gimbal_in_base.transform.translation.y = 0.0
+        gimbal_in_base.transform.translation.z = -0.13
         tf_msg.transforms.append(gimbal_in_base)
+
+        fisheye_in_base = TransformStamped()
+        fisheye_in_base.header.stamp = now
+        fisheye_in_base.header.frame_id = self.BASE_FRAME
+        fisheye_in_base.child_frame_id = self.FISHEYE_FRAME
+        # the fisheye camera is mounted sideways, the "right" of the image is facing the front of the drone
+        # and it is not gimballed, so at least we can pub this statically
+        fisheye_in_base.transform.rotation = quaternion_from_euler(0, 0, np.deg2rad(90))
+        fisheye_in_base.transform.translation.x = 0.0
+        fisheye_in_base.transform.translation.y = 0.0
+        fisheye_in_base.transform.translation.z = -0.13
+        tf_msg.transforms.append(fisheye_in_base)
+
+
 
         # same as above, winch in base_link
         winch_in_base = TransformStamped()

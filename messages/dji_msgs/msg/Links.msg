@@ -21,7 +21,8 @@ string BASE_FLAT = 'base_flat_link'
 
 # parts of the drone
 string GIMBAL_CAMERA_LINK = 'gimbal_camera_link'
-string WINCH_LINK = 'winch_link' # should be right-leg T junction
+string FISHEYE_CAMERA_LINK = 'fisheye_camera_link'
+string WINCH_LINK = 'winch_link'
 
 
 # Used by hook_estimator
