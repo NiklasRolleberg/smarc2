@@ -1,4 +1,4 @@
-/**/projection_node:
+/**:
   ros__parameters:
     namespace: "M350"   
 
@@ -6,7 +6,7 @@
 
     topics:
       camera_info: "gimbal_camera/camera/cam_info"
+      input_polygon: "alars_detection/auv_obb"          
+      output_projected_polygon: "alars_projection/auv_obb"   
       rviz:
         camera_rays: "rviz/projection_rays"
-        projected_auv_head: "rviz/projected_auv_head"
-        projected_auv_obb: "rviz/projected_auv_obb"
