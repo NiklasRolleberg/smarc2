@@ -1,0 +1,17 @@
+<launch>
+  <arg name="robot_name" default="M350"/>
+  <arg name="robot_urdf" default="alars.urdf"/>
+
+
+  <group>
+    <push-ros-namespace namespace="$(var robot_name)"/>
+
+    <node name="robot_state_publisher" pkg="robot_state_publisher" exec="robot_state_publisher" respawn="true" output="screen">
+      <param name="frame_prefix" value="$(var robot_name)/"/>
+      <param name="robot_description" 
+           value="$(command '$(find-exec cat) $(find-pkg-share alars_description)/urdf/$(var robot_urdf)')"/>
+    </node>
+
+  </group>
+
+</launch>

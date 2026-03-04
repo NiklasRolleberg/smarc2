@@ -89,7 +89,7 @@ class DjiCaptain():
 
         self._node.declare_parameter("robot_name", "M350")
         self.ROBOT_NAME : str = self._node.get_parameter("robot_name").get_parameter_value().string_value
-        self._TF_NS : str = f"{self.ROBOT_NAME}/"
+        
 
         self._node.declare_parameter("controller_deadzone", 0.1)
         self._CONTROLLER_DEADZONE : float = self._node.get_parameter("controller_deadzone").get_parameter_value().double_value
@@ -142,14 +142,12 @@ class DjiCaptain():
         self.ESC_IDLE_RPM = 1000  
 
 
+        self._TF_NS : str = f"{self.ROBOT_NAME}/"
         self.ODOM_FRAME = self._TF_NS + DjiLinks.ODOM
         self.MAP_FRAME = self._TF_NS + DjiLinks.MAP
         self.BASE_FRAME = self._TF_NS + DjiLinks.BASE_LINK
         self.BASE_FLAT_FRAME = self._TF_NS + DjiLinks.BASE_FLAT
         self.HOME_FRAME = self._TF_NS + DjiLinks.HOME_POINT
-        self.GIMBAL_FRAME = self._TF_NS + DjiLinks.GIMBAL_CAMERA_LINK
-        self.FISHEYE_FRAME = self._TF_NS + DjiLinks.FISHEYE_CAMERA_LINK
-        self.WINCH_FRAME = self._TF_NS + DjiLinks.WINCH_LINK
 
         self._utm_zb_label : Optional[str] = None
 
@@ -1124,57 +1122,6 @@ class DjiCaptain():
         odom_in_home.child_frame_id = self.ODOM_FRAME
         tf_msg.transforms.append(odom_in_home)
 
-        # 0-transform for base_link -> gimbal_camera_link as well, for now
-        # until we have a better idea of where the gimbal is...
-        # and we do this in the _flat_ frame, so roll and pitch are zeroed out
-        # like the gimbal in theory does.
-        # this ignores the change in position due to drone attitude, but that is small
-        # and uncontrollable by us, so we'll ignore until that little bit matters.
-        gimbal_in_base = TransformStamped()
-        gimbal_in_base.header.stamp = now
-        gimbal_in_base.header.frame_id = self.BASE_FLAT_FRAME
-        gimbal_in_base.child_frame_id = self.GIMBAL_FRAME
-        #TODO check this against the camera driver when that exists
-        # the camera itself is mounted backwards, as in, the "up" of the camera image is facing the back of the drone
-        # but all this is kinda wonky, since its on a gimbal, so we should probably be publishing the _base_ of the gimbal
-        # and the camera driver should be publishing the actual camera pose
-        # this will be fun with sim vs real when/if we ever move the gimbal from "look down" :)
-        gimbal_in_base.transform.rotation = quaternion_from_euler(0, 0, np.deg2rad(180))
-        gimbal_in_base.transform.translation.x = -0.1
-        gimbal_in_base.transform.translation.y = 0.0
-        gimbal_in_base.transform.translation.z = -0.13
-        tf_msg.transforms.append(gimbal_in_base)
-
-        fisheye_in_base = TransformStamped()
-        fisheye_in_base.header.stamp = now
-        fisheye_in_base.header.frame_id = self.BASE_FRAME
-        fisheye_in_base.child_frame_id = self.FISHEYE_FRAME
-        # the fisheye camera is mounted sideways, the "right" of the image is facing the front of the drone
-        # and it is not gimballed, so at least we can pub this statically
-        fisheye_in_base.transform.rotation = quaternion_from_euler(0, 0, np.deg2rad(90))
-        fisheye_in_base.transform.translation.x = 0.0
-        fisheye_in_base.transform.translation.y = 0.0
-        fisheye_in_base.transform.translation.z = -0.13
-        tf_msg.transforms.append(fisheye_in_base)
-
-
-
-        # same as above, winch in base_link
-        winch_in_base = TransformStamped()
-        winch_in_base.header.stamp = now
-        winch_in_base.header.frame_id = self.BASE_FRAME
-        winch_in_base.child_frame_id = self.WINCH_FRAME
-        # Set offset for winch_link
-        # roughly measured in cad model, from the center of the battery lock to right leg T junction, 
-        # assuming the T junction is in-line with base_link origin
-        winch_in_base.transform.translation.x = 0.0 
-        winch_in_base.transform.translation.y = -0.194 
-        winch_in_base.transform.translation.z = -0.322
-        winch_in_base.transform.rotation.x = 0.0
-        winch_in_base.transform.rotation.y = 0.0
-        winch_in_base.transform.rotation.z = 0.0
-        winch_in_base.transform.rotation.w = 1.0
-        tf_msg.transforms.append(winch_in_base)
 
         if self._utm_zb_label is not None: 
             utms = TransformStamped()
