@@ -87,7 +87,8 @@ if [[ $USE_SIM_TIME = "False" ]]; then
     tmux send-keys "ros2 launch psdk_wrapper wrapper.launch.py namespace:=/$ROBOT_NAME/wrapper" C-m
     
     tmux select-pane -t $SESSION:0.1
-    tmux send-keys "ros2 run dji_captain dji_captain --ros-args -p use_sim_time:=$USE_SIM_TIME  -p home_altitude_above_water:=$HOME_ABOVE_WATER -r __ns:=/$ROBOT_NAME " C-m
+    # tmux send-keys "ros2 run dji_captain dji_captain --ros-args -p use_sim_time:=$USE_SIM_TIME  -p home_altitude_above_water:=$HOME_ABOVE_WATER -r __ns:=/$ROBOT_NAME " C-m
+    tmux send-keys "ros2 launch dji_captain alars_captain.launch robot_name:=$ROBOT_NAME use_sim_time:=$USE_SIM_TIME home_altitude_above_water:=$HOME_ABOVE_WATER" C-m
 
     tmux select-pane -t $SESSION:0.2
     tmux send-keys "fast-discovery-server -i 0" C-m
@@ -99,7 +100,7 @@ else
     tmux select-window -t $SESSION:0
     tmux split-window -h -t $SESSION:0.0
     tmux select-pane -t $SESSION:0.0
-    tmux send-keys "ros2 run dji_captain dji_captain --ros-args -p use_sim_time:=$USE_SIM_TIME  -p home_altitude_above_water:=$HOME_ABOVE_WATER -r __ns:=/$ROBOT_NAME " C-m
+    tmux send-keys "ros2 launch dji_captain alars_captain.launch robot_name:=$ROBOT_NAME use_sim_time:=$USE_SIM_TIME home_altitude_above_water:=$HOME_ABOVE_WATER" C-m
 
     tmux select-pane -t $SESSION:0.1
     tmux send-keys "ros2 topic echo /$ROBOT_NAME/captain_status std_msgs/msg/String --field data" C-m
