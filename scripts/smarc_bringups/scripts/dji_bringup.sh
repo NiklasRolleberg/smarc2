@@ -189,13 +189,15 @@ tmux send-keys "ros2 topic echo ${ROBOT_NAME}/alars_bt/status std_msgs/msg/Strin
 # 4 Camera and detection
 ############
 # camera and detection node
-tmux new-window -t $SESSION:4 -n 'Camera'
-tmux rename-window "Cam"
+tmux new-window -t $SESSION:4 -n 'CamProc'
+tmux rename-window "CamProc"
 tmux select-window -t $SESSION:4
-tmux split-window -h -t $SESSION:4.0
 
-tmux select-pane -t $SESSION:4.0
+tmux split-window -h -t $SESSION:4.0
+tmux select-layout -t $SESSION:4 even-vertical
+
 # Fransisco's YOLO detector
+tmux select-pane -t $SESSION:4.0
 YOLO_DEVICE=0
 if [[ $USE_SIM_TIME = "True" ]]; then
     YOLO_DEVICE=cpu
@@ -205,33 +207,11 @@ namespace:=$ROBOT_NAME \
 device:=$YOLO_DEVICE \
 use_sim_time:=$USE_SIM_TIME" C-m
 
-# the cam driver is needed just for the real thing
-# for basic usb webcam
-#tmux send-keys "ros2 run usb_cam usb_cam_node_exe --ros-args -r __ns:=/$ROBOT_NAME/gimbal_camera" C-m
-if [[ $USE_SIM_TIME = "False" ]]; then
-    tmux split-window -v -t $SESSION:4.1
-    tmux select-pane -t $SESSION:4.1
-    # for the dji gimbal cam
-    # requires ros-humble-gscam gstreamer1.0-tools gstreamer1.0-plugins-good
-    GSCAM_CONFIG_DJI="v4l2src device=/dev/djipocket3 ! image/jpeg,width=1920,height=1080,framerate=30/1 ! jpegdec ! videoconvert ! video/x-raw,format=BGR"
-    tmux send-keys "ros2 run gscam gscam_node --ros-args \
-    -p gscam_config:=\"$GSCAM_CONFIG_DJI\" \
-    -p frame_id:=osmo3_optical_frame \
-    -p image_encoding:=rgb8 \
-    -p sync_sink:=false \
-    -r __ns:=/$ROBOT_NAME/gimbal_camera" C-m
+# Sebastian's projection node
+tmux select-pane -t $SESSION:4.1
+tmux send-keys "ros2 launch auv_state_estimation projection_launch.py namespace:=$ROBOT_NAME use_sim_time:=$USE_SIM_TIME" C-m
 
-    # for the 360 cam
-    tmux select-pane -t $SESSION:4.2
-    # for the dji gimbal cam
-    GSCAM_CONFIG_FISH="v4l2src device=/dev/insta360x4 ! image/jpeg,width=1920,height=1080,framerate=30/1 ! jpegdec ! videoconvert ! video/x-raw,format=BGR"
-    tmux send-keys "ros2 run gscam gscam_node --ros-args \
-    -p gscam_config:=\"$GSCAM_CONFIG_FISH\" \
-    -p frame_id:=fisheye_optical_frame \
-    -p image_encoding:=rgb8 \
-    -p sync_sink:=false \
-    -r __ns:=/$ROBOT_NAME/fisheye_camera" C-m
-fi
+
 
 ############
 # 5 AUX Nodes like geofence etc.
@@ -247,10 +227,41 @@ tmux send-keys "ros2 run actionable_geofence geofence_node --ros-args -r __ns:=/
 ############
 if [[ $USE_SIM_TIME = "False" ]]; then
     # new window for load_cell_driver
-    tmux new-window -t $SESSION:7 -n 'LoadCell'
-    tmux rename-window "LoadCell"
+    tmux new-window -t $SESSION:7 -n 'Drivers'
+    tmux rename-window "Drivers"
     tmux select-window -t $SESSION:7
+
+    tmux split-window -v -t $SESSION:7.0
+    tmux split-window -v -t $SESSION:7.1
+    tmux select-layout -t $SESSION:7 even-vertical
+
+    tmux select-pane -t $SESSION:7.0
     tmux send-keys "ros2 run nau7802_ros2_driver nau7802_ros2_driver --ros-args -r __ns:=/$ROBOT_NAME" C-m
+
+    tmux select-pane -t $SESSION:7.1
+    # for basic usb webcam
+    #tmux send-keys "ros2 run usb_cam usb_cam_node_exe --ros-args -r __ns:=/$ROBOT_NAME/gimbal_camera" C-m
+    # TODO: replace with the z1 pro driver
+    # for the dji gimbal cam
+    # requires ros-humble-gscam gstreamer1.0-tools gstreamer1.0-plugins-good
+    # GSCAM_CONFIG_DJI="v4l2src device=/dev/djipocket3 ! image/jpeg,width=1920,height=1080,framerate=30/1 ! jpegdec ! videoconvert ! video/x-raw,format=BGR"
+    # tmux send-keys "ros2 run gscam gscam_node --ros-args \
+    # -p gscam_config:=\"$GSCAM_CONFIG_DJI\" \
+    # -p frame_id:=osmo3_optical_frame \
+    # -p image_encoding:=rgb8 \
+    # -p sync_sink:=false \
+    # -r __ns:=/$ROBOT_NAME/gimbal_camera" C-m
+
+    # for the 360 cam
+    tmux select-pane -t $SESSION:7.2
+    # for the dji gimbal cam
+    GSCAM_CONFIG_FISH="v4l2src device=/dev/insta360x4 ! image/jpeg,width=1920,height=1080,framerate=30/1 ! jpegdec ! videoconvert ! video/x-raw,format=BGR"
+    tmux send-keys "ros2 run gscam gscam_node --ros-args \
+    -p gscam_config:=\"$GSCAM_CONFIG_FISH\" \
+    -p frame_id:=fisheye_optical_frame \
+    -p image_encoding:=rgb8 \
+    -p sync_sink:=false \
+    -r __ns:=/$ROBOT_NAME/fisheye_camera" C-m
 fi
 
 

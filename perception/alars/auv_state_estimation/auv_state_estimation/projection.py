@@ -19,7 +19,7 @@ class ProjectionNode(Node):
             namespace="",
             parameters=[
                 ("z_water", 0.0),
-                ("topics.camera_info", "gimbal_camera/camera/cam_info"),
+                ("topics.camera_info", "gimbal_camera/camera/camera_info"),
                 ("topics.input_polygon", "alars_detection/auv_obb"),
                 ("topics.output_projected_polygon", "projection/auv_obb"),
                 ("topics.rviz.camera_rays", "rviz/projection_rays"),
