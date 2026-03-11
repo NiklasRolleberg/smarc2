@@ -6,6 +6,7 @@
   <link name="z1_base_link"/>
   <link name="fisheye_base_link"/>
   <link name="fisheye_camera_link"/>
+  <link name="fisheye_optical_frame"/>
   <link name="rope_base_link"/>
 
 
@@ -32,6 +33,12 @@
     <origin rpy="3.14 -1.57 0" xyz="0 0 0.016"/>
     <parent link="fisheye_base_link"/>
     <child link="fisheye_camera_link"/>
+  </joint>
+
+  <joint name="fisheye_optical_joint" type="fixed">
+    <origin rpy="-1.57 0 -1.57" xyz="0 0 0"/>
+    <parent link="fisheye_camera_link"/>
+    <child link="fisheye_optical_frame"/>
   </joint>
 
   <joint name="rope_base_joint" type="fixed">
