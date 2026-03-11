@@ -1,4 +1,5 @@
 import rclpy
+from rclpy.time import Time, Duration
 import numpy as np
 from rclpy.node import Node
 from sensor_msgs.msg import CameraInfo
@@ -8,7 +9,7 @@ from geometry_msgs.msg import Point
 from scipy.spatial.transform import Rotation as R
 from geometry_msgs.msg import PolygonStamped, Point32
 
-from dji_msgs.msg import Links
+from dji_msgs.msg import Links, Topics
 
 
 class ProjectionNode(Node):
@@ -19,12 +20,12 @@ class ProjectionNode(Node):
             namespace="",
             parameters=[
                 ("z_water", 0.0),
-                ("topics.camera_info", "gimbal_camera/camera/camera_info"),
-                ("topics.input_polygon", "alars_detection/auv_obb"),
-                ("topics.output_projected_polygon", "projection/auv_obb"),
+                ("topics.camera_info", Topics.GIMBAL_CAMERA_INFO_TOPIC),
+                ("topics.input_polygon", Topics.ESTIMATED_AUV_OBB_TOPIC),
+                ("topics.output_projected_polygon", Topics.PROJECTED_AUV_OBB_TOPIC),
                 ("topics.rviz.camera_rays", "rviz/projection_rays"),
                 ("frames.map", Links.MAP),                      
-                ("frames.camera", Links.GIMBAL_CAMERA_LINK), 
+                ("frames.camera", Links.GIMBAL_OPTICAL_FRAME), 
                 ])
 
         self.marker_ns = self.get_name() # ns fro rviz ray markers
@@ -50,7 +51,8 @@ class ProjectionNode(Node):
         self.K_inv = None
         self.width = None
         self.height = None
-        self.R_im_cam = np.array([[ 0, -1,  0], [-1,  0,  0], [ 0,  0, -1]])  # Optical to cam link frame
+        # self.R_im_cam = np.array([[ 0, -1,  0], [-1,  0,  0], [ 0,  0, -1]])  # Optical to cam link frame
+        self.R_im_cam = np.array([[ 1, 0,  0], [0,  1,  0], [ 0,  0, 1]])  # No rotation: using optical frame
         
         # tf
         self.tf_buffer = tf2_ros.Buffer()
@@ -83,11 +85,11 @@ class ProjectionNode(Node):
             self.get_logger().warning("No CameraInfo received yet")
             return
         
-        stamp = msg.header.stamp
-        points_im = np.array([(p.x, p.y) for p in msg.polygon.points])
-
+        # use zero time to get the lastest available instead of the exact stamp of the image
+        # image might be coming faster than TF updates for reasons, and using stamp of image
+        # to get TF causes "lookup in the future" errors.
         try:
-            transform = self.tf_buffer.lookup_transform(self.map_frame, self.cam_frame, stamp, timeout=rclpy.duration.Duration(seconds=0.5))
+            transform = self.tf_buffer.lookup_transform(self.map_frame, self.cam_frame, Time(seconds=0), timeout=Duration(seconds=1))
         except Exception as e:
             self.get_logger().info(f"TF lookup failed ({self.cam_frame} -> {self.map_frame}): {e}")
             return
@@ -99,13 +101,13 @@ class ProjectionNode(Node):
         rot = R.from_quat([q.x, q.y, q.z, q.w]).as_matrix()
 
         # pixelcoords from normalized image coords
+        points_im = np.array([(p.x, p.y) for p in msg.polygon.points])
         u = (points_im[:, 0] + 1.0) * 0.5 * self.width
-        v = (1.0 - (points_im[:, 1] + 1.0) * 0.5) * self.height # y up -> v down (optical frame)
+        v = (points_im[:, 1] + 1.0) * 0.5 * self.height
 
         ray_im = self.K_inv @ np.vstack((u, v, np.ones_like(u))) # projection from pixel to 3D ray in image frame (pc = K_inv @ xs)
-        ray_cam = self.R_im_cam @ ray_im # Convert from image frame to cam link frame
-
-        ray_map = rot @ ray_cam # rotate ray to map frame
+        ray_map = rot @ ray_im # rotate ray to map frame
+        
         dz = ray_map[2, :]
         if np.any(dz > -1e-2):  # if the z component of the norm ray is positive or close to zero, it means the ray is parallel to or pointing away from the water plane
             self.get_logger().info(f"Projection doesn't intersect with water surface")
@@ -113,16 +115,17 @@ class ProjectionNode(Node):
         
         t_intersect = (self.z_water - cam_pos_map[2]) / dz # translation along ray to intersect with water
         intersection_points_map = cam_pos_map[:, None] + ray_map * t_intersect  # intersection points in map frame
-        intersection_points_cam = ray_cam * t_intersect  # intersection points in cam frame
+        intersection_points_cam = ray_im * t_intersect  # intersection points in cam frame
         
-        self.publish_poly(stamp, intersection_points_map.T)
-        self.publish_ray_marker(stamp, np.mean(intersection_points_cam, axis=1))
+        now: Time = self.get_clock().now()
+        self.publish_poly(now, intersection_points_map.T)
+        self.publish_ray_marker(now, np.mean(intersection_points_cam, axis=1))
 
-    def publish_ray_marker(self, stamp, intersection_point):
+    def publish_ray_marker(self, stamp:Time, intersection_point):
         # publish projected line (ray) for rviz
         marker = Marker()
         marker.header.frame_id = self.cam_frame
-        marker.header.stamp = stamp
+        marker.header.stamp = stamp.to_msg()
         marker.ns = self.marker_ns
         marker.id = 0
         marker.type = Marker.LINE_STRIP
@@ -136,11 +139,11 @@ class ProjectionNode(Node):
         marker.points.append(p1)
         self.ray_pub.publish(marker)
     
-    def publish_poly(self, stamp, points): 
+    def publish_poly(self, stamp:Time, points): 
         # Publish head pose and obb corners (may be used for filter)
         obb_marker = PolygonStamped()
         obb_marker.header.frame_id = self.map_frame
-        obb_marker.header.stamp = stamp
+        obb_marker.header.stamp = stamp.to_msg()
         for px, py, pz in points:
             point32 = Point32()
             point32.x = px

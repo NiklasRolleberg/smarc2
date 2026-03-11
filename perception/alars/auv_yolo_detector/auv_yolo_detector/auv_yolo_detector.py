@@ -323,7 +323,7 @@ class YOLODetector(Node):
     def published_normalized_position(self, p: tuple, wh: tuple, label: str) -> tuple:
         """
         Normalize pixels coordinates so the origin is the center of the image, the x axis is horizontal
-        from left to right and y axis is vertical from bottom to top
+        from left to right and y axis is vertical from top to bottom
         Publishes normalized pixel position in corresponding topics, depending on label
         Args:
             p: (horizontal position, vertical position)  (both in pixels)
@@ -335,7 +335,7 @@ class YOLODetector(Node):
         point.header.stamp = self.get_clock().now().to_msg()
         point.header.frame_id = self.model_params["frames.camera"]
         point.point.x = float((p[0]-wh[0]/2)/(wh[0]/2))
-        point.point.y = float(-(p[1]-wh[1]/2)/(wh[1]/2))
+        point.point.y = float((p[1]-wh[1]/2)/(wh[1]/2))
         if label == 'sam': self.sam_position_pub.publish(point)
         elif label == 'buoy': self.buoy_position_pub.publish(point)
         else: self.get_logger().error('Position not published, label argument should be "sam" or "buoy"')
@@ -351,7 +351,7 @@ class YOLODetector(Node):
         w, h = wh
         for px, py in points:
             xn = float((px - w/2) / (w/2))
-            yn = float(-(py - h/2) / (h/2))
+            yn = float((py - h/2) / (h/2))
             p = Point32()
             p.x = xn
             p.y = yn
@@ -425,7 +425,7 @@ class YOLODetector(Node):
 
             "frames.map": namespace.removeprefix("/") + "/" + Links.MAP,
             "frames.quadrotor_odom": namespace.removeprefix("/") + "/" + Links.ODOM,
-            "frames.camera": namespace.removeprefix("/") + "/" + Links.GIMBAL_CAMERA_LINK,
+            "frames.camera": namespace.removeprefix("/") + "/" + Links.GIMBAL_OPTICAL_FRAME,
 
         }
         self.model_params = {

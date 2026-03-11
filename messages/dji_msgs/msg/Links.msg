@@ -24,8 +24,13 @@ string BASE_FLAT = 'base_flat_link'
 # like the roll/pitch/yaw arms of the gimbal are not included here
 # even though they are published by the z1_pro_driver node
 string ROPE_BASE_LINK = 'rope_base_link'
+
 string GIMBAL_CAMERA_LINK = 'z1_camera_link'
 string FISHEYE_CAMERA_LINK = 'fisheye_camera_link'
+
+# optical frames: z "depth", x "right", y "down" with top-left origin
+string GIMBAL_OPTICAL_FRAME = 'z1_optical_frame'
+string FISHEYE_OPTICAL_FRAME = 'fisheye_optical_frame'
 
 
 
