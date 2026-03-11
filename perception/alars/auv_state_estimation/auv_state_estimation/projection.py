@@ -51,8 +51,6 @@ class ProjectionNode(Node):
         self.K_inv = None
         self.width = None
         self.height = None
-        # self.R_im_cam = np.array([[ 0, -1,  0], [-1,  0,  0], [ 0,  0, -1]])  # Optical to cam link frame
-        self.R_im_cam = np.array([[ 1, 0,  0], [0,  1,  0], [ 0,  0, 1]])  # No rotation: using optical frame
         
         # tf
         self.tf_buffer = tf2_ros.Buffer()
