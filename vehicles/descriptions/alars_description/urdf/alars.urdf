@@ -1,0 +1,50 @@
+<?xml version="1.0" ?>
+<robot name="alars">
+  
+  <link name="base_link"/>
+  <link name="alars_module_base_link"/>
+  <link name="z1_base_link"/>
+  <link name="fisheye_base_link"/>
+  <link name="fisheye_camera_link"/>
+  <link name="fisheye_optical_frame"/>
+  <link name="rope_base_link"/>
+
+
+  <joint name="base_to_module_joint" type="fixed">
+    <origin rpy="0 0 0" xyz="0 0 0"/>
+    <parent link="base_link"/>
+    <child link="alars_module_base_link"/>
+  </joint>
+
+
+  <joint name="gimbal_base_joint" type="fixed">
+    <origin rpy="3.14 0 3.14" xyz="-0.082 0 -0.103"/>
+    <parent link="alars_module_base_link"/>
+    <child link="z1_base_link"/>
+  </joint>
+
+  <joint name="fisheye_base_joint" type="fixed">
+    <origin rpy="3.14 0 1.57" xyz="0 0 -0.153"/>
+    <parent link="alars_module_base_link"/>
+    <child link="fisheye_base_link"/>
+  </joint>
+
+  <joint name="fisheye_camera_joint" type="fixed">
+    <origin rpy="3.14 -1.57 0" xyz="0 0 0.016"/>
+    <parent link="fisheye_base_link"/>
+    <child link="fisheye_camera_link"/>
+  </joint>
+
+  <joint name="fisheye_optical_joint" type="fixed">
+    <origin rpy="-1.57 0 -1.57" xyz="0 0 0"/>
+    <parent link="fisheye_camera_link"/>
+    <child link="fisheye_optical_frame"/>
+  </joint>
+
+  <joint name="rope_base_joint" type="fixed">
+    <origin rpy="0 0 0" xyz="0.10651 0 -0.12758"/>
+    <parent link="alars_module_base_link"/>
+    <child link="rope_base_link"/>
+  </joint>
+
+</robot>
