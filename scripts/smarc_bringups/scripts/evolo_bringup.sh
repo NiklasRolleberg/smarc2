@@ -13,7 +13,7 @@ BT_LOG_MODE=compact # can be 'compact' or 'verbose'
 DUNE_BACKSEAT_DRIVER=False #[True , False]
 
 #Simulation
-SIM=True
+SIM=False
 if [ "$SIM" = "True" ]; then
     REALSIM=simulation
     ROBOT_NAME=evolo
@@ -22,8 +22,8 @@ else
     REALSIM=real
     #USE_SIM_TIME=False
     USE_SIM_TIME=False #Useful for rosbags
-    LOCATION_SOURCE=SERIAL #[SBG MQTT SERIAL]
-    CAPTAIN_COM=SERIAL #[SERIAL MQTT]
+    LOCATION_SOURCE=SBG #[SBG MQTT SERIAL]
+    CAPTAIN_COM=MQTT #[SERIAL MQTT]
 fi
 
 #Low controllers
@@ -86,7 +86,7 @@ if [ "$REALSIM" = "real" ]; then
     #SBG driver
     tmux new-window -t $SESSION:5 -n 'SBG driver'
     tmux select-window -t $SESSION:5
-    tmux send-keys "TODO: lanuch SBG driver" C-m
+    tmux send-keys "ros2 launch evolo_config sbg_launch.py robot_name:=$ROBOT_NAME" C-m
 
     #Odom
     tmux new-window -t $SESSION:6 -n 'Localization to Odom'
@@ -96,11 +96,11 @@ if [ "$REALSIM" = "real" ]; then
     if [ "$LOCATION_SOURCE" = "SBG" ]; then
         #Odom initializer
         tmux select-pane -t $SESSION:6.0
-        tmux send-keys "ros2 run sbg_to_odom_initializer odom_initializer --ros-args -p use_sim_time:=$USE_SIM_TIME" C-m
+        tmux send-keys "ros2 run sbg_to_odom_initializer odom_initializer --ros-args -r __ns:=/$ROBOT_NAME -p use_sim_time:=$USE_SIM_TIME" C-m
 
         #sbg to odom node
         tmux select-pane -t $SESSION:6.1
-        tmux send-keys "ros2 run sbg_to_odom sbg_nav_to_evolo_odom --ros-args -p use_sim_time:=$USE_SIM_TIME" C-m
+        tmux send-keys "ros2 run sbg_to_odom sbg_nav_to_evolo_odom --ros-args -r __ns:=/$ROBOT_NAME -p use_sim_time:=$USE_SIM_TIME" C-m
     fi
 
     if [ "$LOCATION_SOURCE" = "MQTT" ] || [ "$LOCATION_SOURCE" = "SERIAL" ]; then
@@ -117,7 +117,7 @@ if [ "$REALSIM" = "real" ]; then
     #Lidar driver
     tmux new-window -t $SESSION:7 -n 'lidar driver'
     tmux select-window -t $SESSION:7
-    tmux send-keys "TODO: lanuch Lidar driver" C-m
+    tmux send-keys "ros2 launch evolo_config lidar_launch.py ouster_ns:=$ROBOT_NAME/sensors/lidar" C-m
     
     #RTSP2web
     tmux new-window -t $SESSION:8 -n 'RTSP2web'
@@ -127,12 +127,13 @@ if [ "$REALSIM" = "real" ]; then
     #Camera driver
     tmux new-window -t $SESSION:9 -n 'camera driver'
     tmux select-window -t $SESSION:9
-    tmux send-keys "ros2 run gscam gscam_node --ros-args -p gscam_config:="uridecodebin uri=rtsp://127.0.0.1:5541/27aec28e-6181-4753-9acd-0456a75f0289/0 source::latency=0 ! nvvidconv ! videoconvert" -p frame_id:=evolo_camera_frame -p image_encoding:=rgb8 -p sync_sink:=false -r __ns:=/evolo/gimbal_camera"
+    #tmux send-keys "ros2 run gscam gscam_node --ros-args -p gscam_config:="uridecodebin uri=rtsp://127.0.0.1:5541/27aec28e-6181-4753-9acd-0456a75f0289/0 source::latency=0 ! nvvidconv ! videoconvert" -p frame_id:=evolo_camera_frame -p image_encoding:=rgb8 -p sync_sink:=false -r __ns:=/evolo/gimbal_camera"
+    tmux send-keys "ros2 run image_publisher image_publisher_node rtsp://192.168.144.108 --ros-args -p publish_rate:=50.0" C-m
     
     #Gimbal driver
     tmux new-window -t $SESSION:10 -n 'gimbal driver'
     tmux select-window -t $SESSION:10
-    tmux send-keys "TODO launch gimbal driver"
+    tmux send-keys "ros2 launch z1_pro_driver z1_pro_launch.py namespace:=$ROBOT_NAME use_vehicle_altitude:=false" C-m
 else #Sim
     tmux new-window -t $SESSION:4 -n 'tcp-endpoint'
     tmux select-window -t $SESSION:4
