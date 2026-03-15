@@ -23,7 +23,7 @@ else
     #USE_SIM_TIME=False
     USE_SIM_TIME=False #Useful for rosbags
     LOCATION_SOURCE=SBG #[SBG MQTT SERIAL]
-    CAPTAIN_COM=MQTT #[SERIAL MQTT]
+    CAPTAIN_COM=NONE #[SERIAL MQTT]
 fi
 
 #Low controllers
@@ -78,9 +78,11 @@ if [ "$REALSIM" = "real" ]; then
     
     if [ "$CAPTAIN_COM" = "SERIAL" ]; then
         tmux send-keys "ros2 launch evolo_serial_bridge evolo_serial_launch.py" C-m
-    else
+    fi
+    if [ "$CAPTAIN_COM" = "MQTT" ]; then
         tmux send-keys "ros2 launch evolo_mqtt_bridge evolo_mqtt_launch.py" C-m
     fi
+    #else None
     
 
     #SBG driver
@@ -128,7 +130,16 @@ if [ "$REALSIM" = "real" ]; then
     tmux new-window -t $SESSION:9 -n 'camera driver'
     tmux select-window -t $SESSION:9
     #tmux send-keys "ros2 run gscam gscam_node --ros-args -p gscam_config:="uridecodebin uri=rtsp://127.0.0.1:5541/27aec28e-6181-4753-9acd-0456a75f0289/0 source::latency=0 ! nvvidconv ! videoconvert" -p frame_id:=evolo_camera_frame -p image_encoding:=rgb8 -p sync_sink:=false -r __ns:=/evolo/gimbal_camera"
-    tmux send-keys "ros2 run image_publisher image_publisher_node rtsp://192.168.144.108 --ros-args -p publish_rate:=50.0" C-m
+    #tmux send-keys 'ros2 run gscam gscam_node --ros-args -p gscam_config:="uridecodebin uri=rtsp://192.168.2.210 source::latency=0 ! decodebin ! videoconvert" -p frame_id:=evolo_camera_frame -p image_encoding:=rgb8 -p sync_sink:=false -r __ns:=/evolo/sensors/gimbal_camera' C-m
+    #tmux send-keys "ros2 run image_publisher image_publisher_node rtsp://192.168.144.108 --ros-args -p publish_rate:=50.0" C-m
+    # for the dji gimbal cam
+    GSCAM_CONFIG="uridecodebin uri=rtsp://192.168.2.210 source::latency=0 ! decodebin ! videoconvert"
+    tmux send-keys "ros2 run gscam gscam_node --ros-args \
+    -p gscam_config:=\"$GSCAM_CONFIG\" \
+    -p frame_id:=evolo_camera_frame \
+    -p image_encoding:=rgb8 \
+    -p sync_sink:=false \
+    -r __ns:=/$ROBOT_NAME/sensors/gimbal_camera" C-m
     
     #Gimbal driver
     tmux new-window -t $SESSION:10 -n 'gimbal driver'
