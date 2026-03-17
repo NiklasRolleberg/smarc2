@@ -66,7 +66,7 @@ class GeofenceNode():
             loop_frequency = 5
         )
 
-        self._get_fence_srv = node.create_service(GetGeoPath, SmarcTopics.GET_GEOFENCE_SERVICE_TOPIC, self._get_fence_srv_cb)
+        self._check_fence_srv = node.create_service(GetGeoPath, SmarcTopics.CHECK_GEOFENCE_SERVICE_TOPIC, self._check_fence_srv_cb)
 
 
         self._robot_position : GeoPoint | None = None
@@ -321,7 +321,7 @@ class GeofenceNode():
         return PointInPolyResults.INSIDE
     
 
-    def _get_fence_srv_cb(self, request: GetGeoPath.Request, response: GetGeoPath.Response):
+    def _check_fence_srv_cb(self, request: GetGeoPath.Request, response: GetGeoPath.Response):
         if not self.valid_geofence_setup():
             response.success = False
             response.status = "No geofence or islands defined"
