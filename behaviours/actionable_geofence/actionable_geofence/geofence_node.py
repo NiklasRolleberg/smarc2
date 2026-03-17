@@ -166,27 +166,31 @@ class GeofenceNode():
         self._geofence_status_pub.publish(self._geofence_msg)
 
 
-    def _geopoint_poly_to_map(self, poly: list[GeoPoint]) -> list[tuple[float, float, float]]:
-        if self._utm_frame is None:
-            self._node.get_logger().error("Cannot transform geofence polygon to map frame because UTM frame is not set yet")
-            return []
-        
-        transformed_poly = []
-        utm_to_map_transform = self._tf_buffer.lookup_transform(self._map_frame, self._utm_frame, Time())
-        for point in poly:
-            ps = convert_latlon_to_utm(point)
-            try:
-                transformed_ps = do_transform_point(ps, utm_to_map_transform)
-                transformed_poly.append((transformed_ps.point.x, transformed_ps.point.y, point.altitude))
-            except Exception as e:
-                self._node.get_logger().error(f"Error transforming geofence polygon point to map frame: {e}")
-                return []
-        
-        return transformed_poly
     
     def _publish_geofence_polygons(self):
         self._geofence_polygons_msg.header.stamp = self._node.get_clock().now().to_msg()
         self._geofence_polygons_msg.header.frame_id = self._map_frame
+
+        def geopoint_poly_to_map(poly: list[GeoPoint]) -> list[tuple[float, float, float]]:
+            if self._utm_frame is None:
+                self._node.get_logger().error("Cannot transform geofence polygon to map frame because UTM frame is not set yet")
+                return []
+            
+            transformed_poly = []
+            utm_to_map_transform = self._tf_buffer.lookup_transform(self._map_frame, self._utm_frame, Time())
+            for point in poly:
+                ps = convert_latlon_to_utm(point)
+                try:
+                    transformed_ps = do_transform_point(ps, utm_to_map_transform)
+                    transformed_poly.append((transformed_ps.point.x, transformed_ps.point.y, point.altitude))
+                except Exception as e:
+                    self._node.get_logger().error(f"Error transforming geofence polygon point to map frame: {e}")
+                    return []
+            
+            return transformed_poly
+
+        map_fences = [geopoint_poly_to_map(fence) for fence in self._fences]
+        map_islands = [geopoint_poly_to_map(island) for island in self._islands]
 
         def map_poly_to_polygon_msg(map_poly: list[tuple[float, float, float]]) -> Polygon:
             polygon_msg = Polygon()
@@ -195,10 +199,7 @@ class GeofenceNode():
                 return polygon_msg
             polygon_msg.points = [Point32(x=point[0], y=point[1], z=point[2]) for point in map_poly]
             return polygon_msg
-
-        map_fences = [self._geopoint_poly_to_map(fence) for fence in self._fences]
-        map_islands = [self._geopoint_poly_to_map(island) for island in self._islands]
-
+        
         self._geofence_polygons_msg.geofence = [map_poly_to_polygon_msg(fence) for fence in map_fences]
         self._geofence_polygons_msg.islands = [map_poly_to_polygon_msg(island) for island in map_islands]
 
