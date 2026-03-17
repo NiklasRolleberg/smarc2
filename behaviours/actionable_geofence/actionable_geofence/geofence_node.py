@@ -8,20 +8,28 @@ from rclpy.time import Time, Duration
 from rclpy.executors import MultiThreadedExecutor
 from builtin_interfaces.msg import Time as TimeMsg
 
+from tf2_geometry_msgs import do_transform_point
+from tf2_ros import Buffer, TransformListener
+
+
 from geographic_msgs.msg import GeoPoint, GeoPath, GeoPointStamped
 from geographic_msgs.srv import GetGeoPath
+from geometry_msgs.msg import Point32, Polygon
 
 from smarc_msgs.msg import Topics as SmarcTopics
-from smarc_msgs.msg import GeofenceStatusStamped
+from smarc_msgs.msg import GeofenceStatusStamped, GeofencePolygonsStamped
 from smarc_action_base.gentler_action_server import GentlerActionServer
+from smarc_utilities.georef_utils import convert_latlon_to_utm
 
 
 class PointInPolyResults(Enum):
-    INSIDE = 0
-    OUTSIDE_LATLON = 1
-    OUTSIDE_CEILING = 2
-    OUTSIDE_FLOOR = 3
-    INVALID = 4
+    INVALID = -2
+    INSIDE = -1
+    # matches the GeofenceStatusStamped reason for outside
+    OUTSIDE_LATLON = 0 
+    OUTSIDE_CEILING = 1
+    OUTSIDE_FLOOR = 2
+    INSIDE_ISLAND = 3
 
 class GeofenceNode():
     def __init__(self, node: Node):
@@ -30,6 +38,9 @@ class GeofenceNode():
         self._geopoint_sub = self._node.create_subscription(GeoPoint, SmarcTopics.POS_LATLON_TOPIC, self.pos_latlon_cb, 10)
         self._geofence_status_pub = self._node.create_publisher(GeofenceStatusStamped, SmarcTopics.GEOFENCE_STATUS_TOPIC, 10)
         self._geofence_msg = GeofenceStatusStamped()
+
+        self._geofence_polygons_pub = self._node.create_publisher(GeofencePolygonsStamped, SmarcTopics.GEOFENCE_POLYGONS_TOPIC, 10)
+        self._geofence_polygons_msg = GeofencePolygonsStamped()
 
         self._start_as = GentlerActionServer(
             node,
@@ -45,7 +56,7 @@ class GeofenceNode():
         self._stop_as = GentlerActionServer(
             node,
             "smarc_stop_geofence",
-            lambda _: self._on_cancel_received_start(), # "start the stop action" == "cancel the start action"
+            self._on_goal_received_stop,
             lambda: True,
             lambda: None,
             lambda: True,
@@ -58,10 +69,23 @@ class GeofenceNode():
 
         self._robot_position : GeoPoint | None = None
         self._robot_position_time : Time | None = None
-        self._geofence_vertices : list[GeoPoint] | None = None
+        self._fences : list[list[GeoPoint]] | list = []
+        self._islands : list[list[GeoPoint]] | list = []
+
+        self._fences_in_map : list[list[tuple[float, float, float]]] | list = [] 
+        self._islands_in_map : list[list[tuple[float, float, float]]] | list = []
+
         self._ceiling_altitude : float | None = None
         self._floor_altitude : float | None = None # aka depth for underwater vehicles
         self._fence_start_time : TimeMsg | None = None
+
+        self._tf_buffer = Buffer()
+        self._tf_listener = TransformListener(self._tf_buffer, self._node)
+
+        self._node.declare_parameter('map_frame', 'M350/map')
+        self._map_frame : str = self._node.get_parameter('map_frame').get_parameter_value().string_value
+        self._node.get_logger().info(f"Using map frame: {self._map_frame}")
+        self._utm_frame : str | None = None # will be set on first position message
 
         self._node.declare_parameter('check_period', 0.5)
         self._check_period = self._node.get_parameter('check_period').get_parameter_value().double_value
@@ -71,10 +95,19 @@ class GeofenceNode():
         self._max_position_age = self._node.get_parameter('max_position_age').get_parameter_value().double_value
         self._max_position_duration = Duration(seconds=int(self._max_position_age), nanoseconds=int((self._max_position_age - int(self._max_position_age)) * 1e9))
 
+        self._node.declare_parameter('polygon_publish_period', 5.0)
+        self._polygon_publish_period = self._node.get_parameter('polygon_publish_period').get_parameter_value().double_value
+        self._polygon_pub_timer = self._node.create_timer(self._polygon_publish_period, self._publish_geofence_polygons)
+
 
     def pos_latlon_cb(self, msg: GeoPoint):
         self._robot_position_time = self._node.get_clock().now()
         self._robot_position = msg
+
+        if self._utm_frame is None:
+            ps = convert_latlon_to_utm(msg)
+            self._utm_frame = ps.header.frame_id
+            self._node.get_logger().info(f"Setting UTM frame to {self._utm_frame} based on first received robot latlon position")
 
 
     def publish_geofence_ok(self):
@@ -86,8 +119,8 @@ class GeofenceNode():
             self._geofence_status_pub.publish(self._geofence_msg)
             return
         
-        if self._geofence_vertices is None or len(self._geofence_vertices) < 3: 
-            self._node.get_logger().info("No valid geofence defined yet...")
+        if self._fences is None or (len(self._fences) < 1 and len(self._islands) < 1): 
+            self._node.get_logger().info("No valid geofence or island defined yet...")
             self._geofence_msg.status = GeofenceStatusStamped.STATUS_INACTIVE
             self._geofence_status_pub.publish(self._geofence_msg)
             return
@@ -98,27 +131,71 @@ class GeofenceNode():
             self._geofence_status_pub.publish(self._geofence_msg)
             return
 
-        fence_status = self._point_in_fence(self._robot_position)
+        fence_status = self._point_is_safe(self._robot_position)
+        t = f"{self._robot_position_time.seconds_nanoseconds()[0]:.2f}s" if self._robot_position_time is not None else "unknown time"
         if fence_status == PointInPolyResults.INSIDE:
-            self._node.get_logger().info(f"Robot is INSIDE t={self._robot_position_time.seconds_nanoseconds()[0]:.2f}s")
+            self._node.get_logger().info(f"Robot is INSIDE t={t}")
             self._geofence_msg.status = GeofenceStatusStamped.STATUS_INSIDE
         elif fence_status == PointInPolyResults.OUTSIDE_LATLON:
-            self._node.get_logger().warn(f"Robot is OUTSIDE(latlon) t={self._robot_position_time.seconds_nanoseconds()[0]:.2f}s")
+            self._node.get_logger().warn(f"Robot is OUTSIDE(latlon) t={t}")
             self._geofence_msg.status = GeofenceStatusStamped.STATUS_OUTSIDE
             self._geofence_msg.outside_reason = GeofenceStatusStamped.REASON_FENCE
         elif fence_status == PointInPolyResults.OUTSIDE_CEILING:
-            self._node.get_logger().warn(f"Robot is OUTSIDE(ceiling) t={self._robot_position_time.seconds_nanoseconds()[0]:.2f}s")
+            self._node.get_logger().warn(f"Robot is OUTSIDE(ceiling) t={t}")
             self._geofence_msg.status = GeofenceStatusStamped.STATUS_OUTSIDE
             self._geofence_msg.outside_reason = GeofenceStatusStamped.REASON_CEILING
         elif fence_status == PointInPolyResults.OUTSIDE_FLOOR:
-            self._node.get_logger().warn(f"Robot is OUTSIDE(floor) t={self._robot_position_time.seconds_nanoseconds()[0]:.2f}s")
+            self._node.get_logger().warn(f"Robot is OUTSIDE(floor) t={t}")
             self._geofence_msg.status = GeofenceStatusStamped.STATUS_OUTSIDE
             self._geofence_msg.outside_reason = GeofenceStatusStamped.REASON_FLOOR
+        elif fence_status == PointInPolyResults.INSIDE_ISLAND:
+            self._node.get_logger().warn(f"Robot is INSIDE ISLAND t={t}")
+            self._geofence_msg.status = GeofenceStatusStamped.STATUS_OUTSIDE
+            self._geofence_msg.outside_reason = GeofenceStatusStamped.REASON_ISLAND
         else:
-            self._node.get_logger().error(f"Invalid geofence status for robot position t={self._robot_position_time.seconds_nanoseconds()[0]:.2f}s")
+            self._node.get_logger().error(f"Invalid geofence status for robot position t={t}")
             self._geofence_msg.status = GeofenceStatusStamped.STATUS_INACTIVE
         
         self._geofence_status_pub.publish(self._geofence_msg)
+
+
+    def _geopoint_poly_to_map(self, poly: list[GeoPoint]) -> list[tuple[float, float, float]]:
+        if self._utm_frame is None:
+            self._node.get_logger().error("Cannot transform geofence polygon to map frame because UTM frame is not set yet")
+            return []
+        
+        transformed_poly = []
+        for point in poly:
+            ps = convert_latlon_to_utm(point)
+            utm_to_map_transform = self._tf_buffer.lookup_transform(self._map_frame, self._utm_frame, Time())
+            try:
+                transformed_ps = do_transform_point(ps, utm_to_map_transform)
+                transformed_poly.append((transformed_ps.point.x, transformed_ps.point.y, point.altitude))
+            except Exception as e:
+                self._node.get_logger().error(f"Error transforming geofence polygon point to map frame: {e}")
+                return []
+        
+        return transformed_poly
+    
+    def _publish_geofence_polygons(self):
+        self._geofence_polygons_msg.header.stamp = self._node.get_clock().now().to_msg()
+        self._geofence_polygons_msg.header.frame_id = self._map_frame
+
+        def to_polygon_msg(geo_poly: list[GeoPoint]) -> Polygon:
+            polygon_msg = Polygon()
+            if len(geo_poly) < 3:
+                self._node.get_logger().error("Invalid polygon, must be a list of at least 3 GeoPoints transformed to map frame")
+                return polygon_msg
+            map_poly = self._geopoint_poly_to_map(geo_poly)
+            polygon_msg.points = [Point32(x=point[0], y=point[1], z=point[2]) for point in map_poly]
+            return polygon_msg
+
+        self._geofence_polygons_msg.geofence = [to_polygon_msg(fence) for fence in self._fences]
+        self._geofence_polygons_msg.islands = [to_polygon_msg(island) for island in self._islands]
+
+        self._geofence_polygons_pub.publish(self._geofence_polygons_msg)
+
+
 
 
     def _on_goal_received_start(self, goal_request: dict) -> bool:
@@ -128,84 +205,115 @@ class GeofenceNode():
                 self._node.get_logger().error("Geofence action server requires at least 3 waypoints to define a geofence")
                 return False
             
-            self._geofence_vertices = [(GeoPoint(latitude=wp['latitude'], longitude=wp['longitude'])) for wp in wps]
-            ceiling = goal_request['ceiling_altitude']
-            floor = goal_request['floor_altitude']
+            try:
+                inside = bool(goal_request['stay_inside'])
+            except KeyError:
+                self._node.get_logger().warn("No 'stay_inside' field in geofence goal, defaulting to stay_inside=True")
+                inside = True
+
+            poly = [(GeoPoint(latitude=float(wp['latitude']), longitude=float(wp['longitude']))) for wp in wps]
+            if inside:
+                self._fences.append(poly)
+            else:
+                self._islands.append(poly)
+
+            ceiling = float(goal_request['ceiling_altitude'])
+            floor = float(goal_request['floor_altitude'])
             if ceiling > floor:
-                self._ceiling_altitude = goal_request['ceiling_altitude'] 
-                self._floor_altitude = goal_request['floor_altitude']
+                self._ceiling_altitude = ceiling 
+                self._floor_altitude = floor
             else:
                 self._node.get_logger().warn("Ceiling altitude is not greater than floor altitude, ignoring altitude limits")
                 self._ceiling_altitude = None
                 self._floor_altitude = None
             self._fence_start_time = self._node.get_clock().now().to_msg()
-            self._node.get_logger().info(f"Geofence defined with {len(self._geofence_vertices)} vertices, ceiling altitude {self._ceiling_altitude}, floor altitude {self._floor_altitude}")
+            self._node.get_logger().info(f"Geofence defined with {len(self._fences)} fences and {len(self._islands)} islands, ceiling altitude {self._ceiling_altitude}, floor altitude {self._floor_altitude}")
+            self._publish_geofence_polygons()
             return True
 
         except Exception as e:
             self._node.get_logger().error(f"Error parsing geofence waypoints: {e}")
             return False
         
+    def _on_goal_received_stop(self, goal_request: dict) -> bool:
+        fence_reset = bool(goal_request['reset_geofence'])
+        if fence_reset:
+            self._fences = []
+            self._floor_altitude = None
+            self._ceiling_altitude = None
+        
+        island_reset = bool(goal_request['reset_islands'])
+        if island_reset:
+            self._islands = []
+
+        self._fence_start_time = None
+        self._node.get_logger().info(f"Geofence stopped. Fences reset: {fence_reset}, Islands reset: {island_reset}")
+        self._publish_geofence_polygons()
+        return True
+        
     def _on_cancel_received_start(self):
-        self._geofence_vertices = None
+        self._fences = []
+        self._islands = []
         self._ceiling_altitude = None
         self._floor_altitude = None
         self._fence_start_time = None
         self._node.get_logger().info("Geofence cleared")
+        self._publish_geofence_polygons()
         return True
     
-    def _point_in_fence(self, point: GeoPoint) -> PointInPolyResults:
-        if self._geofence_vertices is None: return PointInPolyResults.INVALID
-        if len(self._geofence_vertices) < 3: return PointInPolyResults.INVALID
+    def _point_is_safe(self, point: GeoPoint) -> PointInPolyResults:
+        if self._fences is None: return PointInPolyResults.INVALID
+        if len(self._fences) < 1 and len(self._islands) < 1: return PointInPolyResults.INVALID
+
         if self._ceiling_altitude is not None:
             if point.altitude > self._ceiling_altitude: return PointInPolyResults.OUTSIDE_CEILING
+
         if self._floor_altitude is not None:
             if point.altitude < self._floor_altitude: return PointInPolyResults.OUTSIDE_FLOOR
 
-        in_poly = is_point_inside_polygon(point, self._geofence_vertices)
-        if not in_poly: return PointInPolyResults.OUTSIDE_LATLON
+        inside_fences = any(is_point_inside_polygon(point, fence) for fence in self._fences)
+        if not inside_fences: return PointInPolyResults.OUTSIDE_LATLON
+
+        inside_islands = any(is_point_inside_polygon(point, island) for island in self._islands)
+        if inside_islands: return PointInPolyResults.INSIDE_ISLAND
+        
         return PointInPolyResults.INSIDE
     
 
     def _get_fence_srv_cb(self, request: GetGeoPath.Request, response: GetGeoPath.Response):
-        if self._geofence_vertices is None or len(self._geofence_vertices) < 3:
+        if self._fences is None or (len(self._fences) < 1 and len(self._islands) < 1):
             response.success = False
-            response.status = "No geofence defined or geofence has less than 3 vertices"
-            self._node.get_logger().info("Get geofence request received but no geofence defined or geofence has less than 3 vertices, returning False")
+            response.status = "No geofence or islands defined"
+            self._node.get_logger().info(f"Get geofence request response: {response.status}")
             return response
         
-        # return the fence either way
-        response.plan = GeoPath()
-        response.plan.header.stamp = self._fence_start_time if self._fence_start_time is not None else Time(seconds=0, nanoseconds=0).to_msg()
-        response.plan.header.frame_id = "latlon"
-        response.plan.poses = [GeoPointStamped(geo_point=vertex) for vertex in self._geofence_vertices]
-
         valid_start = not (request.start.altitude == 0.0 and request.start.latitude == 0.0 and request.start.longitude == 0.0)
         valid_end = not (request.goal.altitude == 0.0 and request.goal.latitude == 0.0 and request.goal.longitude == 0.0)
 
         if valid_start and not valid_end:
-            response.success = self._point_in_fence(request.start) == PointInPolyResults.INSIDE
+            response.success = self._point_is_safe(request.start) == PointInPolyResults.INSIDE
             response.status = "Start point is valid" if response.success else "Start point is outside geofence"
             self._node.get_logger().info(response.status)
             return response
         
         if valid_end and not valid_start:
-            response.success = self._point_in_fence(request.goal) == PointInPolyResults.INSIDE
+            response.success = self._point_is_safe(request.goal) == PointInPolyResults.INSIDE
             response.status = "Goal point is valid" if response.success else "Goal point is outside geofence"
             self._node.get_logger().info(response.status)
             return response
         
         if valid_end and valid_start:
-            response.success = self._point_in_fence(request.start) == PointInPolyResults.INSIDE and self._point_in_fence(request.goal) == PointInPolyResults.INSIDE
+            response.success = self._point_is_safe(request.start) == PointInPolyResults.INSIDE and self._point_is_safe(request.goal) == PointInPolyResults.INSIDE
             response.status = "Start and goal points are valid" if response.success else "Start and/or goal point is outside geofence"
             self._node.get_logger().info(response.status)
             return response
         
-        # no points given, return just the fence
-        response.success = True
-        response.status = "Geofence retrieved"
+
+        response.success = False
+        response.status = "No valid start or goal point provided"
         self._node.get_logger().info(response.status)
         return response
+        
 
 
 # lifted from "utils/geofence_checker/geofence_checker/geofence_checker_node.py"
@@ -222,8 +330,7 @@ def is_point_inside_polygon(point: GeoPoint, vertices: list[GeoPoint]) -> bool:
                 if point.longitude <= max(lon_1, lon_2):
                     if lat_1 != lat_2:
                         lon_inters = (point.latitude - lat_1) * (lon_2 - lon_1) / (lat_2 - lat_1) + lon_1
-                        print(lon_inters)
-                    if lon_1 == lon_2 or point.longitude <= lon_inters:
+                    if lon_1 == lon_2 or point.longitude <= lon_inters: # type: ignore
                         inside = not inside
         lat_1, lon_1 = lat_2, lon_2
 

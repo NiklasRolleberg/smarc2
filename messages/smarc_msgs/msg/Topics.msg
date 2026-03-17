@@ -19,6 +19,7 @@ string BT_STATUS_TOPIC = 'smarc/bt_status' #string
 
 string GET_GEOFENCE_SERVICE_TOPIC = 'smarc/srv/get_geofence' # geographic_msgs/srv/GetGeoPath
 string GEOFENCE_STATUS_TOPIC = 'smarc/geofence_status' # smarc_msgs/msg/GeofenceStatusStamped
+string GEOFENCE_POLYGONS_TOPIC = 'smarc/geofence_polygons' #smarc_msgs/msg/GeofencePolygonsStamped
 
 ################
 # WARA-PS Topics
