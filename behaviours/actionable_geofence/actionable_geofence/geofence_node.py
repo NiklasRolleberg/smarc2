@@ -102,6 +102,11 @@ class GeofenceNode():
         self._polygon_pub_timer = self._node.create_timer(self._polygon_publish_period, self._publish_geofence_polygons)
 
 
+    def valid_geofence_setup(self) -> bool:
+        if self._fences is None or self._islands is None or (len(self._fences) < 1 and len(self._islands) < 1):
+            return False
+        return True
+
     def pos_latlon_cb(self, msg: GeoPoint):
         self._robot_position_time = self._node.get_clock().now()
         self._robot_position = msg
@@ -121,7 +126,7 @@ class GeofenceNode():
             self._geofence_status_pub.publish(self._geofence_msg)
             return
         
-        if self._fences is None or (len(self._fences) < 1 and len(self._islands) < 1): 
+        if not self.valid_geofence_setup(): 
             self._node.get_logger().info("No valid geofence or island defined yet...")
             self._geofence_msg.status = GeofenceStatusStamped.STATUS_INACTIVE
             self._geofence_status_pub.publish(self._geofence_msg)
@@ -299,8 +304,7 @@ class GeofenceNode():
         return True
     
     def _point_is_safe(self, point: GeoPoint) -> PointInPolyResults:
-        if self._fences is None: return PointInPolyResults.INVALID
-        if len(self._fences) < 1 and len(self._islands) < 1: return PointInPolyResults.INVALID
+        if not self.valid_geofence_setup(): return PointInPolyResults.INVALID
 
         if self._ceiling_altitude is not None:
             if point.altitude > self._ceiling_altitude: return PointInPolyResults.OUTSIDE_CEILING
@@ -318,7 +322,7 @@ class GeofenceNode():
     
 
     def _get_fence_srv_cb(self, request: GetGeoPath.Request, response: GetGeoPath.Response):
-        if self._fences is None or (len(self._fences) < 1 and len(self._islands) < 1):
+        if not self.valid_geofence_setup():
             response.success = False
             response.status = "No geofence or islands defined"
             self._node.get_logger().info(f"Get geofence request response: {response.status}")
