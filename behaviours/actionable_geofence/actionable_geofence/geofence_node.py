@@ -14,7 +14,8 @@ from tf2_ros import Buffer, TransformListener
 
 from geographic_msgs.msg import GeoPoint, GeoPath, GeoPointStamped
 from geographic_msgs.srv import GetGeoPath
-from geometry_msgs.msg import Point32, Polygon
+from geometry_msgs.msg import Point, Point32, Polygon
+from visualization_msgs.msg import Marker, MarkerArray
 
 from smarc_msgs.msg import Topics as SmarcTopics
 from smarc_msgs.msg import GeofenceStatusStamped, GeofencePolygonsStamped
@@ -41,6 +42,7 @@ class GeofenceNode():
 
         self._geofence_polygons_pub = self._node.create_publisher(GeofencePolygonsStamped, SmarcTopics.GEOFENCE_POLYGONS_TOPIC, 10)
         self._geofence_polygons_msg = GeofencePolygonsStamped()
+        self._rviz_pub = self._node.create_publisher(MarkerArray, SmarcTopics.GEOFENCE_POLYGONS_TOPIC+'/rviz', 10)
 
         self._start_as = GentlerActionServer(
             node,
@@ -181,22 +183,57 @@ class GeofenceNode():
         self._geofence_polygons_msg.header.stamp = self._node.get_clock().now().to_msg()
         self._geofence_polygons_msg.header.frame_id = self._map_frame
 
-        def to_polygon_msg(geo_poly: list[GeoPoint]) -> Polygon:
+        def map_poly_to_polygon_msg(map_poly: list[tuple[float, float, float]]) -> Polygon:
             polygon_msg = Polygon()
-            if len(geo_poly) < 3:
+            if len(map_poly) < 3:
                 self._node.get_logger().error("Invalid polygon, must be a list of at least 3 GeoPoints transformed to map frame")
                 return polygon_msg
-            map_poly = self._geopoint_poly_to_map(geo_poly)
             polygon_msg.points = [Point32(x=point[0], y=point[1], z=point[2]) for point in map_poly]
             return polygon_msg
 
-        self._geofence_polygons_msg.geofence = [to_polygon_msg(fence) for fence in self._fences]
-        self._geofence_polygons_msg.islands = [to_polygon_msg(island) for island in self._islands]
+        map_fences = [self._geopoint_poly_to_map(fence) for fence in self._fences]
+        map_islands = [self._geopoint_poly_to_map(island) for island in self._islands]
+
+        self._geofence_polygons_msg.geofence = [map_poly_to_polygon_msg(fence) for fence in map_fences]
+        self._geofence_polygons_msg.islands = [map_poly_to_polygon_msg(island) for island in map_islands]
 
         self._geofence_polygons_pub.publish(self._geofence_polygons_msg)
 
+        def map_poly_to_marker_msg(poly: list[tuple[float, float, float]], marker_id: int, color: tuple[float, float, float, float]) -> Marker:
+            marker = Marker()
+            marker.header.stamp = self._node.get_clock().now().to_msg()
+            marker.header.frame_id = self._map_frame
+            marker.ns = "geofence"
+            marker.id = marker_id
+            marker.type = Marker.LINE_STRIP
+            marker.action = Marker.MODIFY
+            marker.scale.x = 0.1
+            marker.color.r = float(color[0])
+            marker.color.g = float(color[1])
+            marker.color.b = float(color[2])
+            marker.color.a = float(color[3])
+            marker.points = []
+            for point in poly:
+                p = Point()
+                p.x = float(point[0])
+                p.y = float(point[1])
+                p.z = float(point[2])
+                marker.points.append(p)
+            # close the loop
+            if len(poly) > 0:
+                p = Point()
+                p.x = float(poly[0][0])
+                p.y = float(poly[0][1])
+                p.z = float(poly[0][2])
+                marker.points.append(p)
+            return marker
+        
+        fence_markers = [map_poly_to_marker_msg(fence, i, (1.0, 0.0, 0.0, 1.0)) for i, fence in enumerate(map_fences)]
+        island_markers = [map_poly_to_marker_msg(island, len(map_fences)+i, (0.0, 1.0, 0.0, 1.0)) for i, island in enumerate(map_islands)]
+        marker_array = MarkerArray(markers=fence_markers + island_markers)
+        self._rviz_pub.publish(marker_array)
 
-
+        
 
     def _on_goal_received_start(self, goal_request: dict) -> bool:
         try:
