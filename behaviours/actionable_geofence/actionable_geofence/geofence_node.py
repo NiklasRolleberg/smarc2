@@ -172,9 +172,9 @@ class GeofenceNode():
             return []
         
         transformed_poly = []
+        utm_to_map_transform = self._tf_buffer.lookup_transform(self._map_frame, self._utm_frame, Time())
         for point in poly:
             ps = convert_latlon_to_utm(point)
-            utm_to_map_transform = self._tf_buffer.lookup_transform(self._map_frame, self._utm_frame, Time())
             try:
                 transformed_ps = do_transform_point(ps, utm_to_map_transform)
                 transformed_poly.append((transformed_ps.point.x, transformed_ps.point.y, point.altitude))
