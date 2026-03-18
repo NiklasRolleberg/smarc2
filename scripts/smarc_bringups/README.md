@@ -37,7 +37,13 @@ In the beginning of the script, you can set whether you're on SAM or not.
 ### dji_bringup.sh
 
 Launches everything related to DJI drones and the ALARS project.
-**You will need the submodule in `messages/psdk_interfaces` to run the captain this bringup launches.**
+
+- Required submodules:
+
+  - `messages/psdk_interfaces`
+  - `drivers/nau7802_ros2_driver` (requires `pip3 install cedargrove-nau7802 circup`)
+  - auv_yolo_detector has requirements that need special care, check its readme!
+
 
 #### Camera udev rules
 Since we have multiple cams, of different kinds, we have udev rules setup in the jetson to give them fixed device symlinks under `ls /dev`:
