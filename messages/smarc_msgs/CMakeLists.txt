@@ -32,6 +32,7 @@ rosidl_generate_interfaces(${PROJECT_NAME}
   "msg/CTD.msg"
   "msg/ISSS.msg"
   "msg/GeofenceStatusStamped.msg"
+  "msg/GeofencePolygonsStamped.msg"
   "action/BaseAction.action"
   DEPENDENCIES geometry_msgs geographic_msgs nav_msgs sensor_msgs std_msgs builtin_interfaces
 )

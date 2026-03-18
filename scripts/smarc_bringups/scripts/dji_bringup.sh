@@ -219,7 +219,9 @@ tmux send-keys "ros2 launch auv_state_estimation projection_launch.py namespace:
 tmux new-window -t $SESSION:5 -n 'Aux'
 tmux rename-window "Aux"
 tmux select-window -t $SESSION:5
-tmux send-keys "ros2 run actionable_geofence geofence_node --ros-args -r __ns:=/$ROBOT_NAME -p use_sim_time:=$USE_SIM_TIME" C-m
+tmux send-keys "ros2 run actionable_geofence geofence_node --ros-args -r __ns:=/$ROBOT_NAME \
+-p use_sim_time:=$USE_SIM_TIME \
+-p map_frame:=$ROBOT_NAME/map" C-m
 
 
 ############
