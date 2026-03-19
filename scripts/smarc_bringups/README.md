@@ -43,6 +43,8 @@ Launches everything related to DJI drones and the ALARS project.
   - `messages/psdk_interfaces`
   - `drivers/nau7802_ros2_driver` (requires `pip3 install cedargrove-nau7802 circup`)
   - auv_yolo_detector has requirements that need special care, check its readme!
+  - rosboard: (`cd ~/colcon_ws/src && git clone https://github.com/dheera/rosboard`, `pip3 install tornado simplejpeg`, `ros2 run rosboard rosboard_node`)
+  - Set discovery server stuff as described in `scripts/README.md ## ROS2 over a VPN`
 
 #### eport serial2usb udev rules
 `udevadm info -a -n /dev/ttyUSB0`
