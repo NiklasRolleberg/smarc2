@@ -44,6 +44,14 @@ Launches everything related to DJI drones and the ALARS project.
   - `drivers/nau7802_ros2_driver` (requires `pip3 install cedargrove-nau7802 circup`)
   - auv_yolo_detector has requirements that need special care, check its readme!
 
+#### eport serial2usb udev rules
+`udevadm info -a -n /dev/ttyUSB0`
+
+find the serial of the serial2usb adapter, put it in `/etc/udev/rules.d/XXXX.rules`
+
+`SUBSYSTEM=="tty", ATTRS{serial}=="A50285BI", SYMLINK+="eport", OWNER="alars", GROUP="alars", MODE="0660"`
+
+then there'll be `dev/eport` as a device that links to that usb2serial
 
 #### Camera udev rules
 Since we have multiple cams, of different kinds, we have udev rules setup in the jetson to give them fixed device symlinks under `ls /dev`:
