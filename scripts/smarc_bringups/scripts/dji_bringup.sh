@@ -268,24 +268,32 @@ fi
 
 
 ############
-# 8 mqtt bridge, ros_tcp_endpoint, and mosquitto broker as needed
+# 8 mqtt bridge, rosboard etc
 ############
 tmux new-window -t $SESSION:8 -n 'Bridges'
 tmux rename-window "Bridges"
 tmux select-window -t $SESSION:8
 tmux send-keys "ros2 launch str_json_mqtt_bridge waraps_bridge.launch robot_name:=$ROBOT_NAME domain:=air realsim:=$REALSIM broker_addr:=$MQTT_ADDR broker_port:=$MQTT_PORT context:=alars" C-m
 
+tmux split-window -h -t $SESSION:8.0
+tmux select-pane -t $SESSION:8.1
+tmux send-keys "ros2 run rosboard rosboard --ros-args -r __ns:=/$ROBOT_NAME" C-m
+
+
+############
+# 9 sim connection
+############
 # only needed when running the sim
 if [[ $USE_SIM_TIME = "True" ]]; then
+    tmux new-window -t $SESSION:9 -n 'SimBridges'
+    tmux rename-window "SimBridges"
     # ROS2Bridge
-    tmux select-window -t $SESSION:8
-    tmux split-window -h -t $SESSION:8.0
-    tmux select-pane -t $SESSION:8.1
+    tmux select-window -t $SESSION:9
     tmux send-keys "ros2 run ros_tcp_endpoint default_server_endpoint --ros-args -p tcp_ip:=localhost -p tcp_port:=10000" C-m
     if [[ $ON_LINUX = "True" ]]; then
         # mqtt broker
-        tmux split-window -h -t $SESSION:8.1
-        tmux select-pane -t $SESSION:8.2
+        tmux split-window -h -t $SESSION:9.0
+        tmux select-pane -t $SESSION:9.1
         tmux send-keys "mosquitto -p $MQTT_PORT" C-m
     fi
 fi
