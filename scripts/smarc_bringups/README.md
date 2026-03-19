@@ -58,33 +58,33 @@ Since we have multiple cams, of different kinds, we have udev rules setup in the
 Example:
 ```
 > lsusb
-Bus 002 Device 002: ID 0bda:0420 Realtek Semiconductor Corp. 4-Port USB 3.0 Hub
-Bus 002 Device 001: ID 1d6b:0003 Linux Foundation 3.0 root hub
-Bus 001 Device 003: ID 0bda:5420 Realtek Semiconductor Corp. 4-Port USB 2.0 Hub
-Bus 001 Device 002: ID 8087:0032 Intel Corp. AX210 Bluetooth
-Bus 001 Device 005: ID 2ca3:0023 DJI Technology Co., Ltd. DJIPocket3
-Bus 001 Device 001: ID 1d6b:0002 Linux Foundat
-
-> v4l2-ctl --list-devices
-HD Pro Webcam C920 (usb-0000:00:14.0-3): 
-    /dev/video0
-
-Logitech Webcam C270 (usb-0000:00:14.0-4): 
-    /dev/video1
-
-
-
-> sudo vim /etc/udev/rules.d/80-djipocket3.rules
-
-# DJIPocket3 (vendor 2ca3, product 0023)
-# Video streaming node (usually index 0)
-SUBSYSTEM=="video4linux", ATTRS{idVendor}=="2ca3", ATTRS{idProduct}=="0023", ATTR{index}=="0", SYMLINK+="djipocket3"
-# Secondary node (often metadata/still capture; usually index 1)
-SUBSYSTEM=="video4linux", ATTRS{idVendor}=="2ca3", ATTRS{idProduct}=="0023", ATTR{index}=="1", SYMLINK+="djipocket3_meta"
-# Media controller node
-SUBSYSTEM=="media",       ATTRS{idVendor}=="2ca3", ATTRS{idProduct}=="0023", SYMLINK+="djipocket3_media"
+...
+Bus 001 Device 019: ID 2e1a:0003 Insta Insta360 X4
+...
 ```
-The above makes `/dev/djipocket3` point to the video stream of the cam, independently of connection timing/port/other cams etc.
+
+`> apt install v4l-utils`
+
+```
+> v4l2-ctl --list-devices
+NVIDIA Tegra Video Input Device (platform:tegra-camrtc-ca):
+	/dev/media0
+
+Insta360 X4: Insta360 X4 (usb-3610000.usb-4.4):
+	/dev/video0
+	/dev/video1
+	/dev/media1
+```
+
+```
+> sudo vim /etc/udev/rules.d/99-insta360.rules
+
+SUBSYSTEM=="video4linux", ATTRS{idVendor}=="2e1a", ATTRS{idProduct}=="0003", ATTR{index}=="0", SYMLINK+="insta360x4"
+SUBSYSTEM=="video4linux", ATTRS{idVendor}=="2e1a", ATTRS{idProduct}=="0003", ATTR{index}=="1", SYMLINK+="insta360x4_meta"
+SUBSYSTEM=="media", ATTRS{idVendor}=="2e1a", ATTRS{idProduct}=="0003", SYMLINK+="insta360x4_media"
+```
+
+The above makes `/dev/insta360x4` point to the video stream of the cam, independently of connection timing/port/other cams etc.
 
 
 ## TMUX Cheatsheet
