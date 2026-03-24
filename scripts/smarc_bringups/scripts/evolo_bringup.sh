@@ -124,16 +124,14 @@ if [ "$REALSIM" = "real" ]; then
     #RTSP2web
     tmux new-window -t $SESSION:8 -n 'RTSP2web'
     tmux select-window -t $SESSION:8
-    tmux send-keys "cd ~/RTSPtoWeb/ ; GO111MODULE=on go run *.go"
+    tmux send-keys "cd ~/RTSPtoWeb/ ; GO111MODULE=on go run *.go" C-m
     
     #Camera driver
     tmux new-window -t $SESSION:9 -n 'camera driver'
     tmux select-window -t $SESSION:9
     #tmux send-keys "ros2 run gscam gscam_node --ros-args -p gscam_config:="uridecodebin uri=rtsp://127.0.0.1:5541/27aec28e-6181-4753-9acd-0456a75f0289/0 source::latency=0 ! nvvidconv ! videoconvert" -p frame_id:=evolo_camera_frame -p image_encoding:=rgb8 -p sync_sink:=false -r __ns:=/evolo/gimbal_camera"
     #tmux send-keys 'ros2 run gscam gscam_node --ros-args -p gscam_config:="uridecodebin uri=rtsp://192.168.2.210 source::latency=0 ! decodebin ! videoconvert" -p frame_id:=evolo_camera_frame -p image_encoding:=rgb8 -p sync_sink:=false -r __ns:=/evolo/sensors/gimbal_camera' C-m
-    #tmux send-keys "ros2 run image_publisher image_publisher_node rtsp://192.168.144.108 --ros-args -p publish_rate:=50.0" C-m
-    # for the dji gimbal cam
-    GSCAM_CONFIG="uridecodebin uri=rtsp://192.168.2.210 source::latency=0 ! decodebin ! videoconvert"
+    GSCAM_CONFIG="rtspsrc location=rtsp://192.168.2.210 latency=0 ! rtph264depay ! h264parse ! nvv4l2decoder ! nvvidconv ! video/x-raw,format=BGRx ! videoconvert ! queue max-size-buffers=1 leaky=downstream"
     tmux send-keys "ros2 run gscam gscam_node --ros-args \
     -p gscam_config:=\"$GSCAM_CONFIG\" \
     -p frame_id:=evolo_camera_frame \
@@ -227,10 +225,16 @@ fi
 
 tmux new-window -t $SESSION:19 -n 'visualization'
 tmux select-window -t $SESSION:19
-tmux send-keys "TDODO launch rosboard"
+tmux send-keys "ros2 run rosboard rosboard_node" C-m
 
-tmux new-window -t $SESSION:20 -n 'zenoh router'p
-tmux select-window -t $SESSION:20
+if [ "$REALSIM" = "real" ]; then
+    tmux new-window -t $SESSION:20 -n 'message transport'
+    tmux select-window -t $SESSION:20
+    tmux send-keys "ros2 launch evolo_config network_bridge_evolo_tcp.launch.py" C-m
+fi
+
+tmux new-window -t $SESSION:30 -n 'zenoh router'p
+tmux select-window -t $SESSION:30
 tmux send-keys "ros2 run rmw_zenoh_cpp rmw_zenohd" C-m
 
 
