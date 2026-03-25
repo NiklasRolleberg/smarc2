@@ -137,6 +137,7 @@ if [ "$REALSIM" = "real" ]; then
     -p frame_id:=evolo_camera_frame \
     -p image_encoding:=rgb8 \
     -p sync_sink:=false \
+    -p camera.image_raw.enable_pub_plugins:="['image_transport/compressed']" \ 
     -r __ns:=/$ROBOT_NAME/sensors/gimbal_camera" C-m
     
     #Gimbal driver
@@ -225,7 +226,7 @@ fi
 
 tmux new-window -t $SESSION:19 -n 'visualization'
 tmux select-window -t $SESSION:19
-tmux send-keys "ros2 run rosboard rosboard_node" C-m
+tmux send-keys "sleep 15; ros2 run rosboard rosboard_node" C-m
 
 if [ "$REALSIM" = "real" ]; then
     tmux new-window -t $SESSION:20 -n 'message transport'
