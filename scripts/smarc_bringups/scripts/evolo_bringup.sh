@@ -137,7 +137,7 @@ if [ "$REALSIM" = "real" ]; then
     -p frame_id:=evolo_camera_frame \
     -p image_encoding:=rgb8 \
     -p sync_sink:=false \
-    -p camera.image_raw.enable_pub_plugins:="['image_transport/compressed']" \ 
+    -p camera.image_raw.enable_pub_plugins:="['image_transport/compressed']" \
     -r __ns:=/$ROBOT_NAME/sensors/gimbal_camera" C-m
     
     #Gimbal driver
