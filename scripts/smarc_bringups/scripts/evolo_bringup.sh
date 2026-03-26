@@ -226,7 +226,7 @@ fi
 
 tmux new-window -t $SESSION:19 -n 'visualization'
 tmux select-window -t $SESSION:19
-tmux send-keys "ros2 run rosboard rosboard_node" C-m
+tmux send-keys "sleep 15; ros2 run rosboard rosboard_node" C-m
 
 if [ "$REALSIM" = "real" ]; then
     tmux new-window -t $SESSION:20 -n 'message transport'
