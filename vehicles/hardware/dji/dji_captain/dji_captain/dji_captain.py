@@ -20,7 +20,7 @@ from geometry_msgs.msg import TwistStamped, Pose, PoseStamped, TransformStamped,
 from geographic_msgs.msg import GeoPoint
 from tf2_msgs.msg import TFMessage
 
-from psdk_interfaces.msg import PositionFused, ControlMode, EscData, EscStatusIndividual
+from psdk_interfaces.msg import PositionFused, ControlMode, EscData, EscStatusIndividual, SingleBatteryInfo
 from smarc_msgs.msg import Topics as SmarcTopics
 from smarc_msgs.msg import GeofenceStatusStamped
 from dji_msgs.msg import Links as DjiLinks
@@ -44,6 +44,8 @@ class PSDKTopics(Enum):
     ALTITUDE            = WRAPPER_NS + "altitude_sea_level"
     CONTROL_MODE        = WRAPPER_NS + "control_mode"
     BATTERY             = WRAPPER_NS + "battery" 
+    SINGLE_BATT1        = WRAPPER_NS + "single_battery_index1"
+    SINGLE_BATT2        = WRAPPER_NS + "single_battery_index2"
     VELOCITY_GROUND_FSD = WRAPPER_NS + "velocity_ground_fused"
     ANGULAR_RATE_GND_FSD= WRAPPER_NS + "angular_rate_ground_fused"
     ESC_DATA            = WRAPPER_NS + "esc_data"
@@ -268,6 +270,19 @@ class DjiCaptain():
             PSDKTopics.BATTERY.value,
             self._battery_callback,
             qos_profile=10)
+
+        node.create_subscription(
+            SingleBatteryInfo,
+            PSDKTopics.SINGLE_BATT1.value,
+            self._single_batt_callback,
+            qos_profile=10)
+
+        node.create_subscription(
+            SingleBatteryInfo,
+            PSDKTopics.SINGLE_BATT2.value,
+            self._single_batt_callback,
+            qos_profile=10)
+
         
         node.create_subscription(
             Vector3Stamped,
@@ -569,6 +584,13 @@ class DjiCaptain():
 
     def _battery_callback(self, msg: BatteryState):
         self._battery_percent = msg.percentage*100
+
+    def _single_batt_callback(self, msg: SingleBatteryInfo):
+        # we get two SingleBatteryInfo messages, one for each battery, but we only care about the lowest percentage one for our health estimation
+        if self._battery_percent is None:
+            self._battery_percent = msg.capacity_percentage*100
+        else:
+            self._battery_percent = min(self._battery_percent, msg.capacity_percentage*100)
 
 
 
