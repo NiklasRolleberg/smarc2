@@ -143,7 +143,7 @@ if [ "$REALSIM" = "real" ]; then
     #Gimbal driver
     tmux new-window -t $SESSION:10 -n 'gimbal driver'
     tmux select-window -t $SESSION:10
-    tmux send-keys "ros2 launch z1_pro_driver z1_pro_launch.py namespace:=$ROBOT_NAME use_vehicle_altitude:=false" C-m
+    tmux send-keys "ros2 launch evolo_config z1_pro_launch.py namespace:=$ROBOT_NAME use_vehicle_altitude:=false" C-m
 else #Sim
     tmux new-window -t $SESSION:4 -n 'tcp-endpoint'
     tmux select-window -t $SESSION:4
