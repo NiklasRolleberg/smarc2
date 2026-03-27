@@ -10,7 +10,7 @@ CONTEXT=evolo # change this to 'smarc' or something else, then connect to the sa
 BT_LOG_MODE=compact # can be 'compact' or 'verbose'
 
 #Dune backseat driver
-DUNE_BACKSEAT_DRIVER=False #[True , False]
+DUNE_BACKSEAT_DRIVER=True #[True , False]
 
 #Simulation
 SIM=False
@@ -23,7 +23,7 @@ else
     #USE_SIM_TIME=False
     USE_SIM_TIME=False #Useful for rosbags
     LOCATION_SOURCE=SBG #[SBG MQTT SERIAL]
-    CAPTAIN_COM=NONE #[SERIAL MQTT]
+    CAPTAIN_COM=SERIAL #[SERIAL MQTT]
 fi
 
 #Low controllers
