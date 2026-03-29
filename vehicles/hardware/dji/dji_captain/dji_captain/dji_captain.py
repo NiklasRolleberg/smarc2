@@ -25,41 +25,12 @@ from smarc_msgs.msg import Topics as SmarcTopics
 from smarc_msgs.msg import GeofenceStatusStamped
 from dji_msgs.msg import Links as DjiLinks
 from dji_msgs.msg import Topics as DjiTopics
+from dji_msgs.msg import PsdkTopics as PSDKTopics
 
 
 from smarc_utilities.georef_utils import convert_latlon_to_utm, convert_utm_to_latlon
 from tf_transformations import euler_from_quaternion, quaternion_from_euler, quaternion_matrix
 from tf2_geometry_msgs import do_transform_pose_stamped
-
-
-class PSDKTopics(Enum):
-    # these are hardcoded topics in PSDK bridge...
-    WRAPPER_NS = "wrapper/psdk_ros2/"
-    
-    GPS_POSITION        = WRAPPER_NS + "gps_position"
-    POSITION_FUSED      = WRAPPER_NS + "position_fused"
-    ATTITUDE            = WRAPPER_NS + "attitude"
-    HOME_POINT          = WRAPPER_NS + "home_point"
-    HOME_POINT_ALTITUDE = WRAPPER_NS + "home_point_altitude"
-    ALTITUDE            = WRAPPER_NS + "altitude_sea_level"
-    CONTROL_MODE        = WRAPPER_NS + "control_mode"
-    BATTERY             = WRAPPER_NS + "battery" 
-    SINGLE_BATT1        = WRAPPER_NS + "single_battery_index1"
-    SINGLE_BATT2        = WRAPPER_NS + "single_battery_index2"
-    VELOCITY_GROUND_FSD = WRAPPER_NS + "velocity_ground_fused"
-    ANGULAR_RATE_GND_FSD= WRAPPER_NS + "angular_rate_ground_fused"
-    ESC_DATA            = WRAPPER_NS + "esc_data"
-    RC                  = WRAPPER_NS + "rc"
-
-    TAKE_CONTROL_SRV    = WRAPPER_NS + "obtain_ctrl_authority"
-    RELEASE_CONTROL_SRV = WRAPPER_NS + "release_ctrl_authority"
-    TAKEOFF_SRV         = WRAPPER_NS + "takeoff"
-    LAND_SRV            = WRAPPER_NS + "land"
-
-    FLUvel_JOY          = WRAPPER_NS + "flight_control_setpoint_FLUvelocity_yawrate"
-    # ENUvel_JOY          = WRAPPER_NS + "flight_control_setpoint_ENUvelocity_yawrate"
-    # ENUpos_JOY          = WRAPPER_NS + "flight_control_setpoint_ENUposition_yaw"    
-
 
 
 class DjiCaptain():
@@ -120,7 +91,7 @@ class DjiCaptain():
 
         self._move_to_setpoint : Optional[PoseStamped] = None
         self._joy_timer : Optional[Timer] = None
-        self._FLU_vel_joy_pub = node.create_publisher(Joy, PSDKTopics.FLUvel_JOY.value, qos_profile=10)
+        self._FLU_vel_joy_pub = node.create_publisher(Joy, PSDKTopics.FLU_VEL_YAWRATE_JOY_CMD, qos_profile=10)
         
         
         self.MOVE_TO_SETPOINT_MAX_AGE : float = 1.0 #How long we keep the move to setpoint before we consider it stale
@@ -183,12 +154,6 @@ class DjiCaptain():
         # I set it to 4kg to have some momentary overshoot margins due to motion etc.
         self._MAX_LOAD_KG : float = 4.0 # kg, max payload we consider safe to carry
         self._load_cell_weight : Optional[float] = None
-
-
-
-        topics = [PSDKTopics.__dict__[t].value for t in PSDKTopics.__members__.keys()]
-        topics = [self.ROBOT_NAME + "/" + PSDKTopics.__dict__[t].value for t in PSDKTopics.__members__.keys()]
-        self.log(f"Subscribed to PSDK topics: --topics {' '.join(topics)}")
        
 
         self._tf_pub = node.create_publisher(TFMessage,"/tf",qos_profile=10)
@@ -225,86 +190,86 @@ class DjiCaptain():
 
         node.create_subscription(
             NavSatFix,
-            PSDKTopics.GPS_POSITION.value,
+            PSDKTopics.GPS_POSITION,
             self._gps_callback,
             qos_profile=10)
 
         node.create_subscription(
             PositionFused,
-            PSDKTopics.POSITION_FUSED.value,
+            PSDKTopics.POSITION_FUSED,
             self._position_fused_callback,
             qos_profile=10)
 
         node.create_subscription(
             NavSatFix,
-            PSDKTopics.HOME_POINT.value,
+            PSDKTopics.HOME_POINT,
             self._home_point_callback,
             qos_profile=10)
         
         node.create_subscription(
             Float32,
-            PSDKTopics.HOME_POINT_ALTITUDE.value,
+            PSDKTopics.HOME_POINT_ALTITUDE,
             self._home_point_altitude_callback,
             qos_profile=10)
 
         node.create_subscription(
             QuaternionStamped,
-            PSDKTopics.ATTITUDE.value,
+            PSDKTopics.ATTITUDE,
             self._attitude_callback,
             qos_profile=10)
 
         node.create_subscription(
             Float32,
-            PSDKTopics.ALTITUDE.value,
+            PSDKTopics.ALTITUDE,
             self._geo_alt_cb,
             qos_profile=10)
 
         node.create_subscription(
             ControlMode,
-            PSDKTopics.CONTROL_MODE.value,
+            PSDKTopics.CONTROL_MODE,
             self._control_mode_callback,
             qos_profile=10)
         
         node.create_subscription(
             BatteryState,
-            PSDKTopics.BATTERY.value,
+            PSDKTopics.BATTERY,
             self._battery_callback,
             qos_profile=10)
 
         node.create_subscription(
             SingleBatteryInfo,
-            PSDKTopics.SINGLE_BATT1.value,
+            PSDKTopics.SINGLE_BATT1,
             self._single_batt_callback,
             qos_profile=10)
 
         node.create_subscription(
             SingleBatteryInfo,
-            PSDKTopics.SINGLE_BATT2.value,
+            PSDKTopics.SINGLE_BATT2,
             self._single_batt_callback,
             qos_profile=10)
 
         
         node.create_subscription(
             Vector3Stamped,
-            PSDKTopics.VELOCITY_GROUND_FSD.value,
+            PSDKTopics.VELOCITY_GROUND_FSD,
             self._velocity_ground_callback,
             qos_profile=10)
         
         node.create_subscription(
             Vector3Stamped,
-            PSDKTopics.ANGULAR_RATE_GND_FSD.value,
+            PSDKTopics.ANGULAR_RATE_GND_FSD,
             self._angular_rate_ground_callback,
             qos_profile=10)
         
         node.create_subscription(
             EscData,
-            PSDKTopics.ESC_DATA.value,
+            PSDKTopics.ESC_DATA,
             lambda msg: setattr(self, "_esc_data", msg),
             qos_profile=10)
         
         node.create_subscription(
             Joy,
-            PSDKTopics.RC.value,
+            PSDKTopics.RC,
             self._dji_rc_cb,
             qos_profile=10)
         
@@ -344,10 +309,10 @@ class DjiCaptain():
         
         # services to take and give-up control + take-off and land
         # call service: obtain/release_ctrl_authority
-        self._take_control_srv = node.create_client(Trigger, PSDKTopics.TAKE_CONTROL_SRV.value)
-        self._release_control_srv = node.create_client(Trigger, PSDKTopics.RELEASE_CONTROL_SRV.value)
-        self._takeoff_srv = node.create_client(Trigger, PSDKTopics.TAKEOFF_SRV.value)
-        self._land_srv = node.create_client(Trigger, PSDKTopics.LAND_SRV.value)
+        self._take_control_srv = node.create_client(Trigger, PSDKTopics.TAKE_CONTROL_SRV)
+        self._release_control_srv = node.create_client(Trigger, PSDKTopics.RELEASE_CONTROL_SRV)
+        self._takeoff_srv = node.create_client(Trigger, PSDKTopics.TAKEOFF_SRV)
+        self._land_srv = node.create_client(Trigger, PSDKTopics.LAND_SRV)
 
 
         while rclpy.ok():
