@@ -42,7 +42,7 @@ Launches everything related to DJI drones and the ALARS project.
 
   - `messages/psdk_interfaces`
   - `drivers/nau7802_ros2_driver` (requires `pip3 install cedargrove-nau7802 circup`)
-  - `drivers/z1_pro_driver` (requires `apt install geographiclib-tools libgeographic-dev ros-humble-compressed-image-transport`)
+  - `drivers/z1_pro_driver` (requires `apt install geographiclib-tools libgeographic-dev ros-humble-compressed-image-transport gstreamer1.0-plugins-bad gstreamer1.0-plugins-good gstreamer1.0-plugins-base  gstreamer1.0-libav`)
   - auv_yolo_detector has requirements that need special care, check its readme!
   - rosboard: (`cd ~/colcon_ws/src && git clone https://github.com/dheera/rosboard`, `pip3 install tornado simplejpeg`, `ros2 run rosboard rosboard_node`)
   - rosshow: (`cd ~/colcon_ws/src && git clone https://github.com/dheera/rosshow`)
