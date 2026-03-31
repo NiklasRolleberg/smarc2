@@ -274,7 +274,7 @@ if [[ $USE_SIM_TIME = "False" ]]; then
 
     tmux select-pane -t $SESSION:7.2
     tmux send-keys "ros2 launch z1_pro_driver z1_pro_launch.py \
-    namespace:=$ROBOT_NAME \
+    namespace:=\"$ROBOT_NAME/gimbal_camera\" \
     tf_frame_prefix:=\"$ROBOT_NAME/\" \
     use_vehicle_altitude:=True" C-m
 
