@@ -1,6 +1,36 @@
 #! /bin/bash
 
-ROBOT_NAME=M350
+ROBOT_NAME=$1
+if [[ -z "$ROBOT_NAME" ]]; then
+    echo "You must pass the robot name as the first argument! Pass one of: M350 or FC30"
+    echo "This is required to namespace all the ROS2 nodes and topics correctly."
+    echo "As well as to set parameters depending on the platform..."
+    echo "Exiting."
+    exit 1
+fi
+
+if [[ "$ROBOT_NAME" != "M350" && "$ROBOT_NAME" != "FC30" ]]; then
+    echo "Invalid robot name: $ROBOT_NAME"
+    echo "Please pass either M350 or FC30 as the first argument."
+    echo "Exiting."
+    exit 1
+fi
+
+HOME_ABOVE_WATER=$2
+if [[ -z "$HOME_ABOVE_WATER" ]]; then
+    echo "You must pass the home altitude above water level as the second argument!"
+    echo "This is required for the dji_captain node to function properly."
+    echo "Exiting."
+    exit 1
+fi
+
+if ! [[ "$HOME_ABOVE_WATER" =~ ^[0-9]+\.[0-9]+$ ]]; then
+    echo "HOME_ABOVE_WATER must be a floating point number! Adding a decimal point for you..."
+    HOME_ABOVE_WATER="${HOME_ABOVE_WATER}.0"
+    echo "HOME_ABOVE_WATER is set to $HOME_ABOVE_WATER"
+fi
+
+
 SESSION=${ROBOT_NAME}_bringup
 
 # check if there is already a tmux session with this name
@@ -36,19 +66,7 @@ if [[ $ON_LINUX == "True" && $USE_SIM_TIME == "True" ]]; then
     MQTT_PORT=1889
 fi
 
-HOME_ABOVE_WATER=$1
-if [[ -z "$HOME_ABOVE_WATER" ]]; then
-    echo "You must pass the home altitude above water level as the first argument!"
-    echo "This is required for the dji_captain node to function properly."
-    echo "Exiting."
-    exit 1
-fi
 
-if ! [[ "$HOME_ABOVE_WATER" =~ ^[0-9]+\.[0-9]+$ ]]; then
-    echo "HOME_ABOVE_WATER must be a floating point number! Adding a decimal point for you..."
-    HOME_ABOVE_WATER="${HOME_ABOVE_WATER}.0"
-    echo "HOME_ABOVE_WATER is set to $HOME_ABOVE_WATER"
-fi
 
 # New variables for wasp_bt.launch and wasp_mqtt_agent.launch
 AGENT_TYPE=air
