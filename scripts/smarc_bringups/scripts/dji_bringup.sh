@@ -261,16 +261,16 @@ if [[ $USE_SIM_TIME = "False" ]]; then
     tmux select-pane -t $SESSION:7.1
     # for basic usb webcam
     #tmux send-keys "ros2 run usb_cam usb_cam_node_exe --ros-args -r __ns:=/$ROBOT_NAME/gimbal_camera" C-m
-    # TODO: replace with the z1 pro driver
-    # for the dji gimbal cam
-    # requires ros-humble-gscam gstreamer1.0-tools gstreamer1.0-plugins-good
-    # GSCAM_CONFIG_DJI="v4l2src device=/dev/djipocket3 ! image/jpeg,width=1920,height=1080,framerate=30/1 ! jpegdec ! videoconvert ! video/x-raw,format=BGR"
-    # tmux send-keys "ros2 run gscam gscam_node --ros-args \
-    # -p gscam_config:=\"$GSCAM_CONFIG_DJI\" \
-    # -p frame_id:=osmo3_optical_frame \
-    # -p image_encoding:=rgb8 \
-    # -p sync_sink:=false \
-    # -r __ns:=/$ROBOT_NAME/gimbal_camera" C-m
+    # for z1 pro camera. you need to have configured the IP with the windows app...
+    GSCAM_CONFIG_GIMBAL="rtspsrc location=rtsp://192.168.1.108 latency=0 ! rtph264depay ! h264parse ! nvv4l2decoder ! nvvidconv ! video/x-raw,format=BGRx ! videoconvert ! queue max-size-buffers=1 leaky=downstream"
+    tmux send-keys "ros2 run gscam gscam_node --ros-args \
+    -p gscam_config:=\"$GSCAM_CONFIG_GIMBAL\" \
+    -p frame_id:=gimbal_camera_frame \
+    -p image_encoding:=rgb8 \
+    -p sync_sink:=false \
+    -p camera.image_raw.enable_pub_plugins:="['image_transport/compressed','image_transport/raw']" \
+    -r __ns:=/$ROBOT_NAME/gimbal_camera" C-m
+
 
     # for the 360 cam
     tmux select-pane -t $SESSION:7.2
@@ -295,7 +295,7 @@ tmux send-keys "ros2 launch str_json_mqtt_bridge waraps_bridge.launch robot_name
 
 tmux split-window -h -t $SESSION:8.0
 tmux select-pane -t $SESSION:8.1
-tmux send-keys "ros2 run rosboard rosboard --ros-args -r __ns:=/$ROBOT_NAME" C-m
+tmux send-keys "ros2 run rosboard rosboard_node --ros-args -r __ns:=/$ROBOT_NAME" C-m
 
 
 ############
