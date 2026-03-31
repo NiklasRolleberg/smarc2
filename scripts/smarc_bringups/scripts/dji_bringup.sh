@@ -263,7 +263,8 @@ if [[ $USE_SIM_TIME = "False" ]]; then
     # for basic usb webcam
     #tmux send-keys "ros2 run usb_cam usb_cam_node_exe --ros-args -r __ns:=/$ROBOT_NAME/gimbal_camera" C-m
     # for z1 pro camera. you need to have configured the IP with the windows app...
-    GSCAM_CONFIG_GIMBAL="rtspsrc location=rtsp://192.168.1.108 latency=0 ! rtph264depay ! h264parse ! nvv4l2decoder ! nvvidconv ! video/x-raw,format=BGRx ! videoconvert ! queue max-size-buffers=1 leaky=downstream"
+    GIMBAL_IP=192.168.1.108
+    GSCAM_CONFIG_GIMBAL="rtspsrc location=rtsp://$GIMBAL_IP latency=0 ! rtph264depay ! h264parse ! nvv4l2decoder ! nvvidconv ! video/x-raw,format=BGRx ! videoconvert ! queue max-size-buffers=1 leaky=downstream"
     tmux send-keys "ros2 run gscam gscam_node --ros-args \
     -p gscam_config:=\"$GSCAM_CONFIG_GIMBAL\" \
     -p frame_id:=z1_optical_frame \
@@ -276,7 +277,9 @@ if [[ $USE_SIM_TIME = "False" ]]; then
     tmux send-keys "ros2 launch z1_pro_driver z1_pro_launch.py \
     namespace:=\"$ROBOT_NAME/gimbal_camera\" \
     tf_frame_prefix:=\"$ROBOT_NAME/\" \
-    use_vehicle_altitude:=True" C-m
+    use_vehicle_altitude:=True \
+    camera_ip:=$GIMBAL_IP \
+    camera_port:=2332" C-m
 
 
     # for the 360 cam
