@@ -253,7 +253,8 @@ if [[ $USE_SIM_TIME = "False" ]]; then
 
     tmux split-window -v -t $SESSION:7.0
     tmux split-window -v -t $SESSION:7.1
-    tmux select-layout -t $SESSION:7 even-vertical
+    tmux select-layout even-vertical -t $SESSION:7
+    tmux split-window -h -t $SESSION:7.1
 
     tmux select-pane -t $SESSION:7.0
     tmux send-keys "ros2 run nau7802_ros2_driver nau7802_ros2_driver --ros-args -r __ns:=/$ROBOT_NAME" C-m
@@ -265,15 +266,21 @@ if [[ $USE_SIM_TIME = "False" ]]; then
     GSCAM_CONFIG_GIMBAL="rtspsrc location=rtsp://192.168.1.108 latency=0 ! rtph264depay ! h264parse ! nvv4l2decoder ! nvvidconv ! video/x-raw,format=BGRx ! videoconvert ! queue max-size-buffers=1 leaky=downstream"
     tmux send-keys "ros2 run gscam gscam_node --ros-args \
     -p gscam_config:=\"$GSCAM_CONFIG_GIMBAL\" \
-    -p frame_id:=gimbal_camera_frame \
+    -p frame_id:=z1_optical_frame \
     -p image_encoding:=rgb8 \
     -p sync_sink:=false \
     -p camera.image_raw.enable_pub_plugins:="['image_transport/compressed','image_transport/raw']" \
     -r __ns:=/$ROBOT_NAME/gimbal_camera" C-m
 
+    tmux select-pane -t $SESSION:7.2
+    tmux send-keys "ros2 launch z1_pro_driver z1_pro_launch.py \
+    namespace:=$ROBOT_NAME \
+    tf_frame_prefix:=\"$ROBOT_NAME/\" \
+    use_vehicle_altitude:=True" C-m
+
 
     # for the 360 cam
-    tmux select-pane -t $SESSION:7.2
+    tmux select-pane -t $SESSION:7.3
     # for the dji gimbal cam
     GSCAM_CONFIG_FISH="v4l2src device=/dev/insta360x4 ! image/jpeg,width=1920,height=1080,framerate=30/1 ! jpegdec ! videoconvert ! video/x-raw,format=BGR"
     tmux send-keys "ros2 run gscam gscam_node --ros-args \
