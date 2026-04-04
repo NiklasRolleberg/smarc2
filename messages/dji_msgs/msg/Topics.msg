@@ -5,14 +5,18 @@
 string MOVE_TO_SETPOINT_TOPIC = 'move_to_setpoint' # PoseStamped
 string LABELED_UTM_TOPIC = 'labeled_utm_topic' # String, formatted: "utm_{zone}_{band}"
 
-# user feedback
-string CONTROLLER_INPUT_TOPIC = 'joy' # Joy
-string CONTROLLER_VIBRATION_TOPIC = 'joy/set_feedback' # JoyFeedback
-string TTS_TOPIC = 'speak' # String
 
 # cameras
 string GIMBAL_CAMERA_RAW_TOPIC = 'gimbal_camera/camera/image_raw' # Image
+string GIMBAL_CAMERA_INFO_TOPIC = 'gimbal_camera/camera/camera_info' #CameraInfo
 string FISHEYE_CAMERA_RAW_TOPIC = 'fisheye_camera/camera/image_raw' # Image
+string FISHEYE_CAMERA_INFO_TOPIC = 'fisheye_camera/camera/camera_info' #CameraInfo
+
+
+# sensors that are not coming from PSDK
+string LOAD_CELL_RAW_TOPIC = 'sensor/load_cell_raw' # Int32
+string LOAD_CELL_WEIGHT_TOPIC = 'sensor/load_cell_weight' # Float32
+
 
 # object detectors in normalized image coordinates [-1,1]
 # (0,0) is the center of the image, +x is right, +y is up!
@@ -44,6 +48,10 @@ string DISABLE_ALARS_DETECTOR_SERVICE_TOPIC = 'disable_alars_detector' # Trigger
 string ENABLE_HOOK_ESTIMATOR_SERVICE_TOPIC = 'enable_hook_estimator' # Trigger
 string DISABLE_HOOK_ESTIMATOR_SERVICE_TOPIC = 'disable_hook_estimator' # Trigger
 
-# sensors that are not coming from PSDK
-string LOAD_CELL_RAW_TOPIC = 'sensor/load_cell_raw' # Int32
-string LOAD_CELL_WEIGHT_TOPIC = 'sensor/load_cell_weight' # Float32
+
+
+
+# user feedback
+string CONTROLLER_INPUT_TOPIC = 'joy' # Joy
+string CONTROLLER_VIBRATION_TOPIC = 'joy/set_feedback' # JoyFeedback
+string TTS_TOPIC = 'speak' # String

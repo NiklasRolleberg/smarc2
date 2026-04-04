@@ -60,3 +60,6 @@
 [submodule "drivers/pingdspinger"]
 	path = drivers/pingdspinger
 	url = git@github.com:NinjaTuna007/pingdspinger.git
+[submodule "drivers/z1_pro_driver"]
+	path = drivers/z1_pro_driver
+	url = git@github.com:smarc-project/z1_pro_driver.git
