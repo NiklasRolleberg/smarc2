@@ -10,10 +10,10 @@ CONTEXT=evolo # change this to 'smarc' or something else, then connect to the sa
 BT_LOG_MODE=compact # can be 'compact' or 'verbose'
 
 #Dune backseat driver
-DUNE_BACKSEAT_DRIVER=True #[True , False]
+DUNE_BACKSEAT_DRIVER=False #[True , False]
 
 #Simulation
-SIM=False
+SIM=True
 if [ "$SIM" = "True" ]; then
     REALSIM=simulation
     ROBOT_NAME=evolo
@@ -64,8 +64,8 @@ tmux select-window -t $SESSION:3
 if [ "$REALSIM" = "real" ]; then
     tmux send-keys "sleep 7; ros2 launch str_json_mqtt_bridge waraps_bridge.launch broker_addr:=20.240.40.232 broker_port:=1884 robot_name:=$ROBOT_NAME domain:=$AGENT_TYPE realsim:=$REALSIM use_sim_time:=$USE_SIM_TIME context:=$CONTEXT" C-m
 else
-    #tmux send-keys "sleep 7; ros2 launch str_json_mqtt_bridge waraps_bridge.launch broker_addr:=20.240.40.232 broker_port:=1884 robot_name:=$ROBOT_NAME domain:=$AGENT_TYPE realsim:=$REALSIM use_sim_time:=$USE_SIM_TIME context:=$CONTEXT" C-m
-    tmux send-keys "sleep 7; ros2 launch str_json_mqtt_bridge waraps_bridge.launch broker_addr:=127.0.0.1 broker_port:=1883 robot_name:=$ROBOT_NAME domain:=$AGENT_TYPE realsim:=$REALSIM use_sim_time:=$USE_SIM_TIME context:=$CONTEXT" C-m
+    tmux send-keys "sleep 7; ros2 launch str_json_mqtt_bridge waraps_bridge.launch broker_addr:=20.240.40.232 broker_port:=1884 robot_name:=$ROBOT_NAME domain:=$AGENT_TYPE realsim:=$REALSIM use_sim_time:=$USE_SIM_TIME context:=$CONTEXT" C-m
+    #tmux send-keys "sleep 7; ros2 launch str_json_mqtt_bridge waraps_bridge.launch broker_addr:=127.0.0.1 broker_port:=1883 robot_name:=$ROBOT_NAME domain:=$AGENT_TYPE realsim:=$REALSIM use_sim_time:=$USE_SIM_TIME context:=$CONTEXT" C-m
 fi
 
 
