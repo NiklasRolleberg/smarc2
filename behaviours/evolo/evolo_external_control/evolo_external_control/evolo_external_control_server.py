@@ -117,7 +117,7 @@ class EvoloExternalControl():
         #Settings etc
         self.timeout = 1800.0
 
-        self._node.declare_parameter('p_gain', 10.0)
+        self._node.declare_parameter('p_gain', 0.5)
         self.pid_p_gain = float(self._node.get_parameter('p_gain').value)
 
         self._node.declare_parameter('i_gain', 0)
