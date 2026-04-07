@@ -70,7 +70,7 @@ def vec2_directed_angle(v1, v2):
     else:
         return angles
 
-class EvoloMoveTo():
+class EvoloExternalControl():
 
 
     def __init__(self,
@@ -103,20 +103,19 @@ class EvoloMoveTo():
         # State variables. gets updated from topic callbacks
         self.robot_position = PoseStamped() #robot positon [geometry_msgs/msg/Pose]
         self.robot_position_time = None #robot position time to be compared with current time
-        self.target_position = PoseStamped() #target positon [geometry_msgs/msg/Pose]
-        self.distance_to_target = None
+        
+        self.target_yaw = Float32() #target positon [geometry_msgs/msg/Pose]
+        self.target_yaw_time = None
 
+        self.target_speed = Float32()
+        self.target_speed_time = None
+        
         #Target frame
         #self.frame_id = 'map_gt'
-        self.frame_id = 'evolo/odom'
+        self.frame_id = 'evolo/base_link'
 
         #Settings etc
-        self.target_tol = 10 #Waypoint tolerance
-        self._node.declare_parameter('target_radius', 10)
-        self.target_tol = float(self._node.get_parameter('target_radius').value)
-
-        self._node.declare_parameter('timeout', 1800)
-        self.timeout = float(self._node.get_parameter('timeout').value)
+        self.timeout = 1800.0
 
         self._node.declare_parameter('p_gain', 0.5)
         self.pid_p_gain = float(self._node.get_parameter('p_gain').value)
@@ -141,41 +140,23 @@ class EvoloMoveTo():
         self.evolo_pub = self._node.create_publisher(TwistStamped, evoloTopics.EVOLO_TWIST_PLANNED, 10, callback_group=self.publisher_callback_group)
         # Subscribers
         self.robot_sub = self._node.create_subscription(Odometry, smarcTopics.ODOM_TOPIC, self.robot_odom_callback,10, callback_group=self.subscriber_callback_group)
+
+        self.target_yaw_sub = self._node.create_subscription(Float32, "backseat/desiredyaw", self.robot_target_yaw_callback,10, callback_group=self.subscriber_callback_group)
+        self.target_speed_sub = self._node.create_subscription(Float32, "backseat/desiredspeed", self.robot_target_speed_callback,10, callback_group=self.subscriber_callback_group)
+
         self._node.get_logger().info("Action server started")
 
     def _on_goal_received(self, goal_request: dict) -> bool:
         self._node.get_logger().info(f"Received goal request: {goal_request}")
         # Here you would typically validate the goal request
         # Return True to accept the goal, False to reject it
-        #params = json.loads(goal_request['json-params'])
+        params = json.loads(goal_request['json-params'])
 
-        speed = goal_request['speed']
-        waypoint = goal_request['waypoint']
+        self._node.get_logger().info(f"params: {params}")
+        if 'timeout' in params.keys() : self.timeout = min(3600, max(1, params['timeout']))
+        self._node.get_logger().info('timeout: ' + str(self.timeout))
 
-        try:
-            speed = float(speed)
-        except Exception as e:
-            self._node.get_logger().info(f"Tried to parse speed as float. Did not work: {speed}, {e}")
-            if(speed == "fly"): speed = 6.0
-            elif(speed == "standard"): speed = 6.0
-            elif(speed == "float"): speed = 2.0
-            elif(speed == "stop"): speed = 0.0
-            else: speed = 0.0
 
-        assert type(speed) == float
-
-        self._node.get_logger().info(f"speed: {speed}, waypoint: {waypoint}")
-
-        #if 'timeout' in params.keys() : self.timeout = min(3600, max(1, params['timeout']))
-        #self.timeout = 600
-        #self._node.get_logger().info('timeout: ' + str(self.timeout))
-
-        #Compute target position from lat lon
-        lat = float(waypoint['latitude'])
-        lon = float(waypoint['longitude'])
-        #self._node.get_logger().info(f"lat lon sent to function: {lat}, {lon}")
-        self.target_position = self.latlon_to_local_frame([lat,lon])
-        self.target_speed = speed
         return True
     
     def _on_cancel_received(self) -> bool:
@@ -205,39 +186,43 @@ class EvoloMoveTo():
         if(self.robot_position is None or (time_now - self.robot_position_time) > 10):
             self._node.get_logger().error("ERROR no robot position")
             return False
-
-        #Calculate distance to our current loiter target and change target if we are close enough to switch to the next one
-        self.distance_to_target = self.calculate_distance(self.robot_position, self.target_position)
-        if(self.distance_to_target < self.target_tol):
-            #TODO send speed = Stop
-            return True
-
-        dx = self.target_position.pose.position.x - self.robot_position.pose.position.x
-        dy = self.target_position.pose.position.y - self.robot_position.pose.position.y
-        targetYaw = math.atan2(dy,dx) # yaw in ENU
-
-
-        # get pitch roll yaw from quaternion
-        orientation_q = self.robot_position.pose.orientation
-        orientation_list = [orientation_q.x, orientation_q.y, orientation_q.z, orientation_q.w]
-        (roll, pitch, robot_yaw) = euler_from_quaternion(orientation_list)
-        self._node.get_logger().info(f"Robot yaw: {robot_yaw}")
         
-        #TODO PID
-        setpoint = np.array([np.cos(targetYaw) , np.sin(targetYaw)])
-        current = np.array([np.cos(robot_yaw) , np.sin(robot_yaw)])
-        error = -vec2_directed_angle(setpoint, current)
-        self._node.get_logger().info(f"course error: {error}")
-        pid_output = error*self.pid_p_gain
-        self._node.get_logger().info(f"pid_output: {pid_output}")
 
-        # Publication
-        twist_msg = TwistStamped()
-        twist_msg.header.stamp    = self._node.get_clock().now().to_msg()
-        twist_msg.header.frame_id = "evolo/base_link"
-        twist_msg.twist.linear.x  = self.target_speed
-        twist_msg.twist.angular.z = pid_output
-        self.evolo_pub.publish(twist_msg)
+        allow_control = True
+        
+        if(self.target_yaw_time is None or (time_now - self.target_yaw_time) > 2):
+            allow_control = False
+
+        if(self.target_speed_time is None):
+            allow_control = False
+        
+        
+        if(allow_control):
+            targetYaw = self.target_yaw
+            # get pitch roll yaw from quaternion
+            orientation_q = self.robot_position.pose.orientation
+            orientation_list = [orientation_q.x, orientation_q.y, orientation_q.z, orientation_q.w]
+            (roll, pitch, robot_yaw) = euler_from_quaternion(orientation_list)
+            #self._node.get_logger().info(f"Robot yaw: {robot_yaw}")
+            
+            #TODO PID
+            setpoint = np.array([np.cos(targetYaw) , np.sin(targetYaw)])
+            current = np.array([np.cos(robot_yaw) , np.sin(robot_yaw)])
+            error = -vec2_directed_angle(setpoint, current)
+            self._node.get_logger().info(f"course error: {error}")
+            pid_output = error*self.pid_p_gain
+            self._node.get_logger().info(f"pid_output: {pid_output}")
+
+            # Publication
+            twist_msg = TwistStamped()
+            twist_msg.header.stamp    = self._node.get_clock().now().to_msg()
+            twist_msg.header.frame_id = self.frame_id
+            twist_msg.twist.linear.x  = self.target_speed
+            twist_msg.twist.angular.z = pid_output
+            self.evolo_pub.publish(twist_msg)
+        else:
+            self._node.get_logger().error("ERROR external control timeout")
+            pass
         
         return None
     
@@ -245,16 +230,11 @@ class EvoloMoveTo():
         time_now = int(self._node.get_clock().now().nanoseconds * 1e-9)
         runtime = time_now - self.action_started_time
 
-        feedback = f"Action runtime: {runtime}. DTT: {self.distance_to_target}"
+        feedback = f"Action runtime: {runtime}."
         self._node.get_logger().info(feedback)
         # Here you would typically generate feedback for the action
         # This is run after each _loop_inner call
         return feedback
-   
-    def calculate_distance(self, pose1:PoseStamped, pose2:PoseStamped) -> float:
-        dx = pose1.pose.position.x - pose2.pose.position.x
-        dy = pose1.pose.position.y - pose2.pose.position.y
-        return math.sqrt(dx*dx + dy*dy)
 
     
     def latlon_to_local_frame(self, point_list: list) -> PoseStamped:
@@ -297,26 +277,32 @@ class EvoloMoveTo():
         self.robot_position.pose = msg.pose.pose
         self.robot_position_time = int(self._node.get_clock().now().nanoseconds * 1e-9)
         #self._node.get_logger().info("" + str(msg.header.frame_id))
+    
+    def robot_target_yaw_callback(self, msg : Float32):
+        self._node.get_logger().info(f"target yaw updated: {msg.data}")
+        self.target_yaw = msg.data
+        while(self.target_yaw < 0): self.target_yaw += 2* math.pi
+        while(self.target_yaw > 0): self.target_yaw -= 2* math.pi
+        self.target_yaw_time = int(self._node.get_clock().now().nanoseconds * 1e-9)
 
-    def testcase(self):
-        pass
-
+    def robot_target_speed_callback(self, msg : Float32):
+        self._node.get_logger().info(f"target speed updated: {msg.data}")
+        self.target_speed = msg.data
+        self.target_speed = max(0.0, min(10.0, self.target_speed))
+        self.target_speed_time = int(self._node.get_clock().now().nanoseconds * 1e-9)
 
 def main():
     rclpy.init()
     node = Node("evolo_move_to_action_server")
     
-    action_client = EvoloMoveTo(node, "move_to")
-    
-    #action_client.testcase()
-    
+    action_server = EvoloExternalControl(node, "external_control")   
 
     executor = MultiThreadedExecutor()
     executor.add_node(node)
     try:
         executor.spin()
     except KeyboardInterrupt:
-        node.get_logger().info("Shutting down evolo move to acation server")
+        node.get_logger().info("Shutting down evolo external_control acation server")
     finally:
         executor.shutdown()
         node.destroy_node()

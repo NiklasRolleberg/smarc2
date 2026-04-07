@@ -17,6 +17,11 @@ string EVOLO_MQTT_SEND = mqtt/toevolo
 
 #TODO LIDAR
 
-#TDODO CAMERA & GIMBAL
+# Gimbal control.
+string EVOLO_MQTT_GIMBAL_CAMCMD = mqtt/cam_cmd
+string EVOLO_ROS_GIMBAL_CAMCMD = gimbal/cam_cmd
+string EVOLO_GIMBAL_FEEDBACK = gimbal/feedback
+string EVOLO_GIMBAL_CTRL = gimbal/ctrl
+#TODO: string MQTT_GIMBAL_CMD_TOPIC: The topic name in MQTT. 
 
 #TODO SIDESCAN

@@ -19,8 +19,8 @@ def generate_launch_description():
     yaw_control = Node(
         package='evolo_controllers',
         namespace=robot_ns,
-        executable='yaw_controller',
-        name='yaw_controller',
+        executable='controller',
+        name='controller',
         parameters=[{"robot_name": robot_ns}]
     )
 
