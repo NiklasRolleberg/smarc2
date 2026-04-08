@@ -23,6 +23,8 @@ setup(
     entry_points={
         'console_scripts': [
             'dji_captain = dji_captain.dji_captain:main',
+            'esc_splitter = dji_captain.dji_esc_data_splitter:main',
+            'service_caller = dji_captain.dji_service_caller:main',
             'joy_tester = dji_captain.joy_tester:main',
         ],
     },

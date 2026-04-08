@@ -18,6 +18,20 @@ string LOAD_CELL_RAW_TOPIC = 'sensor/load_cell_raw' # Int32
 string LOAD_CELL_WEIGHT_TOPIC = 'sensor/load_cell_weight' # Float32
 
 
+# propeller rpms all Float32, corresponds to esc_data[0..3] in this order
+string PROP_RPM_FR = 'sensor/props/fr'
+string PROP_RPM_FL = 'sensor/props/fl'
+string PROP_RPM_BL = 'sensor/props/bl'
+string PROP_RPM_BR = 'sensor/props/br'
+# bottom ones for FC30
+string PROP_RPM_FR_BOTTOM = 'sensor/props/frb'
+string PROP_RPM_FL_BOTTOM = 'sensor/props/flb'
+string PROP_RPM_BL_BOTTOM = 'sensor/props/blb'
+string PROP_RPM_BR_BOTTOM = 'sensor/props/brb'
+
+
+
+
 # object detectors in normalized image coordinates [-1,1]
 # (0,0) is the center of the image, +x is right, +y is up!
 # If this is not the case, FIX IT.

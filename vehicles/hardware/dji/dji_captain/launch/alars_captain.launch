@@ -11,6 +11,12 @@
       <param name="home_altitude_above_water" value="$(var home_altitude_above_water)"/>
       <param name="use_sim_time" value="$(var use_sim_time)"/>
     </node>
+
+    <node name="esc_splitter" pkg="dji_captain" exec="esc_splitter" respawn="false" output="screen">
+      <param name="use_sim_time" value="$(var use_sim_time)"/>
+    </node>
+
+    
   </group>
 
   <include file="$(find-pkg-share alars_description)/launch/alars_description.launch">
