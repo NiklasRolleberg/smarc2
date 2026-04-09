@@ -18,6 +18,8 @@ string HOME_POINT = 'home_point'
 string BASE_LINK = 'base_link'
 # Same BASE_LINK, but only has the yaw component of the orientation.
 string BASE_FLAT = 'base_flat_link'
+# middle of the 4 points of the landing gear
+string LANDING_GEAR_CENTER = 'landing_gear_center_link'
 
 
 # parts of the alars module that are relevant. in-between parts
