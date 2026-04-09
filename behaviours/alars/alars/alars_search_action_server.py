@@ -221,8 +221,8 @@ class SearchAction():
         setpoint_msg = PoseStamped()
         setpoint_msg.header.frame_id = self.MAP_FRAME
         setpoint_msg.header.stamp = self._node.get_clock().now().to_msg()
-        setpoint_msg.pose.position.x = float(spiral_point[0])
-        setpoint_msg.pose.position.y = float(spiral_point[1])
+        setpoint_msg.pose.position.x = float(spiral_point[0]) # type: ignore
+        setpoint_msg.pose.position.y = float(spiral_point[1]) # type: ignore
         setpoint_msg.pose.position.z = self._search_center_map.pose.position.z
         setpoint_msg.pose.orientation.w = 1.0  # neutral orientation
         self._setpoint_pub.publish(setpoint_msg)

@@ -87,6 +87,13 @@ class DjiCaptain():
             self.log("Setting it to 1.5m to prevent damage to the vehicle, but you should set it to something appropriate for your mission!")
             self.MIN_ALTITUDE_ABOVE_WATER = 1.5
 
+
+        self._release_control_srv = node.create_client(Trigger, PSDKTopics.RELEASE_CONTROL_SRV)
+        while rclpy.ok() and not self._release_control_srv.wait_for_service(timeout_sec=2.0):
+             self._node.get_logger().error("Release control service not available... Captain will do nothing but wait for this...")
+             self._node.get_logger().error("To fix, run PSDK ROS Wrapper OR sim+ros bridge.")
+             time.sleep(2)
+
         
 
         self._move_to_setpoint : Optional[PoseStamped] = None
@@ -152,7 +159,8 @@ class DjiCaptain():
         # this could be a param, but really we likely will never run this on anything except
         # the M350 which has a nominal 3kg max payload, so hardcoding it here is fine.
         # I set it to 4kg to have some momentary overshoot margins due to motion etc.
-        self._MAX_LOAD_KG : float = 4.0 # kg, max payload we consider safe to carry
+        self._node.declare_parameter("max_load_kg", 4.0)
+        self._MAX_LOAD_KG : float = self._node.get_parameter("max_load_kg").get_parameter_value().double_value
         self._load_cell_weight : Optional[float] = None
        
 
@@ -299,11 +307,7 @@ class DjiCaptain():
             qos_profile=10
         )
         
-        self._release_control_srv = node.create_client(Trigger, PSDKTopics.RELEASE_CONTROL_SRV)
-        if not self._release_control_srv.wait_for_service(timeout_sec=5.0):
-            self._node.get_logger().error("Release control service not available... Captain will not run. Exiting.")
-            self._node.get_logger().error("To fix, run PSDK ROS Wrapper OR sim+ros bridge before captain.")
-            sys.exit(1)
+        
         
 
     ############
@@ -340,7 +344,7 @@ class DjiCaptain():
         s += f"  Cam Proc Happy: {self._cam_processor_happy}\n"
 
         if self._load_cell_weight is not None:
-            s += f"  Load Cell Weight: {self._load_cell_weight:.2f} kg (max: {self._MAX_LOAD_KG} kg)\n"
+            s += f"  Load Cell Weight: {self._load_cell_weight:+.2f} kg (max: {self._MAX_LOAD_KG} kg)\n"
         else:
             s += f"  Load Cell Weight: N/A\n"
 
@@ -348,14 +352,14 @@ class DjiCaptain():
         s += f"  Flying: {self._flying}\n"
         
         if self._base_pose_in_home is not None:
-            s += f"  Altitude from water: {self.altitude_above_water:.2f} m\n"
+            s += f"  Altitude from water: {self.altitude_above_water:+.2f} m\n"
         else:
             s += f"  Altitude from water: N/A, base pose in home not known!\n"
 
         if self._last_pubbed_fluvel_joy is not None:
             a = self._last_pubbed_fluvel_joy.axes
             t = self._last_pubbed_fluvel_joy.header.stamp.sec + self._last_pubbed_fluvel_joy.header.stamp.nanosec * 1e-9
-            s += f"  Last FLUVel Joy (XYZ): [{a[0]:.2f}, {a[1]:.2f}, {a[2]:.2f}, {a[3]:.2f}] ({self.now_time - t:.2f}s ago)\n"
+            s += f"  Last FLUVel Joy (XYZ): [{a[0]:+.2f}, {a[1]:+.2f}, {a[2]:+.2f}, {a[3]:+.2f}] ({self.now_time - t:.2f}s ago)\n"
         else:
             s += f"  Last FLUVel Joy: None\n"
 
@@ -371,10 +375,10 @@ class DjiCaptain():
         s += f"  Home in UTM: {format_point_stamped(self._home_point_in_utm)} ({self._utm_zb_label})\n"
         s += f"  Position in Home: {format_pose_stamped(self._base_pose_in_home)}\n"
         
-        if self._heading_deg is not None: s += f"  Heading: {self._heading_deg:.2f}\n"
+        if self._heading_deg is not None: s += f"  Heading: {self._heading_deg:+.2f}\n"
         else: s += f"  Heading: N/A\n"
 
-        if self._course_deg is not None: s += f"  Course: {self._course_deg:.2f}\n"
+        if self._course_deg is not None: s += f"  Course: {self._course_deg:+.2f}\n"
         else: s += f"  Course: N/A\n"
 
         s += f"  Velocity Ground: {format_vector3_stamped(self._velocity_ground)}\n"
@@ -1105,7 +1109,7 @@ class DjiCaptain():
 def format_point_stamped(point: PointStamped|None) -> str:
         if( point is None):
             return "None"
-        return f"(x={point.point.x:.3f}, y={point.point.y:.3f}, z={point.point.z:.3f}, frame_id={point.header.frame_id})"
+        return f"(x={point.point.x:+.3f}, y={point.point.y:+.3f}, z={point.point.z:+.3f}, frame_id={point.header.frame_id})"
 
 def format_pose_stamped(pose: PoseStamped|None) -> str:
         if( pose is None):
@@ -1116,14 +1120,14 @@ def format_pose_stamped(pose: PoseStamped|None) -> str:
             pose.pose.orientation.z,
             pose.pose.orientation.w
         ])
-        return f"(x={pose.pose.position.x:.3f}, y={pose.pose.position.y:.3f}, z={pose.pose.position.z:.3f}, " \
-               f"roll={math.degrees(rpy[0]):.3f}, pitch={math.degrees(rpy[1]):.3f}, yaw={math.degrees(rpy[2]):.3f}, " \
+        return f"(x={pose.pose.position.x:+.3f}, y={pose.pose.position.y:+.3f}, z={pose.pose.position.z:+.3f}, " \
+               f"roll={math.degrees(rpy[0]):+.3f}, pitch={math.degrees(rpy[1]):+.3f}, yaw={math.degrees(rpy[2]):+.3f}, " \
                f"frame_id={pose.header.frame_id})"
         
 def format_vector3_stamped(vec: Vector3Stamped|None) -> str:
         if( vec is None):
             return "None"
-        return f"(x={vec.vector.x:.3f}, y={vec.vector.y:.3f}, z={vec.vector.z:.3f}, frame_id={vec.header.frame_id})"
+        return f"(x={vec.vector.x:+.3f}, y={vec.vector.y:+.3f}, z={vec.vector.z:+.3f}, frame_id={vec.header.frame_id})"
 
 
 

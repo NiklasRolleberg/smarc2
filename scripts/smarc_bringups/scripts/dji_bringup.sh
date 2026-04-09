@@ -51,6 +51,14 @@ else
     USE_SIM_TIME=True
 fi
 
+if [[ $USE_SIM_TIME == "True" ]]; then
+    # useful to make sure we don't accidentally connect to real hardware with the sim bringup
+    # or when your pc has these set for the real thing and you dont want to swap around :,)
+    export ROS_SUPER_CLIENT=""
+    export ROS_DISCOVERY_SERVER=""
+    export ROS_DOMAIN_ID=""
+fi
+
 
 # create a tmux session with a name
 tmux -2 new-session -d -s "$SESSION"
@@ -62,36 +70,56 @@ tmux -2 new-session -d -s "$SESSION"
 # default window is 0
 
 ############
-# 0 Captains
+# 1 Captains
 ############
-CAPTAIN_CMD="ros2 launch dji_captain alars_captain.launch robot_name:=$ROBOT_NAME use_sim_time:=$USE_SIM_TIME home_altitude_above_water:=$HOME_ABOVE_WATER"
+if [[ "$ROBOT_NAME" == "M350" ]]; then
+    MAX_LOAD_KG="4.0"
+    MIN_ALTITUDE_ABOVE_WATER="1.5"
+elif [[ "$ROBOT_NAME" == "FC30" ]]; then
+    MAX_LOAD_KG="30.0"
+    MIN_ALTITUDE_ABOVE_WATER="5.0"
+else # this should never happen due to the earlier check, but just in case
+    echo "Invalid robot name: $ROBOT_NAME"
+    echo "Please pass either M350 or FC30 as the first argument."
+    echo "Exiting."
+    exit 1
+fi
+
+CAPTAIN_CMD="ros2 launch dji_captain alars_captain.launch \
+    robot_name:=$ROBOT_NAME \
+    use_sim_time:=$USE_SIM_TIME \
+    home_altitude_above_water:=$HOME_ABOVE_WATER \
+    max_load_kg:=$MAX_LOAD_KG \
+    min_altitude_above_water:=$MIN_ALTITUDE_ABOVE_WATER"
 CAPTAIN_STATUS_CMD="ros2 topic echo /$ROBOT_NAME/captain_status std_msgs/msg/String --field data"
 WRAPPER_CMD="ros2 launch psdk_wrapper wrapper.launch.py namespace:=/$ROBOT_NAME/wrapper"
 DISCOVERY_SERVER_CMD="fast-discovery-server -i 0"
-SERVICE_CALLER_CMD="ros2 run dji_captain service_caller --ros-args -p robot_name:=$ROBOT_NAME -p use_sim_time:=$USE_SIM_TIME"
+SERVICE_CALLER_CMD="ros2 run dji_captain service_caller --ros-args -p robot_name:=$ROBOT_NAME -p use_sim_time:=$USE_SIM_TIME -r __ns:=/$ROBOT_NAME"
 
 if [[ $USE_SIM_TIME = "False" ]]; then
     tmux_make_layout "$SESSION" Captains "
     col(
-        row(
+        1:row(
             1:\"$DISCOVERY_SERVER_CMD\",
             3:\"$WRAPPER_CMD\",
             4:\"$CAPTAIN_CMD\"
         ),
-        row(
-            \"$SERVICE_CALLER_CMD\",
-            \"$CAPTAIN_STATUS_CMD\"
+        3:row(
+            2:\"$CAPTAIN_CMD\",
+            3:\"$CAPTAIN_STATUS_CMD\",
+            2:\"$SERVICE_CALLER_CMD\"
         )
     )" 
 else
-    tmux_make_layout "$SESSION" Captains "row(\"$CAPTAIN_CMD\", \"$CAPTAIN_STATUS_CMD\", \"$SERVICE_CALLER_CMD\")"
+    tmux_make_layout "$SESSION" Captains "row(2:\"$CAPTAIN_CMD\", 3:\"$CAPTAIN_STATUS_CMD\", 2:\"$SERVICE_CALLER_CMD\")"
 fi
 
 
 ############
-# 1 Action Servers
+# 2 Action Servers
 ############
 ALARS_SEARCH_CMD="ros2 run alars alars_search_action_server --ros-args -r __ns:=/$ROBOT_NAME \
+-p robot_name:=$ROBOT_NAME \
 -p use_sim_time:=$USE_SIM_TIME \
 -p setpoint_threshold:=0.5 \
 -p spiral_arm_distance:=2.0 \
@@ -99,6 +127,7 @@ ALARS_SEARCH_CMD="ros2 run alars alars_search_action_server --ros-args -r __ns:=
 -p detection_freshness_threshold:=1.0"
 
 ALARS_LOCALIZE_CMD="ros2 run alars alars_localize_action_server --ros-args -r __ns:=/$ROBOT_NAME \
+-p robot_name:=$ROBOT_NAME \
 -p use_sim_time:=$USE_SIM_TIME \
 -p tracking_tolerance:=0.1 \
 -p tracking_aggressiveness:=3.0 \
@@ -109,11 +138,13 @@ if [[ $USE_SIM_TIME = "True" ]]; then
     ALARS_RECOVER_SETPOINT_TOLERANCE=1.0
 fi
 ALARS_RECOVER_CMD="ros2 run alars alars_recover_action_server --ros-args -r __ns:=/$ROBOT_NAME \
+-p robot_name:=$ROBOT_NAME \
 -p use_sim_time:=$USE_SIM_TIME \
 -p setpoint_tolerance:=$ALARS_RECOVER_SETPOINT_TOLERANCE \
 -p max_rope_length:=5.0"
 
 ALARS_MOVE_TO_CMD="ros2 run alars alars_move_to_action_server --ros-args -r __ns:=/$ROBOT_NAME \
+-p robot_name:=$ROBOT_NAME \
 -p use_sim_time:=$USE_SIM_TIME"
 
 tmux_make_layout "$SESSION" ALARSActions "
@@ -125,7 +156,7 @@ row(
 )"
 
 ############
-# 2 BTs
+# 3 BTs
 ############
 WASP_BT_CMD="ros2 launch wasp_bt wasp_bt.launch \
 robot_name:=$ROBOT_NAME \
@@ -136,17 +167,18 @@ bt_health_timeout:=5.0"
 
 LOADED_WEIGHT_KG=1.8 # real empty sam + hook + rope weight is 1.78kg, just the hook and rope is 0.79kg
 ALARS_BT_CMD="ros2 run alars alars_bt --ros-args -r __ns:=/$ROBOT_NAME \
+-p robot_name:=$ROBOT_NAME \
 -p use_sim_time:=$USE_SIM_TIME \
 -p loaded_weight_kg:=$LOADED_WEIGHT_KG \
 -p max_detection_age:=15.0"
 
 ALARS_BT_STATUS_CMD="ros2 topic echo ${ROBOT_NAME}/alars_bt/status std_msgs/msg/String --field data"
 
-tmux_make_layout "$SESSION" BTs "row(\"$WASP_BT_CMD\", \"$ALARS_BT_CMD\", \"$ALARS_BT_STATUS_CMD\")"
+tmux_make_layout "$SESSION" BTs "row(3:\"$WASP_BT_CMD\", 3:\"$ALARS_BT_CMD\", 1:\"$ALARS_BT_STATUS_CMD\")"
 
 
 ############
-# 3 Camera and detection
+# 4 Camera and detection
 ############
 YOLO_DEVICE=0
 if [[ $USE_SIM_TIME = "True" ]]; then
@@ -163,7 +195,7 @@ tmux_make_layout "$SESSION" CamProc "row(\"$YOLO_CMD\", \"$PROJECTION_CMD\")"
 
 
 ############
-# 4 AUX Nodes like geofence etc.
+# 5 AUX Nodes like geofence etc.
 ############
 GEOFENCE_CMD="ros2 run actionable_geofence geofence_node --ros-args -r __ns:=/$ROBOT_NAME \
 -p use_sim_time:=$USE_SIM_TIME \
@@ -172,7 +204,7 @@ GEOFENCE_CMD="ros2 run actionable_geofence geofence_node --ros-args -r __ns:=/$R
 tmux_make_layout "$SESSION" Aux "row(\"$GEOFENCE_CMD\")"
 
 ############
-# 5 Drivers
+# 6 Drivers
 ############
 if [[ $USE_SIM_TIME = "False" ]]; then
 NAU_DRIVER_CMD="ros2 run nau7802_ros2_driver nau7802_ros2_driver --ros-args -r __ns:=/$ROBOT_NAME"
@@ -212,7 +244,7 @@ row(
 fi
 
 ############
-# 6 mqtt bridge, rosboard etc
+# 7 mqtt bridge, rosboard etc
 ############
 MQTT_ADDR=20.240.40.232
 MQTT_PORT=1884
@@ -239,7 +271,7 @@ tmux_make_layout "$SESSION" Bridges "row(\"$STR_MQTT_BRIDGE_CMD\", \"$ROSBOARD_C
 
 
 ############
-# 7 sim connection
+# 8 sim connection
 ############
 if [[ $USE_SIM_TIME = "True" ]]; then
     ROS_TCP_ENDPOINT_CMD="ros2 run ros_tcp_endpoint default_server_endpoint --ros-args -p tcp_ip:=localhost -p tcp_port:=10000"
@@ -253,3 +285,5 @@ fi
 
 
 tmux -2 attach-session -t "$SESSION"
+tmux set-option -t "$SESSION" mouse on
+tmux select-window -t "$SESSION:Captains"

@@ -36,16 +36,16 @@ class ESCDataSplitter():
         
     def _esc_cb(self, msg: EscData):
         escs : list[EscStatusIndividual] = msg.esc # type: ignore
-        self._rpm_fr_pub.publish(int(escs[0].speed))
-        self._rpm_fl_pub.publish(int(escs[1].speed))
-        self._rpm_br_pub.publish(int(escs[2].speed))
-        self._rpm_bl_pub.publish(int(escs[3].speed))
+        self._rpm_fr_pub.publish(Int16(data=escs[0].speed))
+        self._rpm_fl_pub.publish(Int16(data=escs[1].speed))
+        self._rpm_br_pub.publish(Int16(data=escs[2].speed))
+        self._rpm_bl_pub.publish(Int16(data=escs[3].speed))
 
         if self.ROBOT_NAME == "FC30":
-            self._rpm_frb_pub.publish(int(escs[4].speed))
-            self._rpm_flb_pub.publish(int(escs[5].speed))
-            self._rpm_brb_pub.publish(int(escs[6].speed))
-            self._rpm_blb_pub.publish(int(escs[7].speed))
+            self._rpm_frb_pub.publish(Int16(data=escs[4].speed))
+            self._rpm_flb_pub.publish(Int16(data=escs[5].speed))
+            self._rpm_brb_pub.publish(Int16(data=escs[6].speed))
+            self._rpm_blb_pub.publish(Int16(data=escs[7].speed))
 
 def main():
     rclpy.init(args=sys.argv)

@@ -1,10 +1,9 @@
 #!/usr/bin/python3
 
-import rclpy, sys
+import rclpy, sys, time
 from rclpy.node import Node
 from rclpy.executors import MultiThreadedExecutor
 from std_srvs.srv import Trigger
-from dji_msgs.msg import Topics as DjiTopics
 from dji_msgs.msg import PsdkTopics as PSDKTopics
 
 
@@ -22,19 +21,22 @@ class ServiceCaller():
         self._takeoff_srv = node.create_client(Trigger, PSDKTopics.TAKEOFF_SRV)
         self._land_srv = node.create_client(Trigger, PSDKTopics.LAND_SRV)
 
-
-        if not self._take_control_srv.wait_for_service(timeout_sec=5.0):
-            self._node.get_logger().error("Take control service not available...")
-            sys.exit(1)
-        if not self._release_control_srv.wait_for_service(timeout_sec=5.0):
-            self._node.get_logger().error("Release control service not available...")
-            sys.exit(1)
-        if not self._takeoff_srv.wait_for_service(timeout_sec=5.0):
-            self._node.get_logger().error("Take off service not available...")
-            sys.exit(1)
-        if not self._land_srv.wait_for_service(timeout_sec=5.0):
-            self._node.get_logger().error("Land service not available...")
-            sys.exit(1)
+        got_srvs = False
+        while rclpy.ok() and not got_srvs:
+            got_take_control = self._take_control_srv.wait_for_service(timeout_sec=5.0)
+            got_release_control = self._release_control_srv.wait_for_service(timeout_sec=5.0)
+            got_takeoff = self._takeoff_srv.wait_for_service(timeout_sec=5.0)
+            got_land = self._land_srv.wait_for_service(timeout_sec=5.0)
+            got_srvs = got_take_control and got_release_control and got_takeoff and got_land
+            if not got_srvs:
+                self._node.get_logger().error("Not all services are available... Captain will do nothing but wait for these...")
+                self._node.get_logger().error("Unavailable services: " +
+                    ("" if got_take_control else "Take control ") +
+                    ("" if got_release_control else "Release control ") +
+                    ("" if got_takeoff else "Take off ") +
+                    ("" if got_land else "Land "))
+                time.sleep(2)
+            
 
         while rclpy.ok():
             commands = "Commands:\n"
@@ -49,25 +51,26 @@ class ServiceCaller():
                 user_input = input(commands)
                 if user_input == "1":
                     future = self._take_control_srv.call_async(Trigger.Request())
-                    future.add_done_callback(lambda future: self._node.get_logger().info("Take control response: " + str(future.result().success)))
+                    future.add_done_callback(lambda future: print(f"Take control response: {future.result().success}"))
+
                 elif user_input == "2":
                     future = self._release_control_srv.call_async(Trigger.Request())
-                    future.add_done_callback(lambda future: self._node.get_logger().info("Release control response: " + str(future.result().success)))
+                    future.add_done_callback(lambda future: print(f"Release control response: {future.result().success}"))
                 elif user_input == "3":
                     future = self._takeoff_srv.call_async(Trigger.Request())
-                    future.add_done_callback(lambda future: self._node.get_logger().info("Take off response: " + str(future.result().success)))
+                    future.add_done_callback(lambda future: print(f"Take off response: {future.result().success}"))
                 elif user_input == "4":
                     future = self._land_srv.call_async(Trigger.Request())
-                    future.add_done_callback(lambda future: self._node.get_logger().info("Land response: " + str(future.result().success)))
+                    future.add_done_callback(lambda future: print(f"Land response: {future.result().success}"))
                 elif user_input == "0":
-                    self._node.get_logger().info("Exiting...")
+                    print("Exiting...")
                     sys.exit(0)
                 else:
-                    self._node.get_logger().warn("Invalid command.")
+                    print("Invalid command.")
                     continue
 
             except Exception as e:
-                self._node.get_logger().error("Error: " + str(e))
+                print(f"Error: {e}")
                 sys.exit(1)
 
         
