@@ -20,46 +20,17 @@ from geometry_msgs.msg import TwistStamped, Pose, PoseStamped, TransformStamped,
 from geographic_msgs.msg import GeoPoint
 from tf2_msgs.msg import TFMessage
 
-from psdk_interfaces.msg import PositionFused, ControlMode, EscData, EscStatusIndividual, SingleBatteryInfo
+from psdk_interfaces.msg import PositionFused, ControlMode, EscData, SingleBatteryInfo
 from smarc_msgs.msg import Topics as SmarcTopics
 from smarc_msgs.msg import GeofenceStatusStamped
 from dji_msgs.msg import Links as DjiLinks
 from dji_msgs.msg import Topics as DjiTopics
+from dji_msgs.msg import PsdkTopics as PSDKTopics
 
 
 from smarc_utilities.georef_utils import convert_latlon_to_utm, convert_utm_to_latlon
 from tf_transformations import euler_from_quaternion, quaternion_from_euler, quaternion_matrix
 from tf2_geometry_msgs import do_transform_pose_stamped
-
-
-class PSDKTopics(Enum):
-    # these are hardcoded topics in PSDK bridge...
-    WRAPPER_NS = "wrapper/psdk_ros2/"
-    
-    GPS_POSITION        = WRAPPER_NS + "gps_position"
-    POSITION_FUSED      = WRAPPER_NS + "position_fused"
-    ATTITUDE            = WRAPPER_NS + "attitude"
-    HOME_POINT          = WRAPPER_NS + "home_point"
-    HOME_POINT_ALTITUDE = WRAPPER_NS + "home_point_altitude"
-    ALTITUDE            = WRAPPER_NS + "altitude_sea_level"
-    CONTROL_MODE        = WRAPPER_NS + "control_mode"
-    BATTERY             = WRAPPER_NS + "battery" 
-    SINGLE_BATT1        = WRAPPER_NS + "single_battery_index1"
-    SINGLE_BATT2        = WRAPPER_NS + "single_battery_index2"
-    VELOCITY_GROUND_FSD = WRAPPER_NS + "velocity_ground_fused"
-    ANGULAR_RATE_GND_FSD= WRAPPER_NS + "angular_rate_ground_fused"
-    ESC_DATA            = WRAPPER_NS + "esc_data"
-    RC                  = WRAPPER_NS + "rc"
-
-    TAKE_CONTROL_SRV    = WRAPPER_NS + "obtain_ctrl_authority"
-    RELEASE_CONTROL_SRV = WRAPPER_NS + "release_ctrl_authority"
-    TAKEOFF_SRV         = WRAPPER_NS + "takeoff"
-    LAND_SRV            = WRAPPER_NS + "land"
-
-    FLUvel_JOY          = WRAPPER_NS + "flight_control_setpoint_FLUvelocity_yawrate"
-    # ENUvel_JOY          = WRAPPER_NS + "flight_control_setpoint_ENUvelocity_yawrate"
-    # ENUpos_JOY          = WRAPPER_NS + "flight_control_setpoint_ENUposition_yaw"    
-
 
 
 class DjiCaptain():
@@ -116,11 +87,18 @@ class DjiCaptain():
             self.log("Setting it to 1.5m to prevent damage to the vehicle, but you should set it to something appropriate for your mission!")
             self.MIN_ALTITUDE_ABOVE_WATER = 1.5
 
+
+        self._release_control_srv = node.create_client(Trigger, PSDKTopics.RELEASE_CONTROL_SRV)
+        while rclpy.ok() and not self._release_control_srv.wait_for_service(timeout_sec=2.0):
+             self._node.get_logger().error("Release control service not available... Captain will do nothing but wait for this...")
+             self._node.get_logger().error("To fix, run PSDK ROS Wrapper OR sim+ros bridge.")
+             time.sleep(2)
+
         
 
         self._move_to_setpoint : Optional[PoseStamped] = None
         self._joy_timer : Optional[Timer] = None
-        self._FLU_vel_joy_pub = node.create_publisher(Joy, PSDKTopics.FLUvel_JOY.value, qos_profile=10)
+        self._FLU_vel_joy_pub = node.create_publisher(Joy, PSDKTopics.FLU_VEL_YAWRATE_JOY_CMD, qos_profile=10)
         
         
         self.MOVE_TO_SETPOINT_MAX_AGE : float = 1.0 #How long we keep the move to setpoint before we consider it stale
@@ -181,14 +159,9 @@ class DjiCaptain():
         # this could be a param, but really we likely will never run this on anything except
         # the M350 which has a nominal 3kg max payload, so hardcoding it here is fine.
         # I set it to 4kg to have some momentary overshoot margins due to motion etc.
-        self._MAX_LOAD_KG : float = 4.0 # kg, max payload we consider safe to carry
+        self._node.declare_parameter("max_load_kg", 4.0)
+        self._MAX_LOAD_KG : float = self._node.get_parameter("max_load_kg").get_parameter_value().double_value
         self._load_cell_weight : Optional[float] = None
-
-
-
-        topics = [PSDKTopics.__dict__[t].value for t in PSDKTopics.__members__.keys()]
-        topics = [self.ROBOT_NAME + "/" + PSDKTopics.__dict__[t].value for t in PSDKTopics.__members__.keys()]
-        self.log(f"Subscribed to PSDK topics: --topics {' '.join(topics)}")
        
 
         self._tf_pub = node.create_publisher(TFMessage,"/tf",qos_profile=10)
@@ -225,93 +198,87 @@ class DjiCaptain():
 
         node.create_subscription(
             NavSatFix,
-            PSDKTopics.GPS_POSITION.value,
+            PSDKTopics.GPS_POSITION,
             self._gps_callback,
             qos_profile=10)
 
         node.create_subscription(
             PositionFused,
-            PSDKTopics.POSITION_FUSED.value,
+            PSDKTopics.POSITION_FUSED,
             self._position_fused_callback,
             qos_profile=10)
 
         node.create_subscription(
             NavSatFix,
-            PSDKTopics.HOME_POINT.value,
+            PSDKTopics.HOME_POINT,
             self._home_point_callback,
             qos_profile=10)
         
         node.create_subscription(
             Float32,
-            PSDKTopics.HOME_POINT_ALTITUDE.value,
+            PSDKTopics.HOME_POINT_ALTITUDE,
             self._home_point_altitude_callback,
             qos_profile=10)
 
         node.create_subscription(
             QuaternionStamped,
-            PSDKTopics.ATTITUDE.value,
+            PSDKTopics.ATTITUDE,
             self._attitude_callback,
             qos_profile=10)
 
         node.create_subscription(
             Float32,
-            PSDKTopics.ALTITUDE.value,
+            PSDKTopics.ALTITUDE,
             self._geo_alt_cb,
             qos_profile=10)
 
         node.create_subscription(
             ControlMode,
-            PSDKTopics.CONTROL_MODE.value,
+            PSDKTopics.CONTROL_MODE,
             self._control_mode_callback,
             qos_profile=10)
         
         node.create_subscription(
             BatteryState,
-            PSDKTopics.BATTERY.value,
+            PSDKTopics.BATTERY,
             self._battery_callback,
             qos_profile=10)
 
         node.create_subscription(
             SingleBatteryInfo,
-            PSDKTopics.SINGLE_BATT1.value,
+            PSDKTopics.SINGLE_BATT1,
             self._single_batt_callback,
             qos_profile=10)
 
         node.create_subscription(
             SingleBatteryInfo,
-            PSDKTopics.SINGLE_BATT2.value,
+            PSDKTopics.SINGLE_BATT2,
             self._single_batt_callback,
             qos_profile=10)
 
         
         node.create_subscription(
             Vector3Stamped,
-            PSDKTopics.VELOCITY_GROUND_FSD.value,
+            PSDKTopics.VELOCITY_GROUND_FSD,
             self._velocity_ground_callback,
             qos_profile=10)
         
         node.create_subscription(
             Vector3Stamped,
-            PSDKTopics.ANGULAR_RATE_GND_FSD.value,
+            PSDKTopics.ANGULAR_RATE_GND_FSD,
             self._angular_rate_ground_callback,
             qos_profile=10)
         
         node.create_subscription(
             EscData,
-            PSDKTopics.ESC_DATA.value,
+            PSDKTopics.ESC_DATA,
             lambda msg: setattr(self, "_esc_data", msg),
             qos_profile=10)
         
         node.create_subscription(
             Joy,
-            PSDKTopics.RC.value,
+            PSDKTopics.RC,
             self._dji_rc_cb,
-            qos_profile=10)
-        
-        node.create_subscription(
-            Joy,
-            DjiTopics.CONTROLLER_INPUT_TOPIC,
-            self._gamepad_callback,
             qos_profile=10)
 
         node.create_subscription(
@@ -340,79 +307,7 @@ class DjiCaptain():
             qos_profile=10
         )
         
-
         
-        # services to take and give-up control + take-off and land
-        # call service: obtain/release_ctrl_authority
-        self._take_control_srv = node.create_client(Trigger, PSDKTopics.TAKE_CONTROL_SRV.value)
-        self._release_control_srv = node.create_client(Trigger, PSDKTopics.RELEASE_CONTROL_SRV.value)
-        self._takeoff_srv = node.create_client(Trigger, PSDKTopics.TAKEOFF_SRV.value)
-        self._land_srv = node.create_client(Trigger, PSDKTopics.LAND_SRV.value)
-
-
-        while rclpy.ok():
-            commands = "Commands:\n"
-            commands += "  1: Take control  \n"
-            commands += "  2: Release control\n"
-            commands += "  3: Take off\n"
-            commands += "  4: Land\n"
-            commands += f"\n  8: Print status (also available on {self._TF_NS}captain_status topic) \n"
-            commands += "  9: Set max joy to (DANGEROUS, DONT USE UNLESS YOUR NAME STARTS WITH O)\n"
-            commands += "  0: EXIT \n"
-            try:
-                self.log(commands)
-                n = int(input("Enter number for command: \n"))
-                if n == 1: #Take control
-                    self._take_control()
-                elif n == 2: #Release control
-                    self._release_control()
-                elif n == 3: #Take off
-                    if self._got_control is False:
-                        self.log("You must take control first!")
-                        continue
-                    n2 = input("Are you sure you want to take-off? (y/[N]): ")
-                    if n2.lower() != 'y':
-                        self.log("Takeoff cancelled.")
-                        continue
-                    if not self._takeoff_srv.wait_for_service(timeout_sec=5.0):
-                        self.log("Take off service not available...")
-                        continue
-                    future = self._takeoff_srv.call_async(Trigger.Request())
-                    future.add_done_callback(
-                        lambda f: self.log(f"Take off service called, success: {f.result().success}, message: {f.result().message}")
-                    )
-                elif n == 4: #Land
-                    if self._got_control is False:
-                        self.log("You must take control first!")
-                        continue
-                    n2 = input("Are you sure you want to land? (y/[N]): ")
-                    if n2.lower() != 'y':
-                        self.log("Landing cancelled.")
-                        continue
-                    if not self._land_srv.wait_for_service(timeout_sec=5.0):
-                        self.log("Land service not available...")
-                        continue
-                    future = self._land_srv.call_async(Trigger.Request())
-                    future.add_done_callback(
-                        lambda f: self.log(f"Land service called, success: {f.result().success}, message: {f.result().message}")
-                    )
-                elif n == 8: #Print status
-                    self.log(self.status_str)
-                elif n == 9: # set max joy
-                    self.JOY_PUB_MAX = float(input("Enter new max joy value: ") or "0")
-                    self.log(f"Set max joy to {self.JOY_PUB_MAX:.2f} (m/s)")
-                elif n == 0:
-                    try:
-                        self.log("Exiting captain")
-                        self._speak("Bye bye.")
-                    except:
-                        print("Exiting captain.")
-                    break
-
-            except:
-                self.log(f"Invalid input:{input}, please enter a number.")
-                continue
-            
         
 
     ############
@@ -449,7 +344,7 @@ class DjiCaptain():
         s += f"  Cam Proc Happy: {self._cam_processor_happy}\n"
 
         if self._load_cell_weight is not None:
-            s += f"  Load Cell Weight: {self._load_cell_weight:.2f} kg (max: {self._MAX_LOAD_KG} kg)\n"
+            s += f"  Load Cell Weight: {self._load_cell_weight:+.2f} kg (max: {self._MAX_LOAD_KG} kg)\n"
         else:
             s += f"  Load Cell Weight: N/A\n"
 
@@ -457,14 +352,14 @@ class DjiCaptain():
         s += f"  Flying: {self._flying}\n"
         
         if self._base_pose_in_home is not None:
-            s += f"  Altitude from water: {self.altitude_above_water:.2f} m\n"
+            s += f"  Altitude from water: {self.altitude_above_water:+.2f} m\n"
         else:
             s += f"  Altitude from water: N/A, base pose in home not known!\n"
 
         if self._last_pubbed_fluvel_joy is not None:
             a = self._last_pubbed_fluvel_joy.axes
             t = self._last_pubbed_fluvel_joy.header.stamp.sec + self._last_pubbed_fluvel_joy.header.stamp.nanosec * 1e-9
-            s += f"  Last FLUVel Joy (XYZ): [{a[0]:.2f}, {a[1]:.2f}, {a[2]:.2f}, {a[3]:.2f}] ({self.now_time - t:.2f}s ago)\n"
+            s += f"  Last FLUVel Joy (XYZ): [{a[0]:+.2f}, {a[1]:+.2f}, {a[2]:+.2f}, {a[3]:+.2f}] ({self.now_time - t:.2f}s ago)\n"
         else:
             s += f"  Last FLUVel Joy: None\n"
 
@@ -480,10 +375,10 @@ class DjiCaptain():
         s += f"  Home in UTM: {format_point_stamped(self._home_point_in_utm)} ({self._utm_zb_label})\n"
         s += f"  Position in Home: {format_pose_stamped(self._base_pose_in_home)}\n"
         
-        if self._heading_deg is not None: s += f"  Heading: {self._heading_deg:.2f}\n"
+        if self._heading_deg is not None: s += f"  Heading: {self._heading_deg:+.2f}\n"
         else: s += f"  Heading: N/A\n"
 
-        if self._course_deg is not None: s += f"  Course: {self._course_deg:.2f}\n"
+        if self._course_deg is not None: s += f"  Course: {self._course_deg:+.2f}\n"
         else: s += f"  Course: N/A\n"
 
         s += f"  Velocity Ground: {format_vector3_stamped(self._velocity_ground)}\n"
@@ -531,24 +426,6 @@ class DjiCaptain():
     ############
     # DJI Services
     ############
-    def _take_control(self):
-        def on_result(f):
-            self.log(f"Take control service called, success: {f.result().success}, message: {f.result().message}")
-            if f.result().success:
-                self._speak("Got control.")
-            else:
-                self._speak("Failed to get control.")
-
-        self.log("Taking control.")
-        self._speak("Taking control.")
-        if not self._take_control_srv.wait_for_service(timeout_sec=5.0):
-            self.log("Take control service not available...")
-            self._speak("Take control service not available.")
-            return
-        future = self._take_control_srv.call_async(Trigger.Request())
-        future.add_done_callback(on_result)
-
-
     def _release_control(self):
         def on_result(f):
             self.log(f"Release control service called, success: {f.result().success}, message: {f.result().message}")
@@ -773,90 +650,6 @@ class DjiCaptain():
     ###########
     # External human hands
     ###########
-    def _gamepad_callback(self, msg: Joy):
-        if msg.header.stamp.sec == 0 and msg.header.stamp.nanosec == 0:
-            # malformed...
-            return
-        
-        now = self.now_stamp
-        # Check if the message is older than 0.1 seconds
-        msg_age = (now.sec - msg.header.stamp.sec) + (now.nanosec - msg.header.stamp.nanosec) * 1e-9
-        if msg_age > 0.1:
-            self.log(f"Controller message is older than 0.1s ({msg_age:.3f}s), ignoring.")
-            return
-
-
-        # right stick = horizontal movement, left stick = vertical movement + yaw
-        # like the DJI RC controller
-        LH = msg.axes[0]  # left stick horizontal
-        LV = msg.axes[1]  # left stick vertical
-        RH = msg.axes[2]  # right stick horizontal
-        RV = msg.axes[3]  # right stick vertical
-        L2:float = msg.axes[4]  # L2 button 
-        R2:float = msg.axes[5]  # R2 button
-        south = msg.buttons[0]  # south button
-        east = msg.buttons[1]   # east button
-        west = msg.buttons[2]   # west button
-        north = msg.buttons[3]  # north button
-        select = msg.buttons[4] # select button
-        ps_button = msg.buttons[5]  # PS button
-        start = msg.buttons[6]  # start button
-        left_stick_in = msg.buttons[7]  # left stick in
-        right_stick_in = msg.buttons[8]  # right stick in
-        L1 = msg.buttons[9]  # L1 button
-        R1 = msg.buttons[10]  # R1 button
-        up = msg.buttons[11]  # up button
-        down = msg.buttons[12]  # down button
-        left = msg.buttons[13]  # left button
-        right = msg.buttons[14]  # right button
-
-        sticks_pushed = any(
-            [
-                abs(LH) > self._CONTROLLER_DEADZONE,
-                abs(LV) > self._CONTROLLER_DEADZONE,
-                abs(RH) > self._CONTROLLER_DEADZONE,
-                abs(RV) > self._CONTROLLER_DEADZONE
-            ]
-        )
-
-        if not self._got_control:
-            if start == 1 and ps_button == 1:
-                self._take_control()
-                return
-            
-            if sticks_pushed:
-                self.log("Sticks pushed without control!")
-                self._speak("You must first take control with the PS button and Start button.")
-                self._buzz()
-                return
-            
-        if self._move_to_setpoint is not None:
-            if sticks_pushed:
-                self.log("Sticks pushed, cancelling move to setpoint.")
-                self._speak("Move to setpoint cancelled because you touched the controller sticks!")
-                self._cancel_joy_timer()                
-        
-
-        if up:
-            self.JOY_PUB_MAX += 0.2
-            if self.JOY_PUB_MAX > 5.0:
-                self.JOY_PUB_MAX = 5.0
-            self.log(f"Joy max increased to {self.JOY_PUB_MAX:.2f} (m/s)")
-            self._speak(f"Joy max {self.JOY_PUB_MAX:.1f}")
-        if down:
-            self.JOY_PUB_MAX -= 0.2
-            if self.JOY_PUB_MAX < 0.0:
-                self.JOY_PUB_MAX = 0.0
-            self.log(f"Joy max decreased to {self.JOY_PUB_MAX:.2f} (m/s)")
-            self._speak(f"Joy max {self.JOY_PUB_MAX:.1f}")
-    
-        if self._got_control and sticks_pushed:
-            joy_msg = Joy()
-            joy_msg.header.stamp = self.now_stamp
-            # DJI expects Axes: [forward, left, up, yawrate]
-            self._pub_flu_vel_joy([RV, RH, LV, LH])
-
-
     def _dji_rc_cb(self, msg: Joy):
         # if RC is touched by user, we give up control
         if not self._got_control: return
@@ -1316,7 +1109,7 @@ class DjiCaptain():
 def format_point_stamped(point: PointStamped|None) -> str:
         if( point is None):
             return "None"
-        return f"(x={point.point.x:.3f}, y={point.point.y:.3f}, z={point.point.z:.3f}, frame_id={point.header.frame_id})"
+        return f"(x={point.point.x:+.3f}, y={point.point.y:+.3f}, z={point.point.z:+.3f}, frame_id={point.header.frame_id})"
 
 def format_pose_stamped(pose: PoseStamped|None) -> str:
         if( pose is None):
@@ -1327,14 +1120,14 @@ def format_pose_stamped(pose: PoseStamped|None) -> str:
             pose.pose.orientation.z,
             pose.pose.orientation.w
         ])
-        return f"(x={pose.pose.position.x:.3f}, y={pose.pose.position.y:.3f}, z={pose.pose.position.z:.3f}, " \
-               f"roll={math.degrees(rpy[0]):.3f}, pitch={math.degrees(rpy[1]):.3f}, yaw={math.degrees(rpy[2]):.3f}, " \
+        return f"(x={pose.pose.position.x:+.3f}, y={pose.pose.position.y:+.3f}, z={pose.pose.position.z:+.3f}, " \
+               f"roll={math.degrees(rpy[0]):+.3f}, pitch={math.degrees(rpy[1]):+.3f}, yaw={math.degrees(rpy[2]):+.3f}, " \
                f"frame_id={pose.header.frame_id})"
         
 def format_vector3_stamped(vec: Vector3Stamped|None) -> str:
         if( vec is None):
             return "None"
-        return f"(x={vec.vector.x:.3f}, y={vec.vector.y:.3f}, z={vec.vector.z:.3f}, frame_id={vec.header.frame_id})"
+        return f"(x={vec.vector.x:+.3f}, y={vec.vector.y:+.3f}, z={vec.vector.z:+.3f}, frame_id={vec.header.frame_id})"
 
 
 

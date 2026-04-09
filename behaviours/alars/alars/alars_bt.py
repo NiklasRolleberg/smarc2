@@ -244,9 +244,9 @@ class AlarsBT():
         str += f"\n AUV visible: {self.auv_in_view}"
         str += f"\n AUV, Buoy GP: {self._auv_geopoint_known}, {self._buoy_geopoint_known}"
         if self._load_cell_weight is not None:
-            str += f"\n Captured(kg): {self.captured_auv}({self._load_cell_weight})"
+            str += f"\n Captured(kg): {self.captured_auv}({self._load_cell_weight:.2f})"
         elif self._load_cell_raw is not None:
-            str += f"\n Captured(raw): {self.captured_auv}({self._load_cell_raw})"
+            str += f"\n Captured(raw): {self.captured_auv}({self._load_cell_raw:.2f})"
         else:
             str += f"\n Captured AUV: {self.captured_auv} (none)"
         return str
