@@ -2,17 +2,24 @@
 <robot name="alars">
   
   <link name="base_link"/>
+  <link name="landing_gear_center_link"/>
   <link name="alars_module_base_link"/>
   <link name="z1_base_link"/>
+  <link name="rope_base_link"/>
   <!-- <link name="fisheye_base_link"/>
   <link name="fisheye_camera_link"/>
   <link name="fisheye_optical_frame"/> -->
-  <link name="rope_base_link"/>
 
 
-  <joint name="base_to_module_joint" type="fixed">
-    <origin rpy="0 0 -1.57" xyz="0.35363 0 0.22881"/>
+  <joint name="base_to_landing_gear_center" type="fixed">
+    <origin rpy="0 0 0" xyz="0 0 -0.54231"/>
     <parent link="base_link"/>
+    <child link="landing_gear_center_link"/>
+  </joint>
+
+  <joint name="landing_gear_center_to_module_joint" type="fixed">
+    <origin rpy="0 0 -1.57" xyz="0.35363 0 0.22881"/>
+    <parent link="landing_gear_center_link"/>
     <child link="alars_module_base_link"/>
   </joint>
 
@@ -22,7 +29,12 @@
     <child link="z1_base_link"/>
   </joint>
 
-  <!-- Maybe later :,) -->
+  <joint name="rope_base_joint" type="fixed">
+    <origin rpy="0 0 0" xyz="0.01545 0 0.31254"/>
+    <parent link="landing_gear_center_link"/>
+    <child link="rope_base_link"/>
+  </joint>
+
   <!-- 
   <joint name="fisheye_base_joint" type="fixed">
     <origin rpy="3.14 0 1.57" xyz="0.003 0 -0.18477"/>
@@ -43,10 +55,6 @@
   </joint> 
   -->
 
-  <joint name="rope_base_joint" type="fixed">
-    <origin rpy="0 0 0" xyz="0.01545 0 0.31254"/>
-    <parent link="base_link"/>
-    <child link="rope_base_link"/>
-  </joint>
+
 
 </robot>
