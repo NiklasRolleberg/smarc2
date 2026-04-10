@@ -61,7 +61,7 @@ fi
 
 
 # create a tmux session with a name
-tmux -2 new-session -d -s "$SESSION"
+tmux -2 new-session -d -x 220 -y 60 -s "$SESSION"
 
 
 # create a bunch of windows. These are the "tabs" you'll
@@ -100,18 +100,17 @@ if [[ $USE_SIM_TIME = "False" ]]; then
     tmux_make_layout "$SESSION" Captains "
     col(
         1:row(
-            1:\"$DISCOVERY_SERVER_CMD\",
-            3:\"$WRAPPER_CMD\",
-            4:\"$CAPTAIN_CMD\"
+            1:var(DISCOVERY_SERVER_CMD),
+            3:var(WRAPPER_CMD)
         ),
         3:row(
-            2:\"$CAPTAIN_CMD\",
-            3:\"$CAPTAIN_STATUS_CMD\",
-            2:\"$SERVICE_CALLER_CMD\"
+            2:var(CAPTAIN_CMD),
+            3:var(CAPTAIN_STATUS_CMD),
+            2:var(SERVICE_CALLER_CMD)
         )
     )" 
 else
-    tmux_make_layout "$SESSION" Captains "row(2:\"$CAPTAIN_CMD\", 3:\"$CAPTAIN_STATUS_CMD\", 2:\"$SERVICE_CALLER_CMD\")"
+    tmux_make_layout "$SESSION" Captains "row(2:var(CAPTAIN_CMD), 3:var(CAPTAIN_STATUS_CMD), 2:var(SERVICE_CALLER_CMD))"
 fi
 
 
@@ -149,10 +148,10 @@ ALARS_MOVE_TO_CMD="ros2 run alars alars_move_to_action_server --ros-args -r __ns
 
 tmux_make_layout "$SESSION" ALARSActions "
 row(
-    \"$ALARS_SEARCH_CMD\",
-    \"$ALARS_LOCALIZE_CMD\",
-    \"$ALARS_RECOVER_CMD\",
-    \"$ALARS_MOVE_TO_CMD\"
+    var(ALARS_SEARCH_CMD),
+    var(ALARS_LOCALIZE_CMD),
+    var(ALARS_RECOVER_CMD),
+    var(ALARS_MOVE_TO_CMD)
 )"
 
 ############
@@ -174,7 +173,7 @@ ALARS_BT_CMD="ros2 run alars alars_bt --ros-args -r __ns:=/$ROBOT_NAME \
 
 ALARS_BT_STATUS_CMD="ros2 topic echo ${ROBOT_NAME}/alars_bt/status std_msgs/msg/String --field data"
 
-tmux_make_layout "$SESSION" BTs "row(3:\"$WASP_BT_CMD\", 3:\"$ALARS_BT_CMD\", 1:\"$ALARS_BT_STATUS_CMD\")"
+tmux_make_layout "$SESSION" BTs "row(3:var(WASP_BT_CMD), 3:var(ALARS_BT_CMD), 1:var(ALARS_BT_STATUS_CMD))"
 
 
 ############
@@ -191,7 +190,7 @@ use_sim_time:=$USE_SIM_TIME"
 
 PROJECTION_CMD="ros2 launch auv_state_estimation projection_launch.py namespace:=$ROBOT_NAME use_sim_time:=$USE_SIM_TIME"
 
-tmux_make_layout "$SESSION" CamProc "row(\"$YOLO_CMD\", \"$PROJECTION_CMD\")"
+tmux_make_layout "$SESSION" CamProc "row(var(YOLO_CMD), var(PROJECTION_CMD))"
 
 
 ############
@@ -201,7 +200,7 @@ GEOFENCE_CMD="ros2 run actionable_geofence geofence_node --ros-args -r __ns:=/$R
 -p use_sim_time:=$USE_SIM_TIME \
 -p map_frame:=$ROBOT_NAME/map"
 
-tmux_make_layout "$SESSION" Aux "row(\"$GEOFENCE_CMD\")"
+tmux_make_layout "$SESSION" Aux "row(var(GEOFENCE_CMD))"
 
 ############
 # 6 Drivers
@@ -236,10 +235,10 @@ FISH_VIDEO_CMD="ros2 run gscam gscam_node --ros-args \
 
 tmux_make_layout "$SESSION" Drivers "
 row(
-    \"$NAU_DRIVER_CMD\",
-    \"$GIMBAL_CAM_DRIVER_CMD\",
-    \"$GIMBAL_CAM_VIDEO_CMD\",
-    \"$FISH_VIDEO_CMD\"
+    var(NAU_DRIVER_CMD),
+    var(GIMBAL_CAM_DRIVER_CMD),
+    var(GIMBAL_CAM_VIDEO_CMD),
+    var(FISH_VIDEO_CMD)
 )"
 fi
 
@@ -267,7 +266,7 @@ fi
 
 STR_MQTT_BRIDGE_CMD="ros2 launch str_json_mqtt_bridge waraps_bridge.launch robot_name:=$ROBOT_NAME domain:=air realsim:=$REALSIM broker_addr:=$MQTT_ADDR broker_port:=$MQTT_PORT context:=alars"
 ROSBOARD_CMD="ros2 run rosboard rosboard_node --ros-args -r __ns:=/$ROBOT_NAME"
-tmux_make_layout "$SESSION" Bridges "row(\"$STR_MQTT_BRIDGE_CMD\", \"$ROSBOARD_CMD\")"
+tmux_make_layout "$SESSION" Bridges "row(var(STR_MQTT_BRIDGE_CMD), var(ROSBOARD_CMD))"
 
 
 ############
@@ -277,9 +276,9 @@ if [[ $USE_SIM_TIME = "True" ]]; then
     ROS_TCP_ENDPOINT_CMD="ros2 run ros_tcp_endpoint default_server_endpoint --ros-args -p tcp_ip:=localhost -p tcp_port:=10000"
     if [[ $ON_LINUX = "True" ]]; then
         MOSQUITTO_CMD="mosquitto -p $MQTT_PORT"
-        tmux_make_layout "$SESSION" SimConnection "row(\"$ROS_TCP_ENDPOINT_CMD\", \"$MOSQUITTO_CMD\")"
+        tmux_make_layout "$SESSION" SimConnection "row(var(ROS_TCP_ENDPOINT_CMD), var(MOSQUITTO_CMD))"
     else
-        tmux_make_layout "$SESSION" SimConnection "row(\"$ROS_TCP_ENDPOINT_CMD\")"
+        tmux_make_layout "$SESSION" SimConnection "row(var(ROS_TCP_ENDPOINT_CMD))"
     fi
 fi
 
