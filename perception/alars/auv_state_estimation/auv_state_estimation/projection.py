@@ -73,7 +73,11 @@ class ProjectionNode(Node):
         self.width = msg.width
         self.height = msg.height
         K = np.array(msg.k).reshape((3, 3))  # cam intrinsic matrix
-        self.K_inv = np.linalg.inv(K)
+        try:
+            self.K_inv = np.linalg.inv(K)
+        except np.linalg.LinAlgError:
+            self.get_logger().error(f"Camera intrinsic matrix is singular, cannot invert...\nK was: {K}\nCheck CameraInfo message on topic {self.topic_camera_info}")
+            return
         self.cam_info = True
         self.get_logger().info(f"CameraInfo received: {self.width}x{self.height}, K={K}")
     
