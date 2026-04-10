@@ -33,10 +33,11 @@ VIDERO_STREAM=False
 TOPIC_TRANSPORT=False
 ROSBOARD=False
 NODE_RED_TRANSLATOR=False
+TWIST_VIZ=False
 
 
 #Simulation
-MODE="REAL" #[REAL, SIM, HITL]
+MODE="SIM" #[REAL, SIM, HITL]
 if [ "$MODE" == "SIM" ]; then
     REALSIM=simulation
     ROBOT_NAME=evolo
@@ -63,6 +64,7 @@ if [ "$MODE" == "SIM" ]; then
     TOPIC_TRANSPORT=False
     ROSBOARD=False
     NODE_RED_TRANSLATOR=True
+    TWIST_VIZ=True
 
 fi
 if [ "$MODE" == "REAL" ]; then
@@ -92,6 +94,8 @@ if [ "$MODE" == "REAL" ]; then
     VIDERO_STREAM=True
     TOPIC_TRANSPORT=True
     ROSBOARD=True
+    NODE_RED_TRANSLATOR=True
+    TWIST_VIZ=True
 
 fi
 
@@ -323,6 +327,16 @@ if [ $ROSBOARD == "True" ]; then
     tmux send-keys "sleep 15; ros2 run rosboard rosboard_node" C-m
 fi
 
+if [ $TWIST_VIZ == "True" ]; then
+
+    tmux new-window -t $SESSION:41 -n 'twist_planned'
+    tmux select-window -t $SESSION:41
+    tmux send-keys "sleep 10; ros2 launch twist_to_path twist_to_path_launch.py subscribe_topic:=/evolo/ctrl/twist_planned publish_topic:=/evolo/ctrl/viz/twist_planned_path integration_time:=15.0 integration_dt:=0.5" C-m
+
+    tmux new-window -t $SESSION:42 -n 'twist_setpoint'
+    tmux select-window -t $SESSION:42
+    tmux send-keys "sleep 10; ros2 launch twist_to_path twist_to_path_launch.py subscribe_topic:=/evolo/ctrl/twist_setpoint publish_topic:=/evolo/ctrl/viz/twist_setpoint_path integration_time:=15.0 integration_dt:=0.5" C-m
+fi
 
 ########################################################################
 ########################## Communiation ################################
