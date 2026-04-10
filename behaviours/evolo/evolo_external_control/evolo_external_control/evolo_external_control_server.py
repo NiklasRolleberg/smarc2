@@ -293,7 +293,7 @@ class EvoloExternalControl():
 
 def main():
     rclpy.init()
-    node = Node("evolo_move_to_action_server")
+    node = Node("evolo_external_control_action_server")
     
     action_server = EvoloExternalControl(node, "external_control")   
 
