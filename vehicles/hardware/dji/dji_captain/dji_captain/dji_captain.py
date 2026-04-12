@@ -186,10 +186,6 @@ class DjiCaptain():
 
         self._labeled_utm_frame_pub = node.create_publisher(String, DjiTopics.LABELED_UTM_TOPIC, qos_profile=10)
 
-        # a simple TTS node should be listening to this (robot_name/speak)
-        self._speak_pub = node.create_publisher(String, DjiTopics.TTS_TOPIC, qos_profile=10)
-        self._controller_vibrator_pub = node.create_publisher(JoyFeedback, DjiTopics.CONTROLLER_VIBRATION_TOPIC, qos_profile=10)
-        
 
         self._tf_buffer = Buffer()
         self._tf_listener = TransformListener(self._tf_buffer, self._node, spin_thread=True)
@@ -414,14 +410,6 @@ class DjiCaptain():
     def logwarn(self, msg: str):
         self._node.get_logger().warn(msg)
 
-    def _buzz(self, intensity: float = 1.0):
-        self._controller_vibrator_pub.publish(JoyFeedback(
-                type=JoyFeedback.TYPE_RUMBLE,
-                id=0,
-                intensity=intensity))
-        
-    def _speak(self, msg: str):
-        self._speak_pub.publish(String(data=msg))
 
     ############
     # DJI Services
@@ -429,16 +417,10 @@ class DjiCaptain():
     def _release_control(self):
         def on_result(f):
             self.log(f"Release control service called, success: {f.result().success}, message: {f.result().message}")
-            if f.result().success:
-                self._speak("Gave up control.")
-            else:
-                self._speak("Failed to release control.")
 
         self.log("Releasing control.")
-        self._speak("Releasing control.")
         if not self._release_control_srv.wait_for_service(timeout_sec=5.0):
             self.log("Release control service not available...")
-            self._speak("Release control service not available.")
             return
         future = self._release_control_srv.call_async(Trigger.Request())
         future.add_done_callback(on_result)
@@ -705,13 +687,11 @@ class DjiCaptain():
         
         if self._got_control and not just_got_control:
             self.log("Released control authority, stopping joy timer, discarding setpoint.")
-            self._speak("Released control.")
             self._cancel_joy_timer()
             self._got_control = False
 
         elif not self._got_control and just_got_control:
             self.log("Gained control authority.")
-            self._speak("Taken control.")
             self._got_control = True
         
     def _position_fused_callback(self, msg: PositionFused):
