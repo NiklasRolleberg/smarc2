@@ -861,15 +861,12 @@ class DjiCaptain():
             
 
         # if we made it here, then we got all the sensor happy
+        # and we _can_ do things, like take off and look around
+        self._vehicle_health.data = SmarcTopics.VEHICLE_HEALTH_READY
 
-        if self._got_control:
-            self._vehicle_health.data = SmarcTopics.VEHICLE_HEALTH_READY
-
-
+        # if we are flying, we need to check more things to make sure we are flying safely
         prop_rpms = [esc.speed for esc in list(self._esc_data.esc)[:self.NUM_PROPS]]
-        self._flying = all(rpm > self.ESC_IDLE_RPM for rpm in prop_rpms)
-
-        
+        self._flying = all(rpm > self.ESC_IDLE_RPM for rpm in prop_rpms)        
         if self._flying:
             water_altitude_error = self.altitude_above_water < self.MIN_ALTITUDE_ABOVE_WATER
             if water_altitude_error:
