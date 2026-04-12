@@ -2,6 +2,14 @@
 ROBOT_NAME=evolo
 SESSION=${ROBOT_NAME}_bringup
 
+# check if there is already a tmux session with this name
+if tmux has-session -t $SESSION 2>/dev/null; then
+    echo "There is already a tmux session named $SESSION."
+    echo "Please close it before launching this script."
+    echo "Exiting."
+    exit 1
+fi
+
 # New variables for wasp_bt.launch and wasp_mqtt_agent.launch
 AGENT_TYPE=surface
 PULSE_RATE=0.5 # Hz
@@ -27,6 +35,7 @@ SIMULATOR_DRIVER=False
 LOCATION_SOURCE=SIM #[SBG MQTT SERIAL SIM]
 LIDAR_PROCESSING=False
 CAMERA_PROCESSING=False
+OBSTACLE_AVOIDANCE=False
 
 #Communication
 VIDERO_STREAM=False
@@ -58,6 +67,7 @@ if [ "$MODE" == "SIM" ]; then
     LOCATION_SOURCE=SIM #[SBG MQTT SERIAL SIM]
     LIDAR_PROCESSING=True
     CAMERA_PROCESSING=False
+    OBSTACLE_AVOIDANCE=True
 
     #Communication
     VIDERO_STREAM=False
@@ -89,6 +99,7 @@ if [ "$MODE" == "REAL" ]; then
     LOCATION_SOURCE=SBG #[SBG MQTT SERIAL SIM]
     LIDAR_PROCESSING=True
     CAMERA_PROCESSING=False
+    OBSTACLE_AVOIDANCE=True
 
     #Communication
     VIDERO_STREAM=True
@@ -162,6 +173,17 @@ tmux new-window -t $SESSION:6 -n 'Robot description'
 tmux select-window -t $SESSION:6
 tmux send-keys "ros2 launch evolo_description evolo_description.launch" C-m
 
+#Obstacle avoidance
+if [ $OBSTACLE_AVOIDANCE=False == "True" ]; then
+    tmux new-window -t $SESSION:7 -n 'obstacle avoidance'
+    tmux select-window -t $SESSION:7
+    #TODO launch CBF here
+    tmux send-keys "ros2 run topic_tools relay /evolo/ctrl/twist_planned /evolo/ctrl/twist_setpoint" C-m
+else
+    tmux new-window -t $SESSION:7 -n 'control repub'
+    tmux select-window -t $SESSION:7
+    tmux send-keys "ros2 run topic_tools relay /evolo/ctrl/twist_planned /evolo/ctrl/twist_setpoint" C-m
+fi
 
 ########################################################################
 ####################### Hardware drivers ###############################
@@ -288,8 +310,6 @@ if [ "$LOCATION_SOURCE" = "MQTT" ] || [ "$LOCATION_SOURCE" = "SERIAL" ]; then
     tmux send-keys "ros2 launch evolo_captain_interface evolo_captain_odom_launch.py use_sim_time:=$USE_SIM_TIME" C-m
 fi
 
-# else sim
-
 
 ########################################################################
 ################## Perception / processing #############################
@@ -310,10 +330,6 @@ if [ $LIDAR_PROCESSING == "True" ]; then
     tmux send-keys "ros2 run clustering_segmentation clustering_segmentation --ros-args -p use_sim_time:=$USE_SIM_TIME -p DynamicStatic_clusters_segmentation:=True" C-m
 fi
 
-#Obstacle avoidance
-tmux new-window -t $SESSION:31 -n 'obstacle avoidance'
-tmux select-window -t $SESSION:31
-tmux send-keys "ros2 run topic_tools relay /evolo/ctrl/twist_planned /evolo/ctrl/twist_setpoint" C-m
 
 #TODO launch TwistStamped to path nodes
 
