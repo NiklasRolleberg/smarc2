@@ -64,12 +64,6 @@ class DjiCaptain():
         self.ROBOT_NAME : str = self._node.get_parameter("robot_name").get_parameter_value().string_value
         
 
-        self._node.declare_parameter("controller_deadzone", 0.1)
-        self._CONTROLLER_DEADZONE : float = self._node.get_parameter("controller_deadzone").get_parameter_value().double_value
-        self._node.declare_parameter("controller_yawrate_multiplier", 0.3)
-        self._CONTROLLER_YAWRATE_MULTIPLIER : float = self._node.get_parameter("controller_yawrate_multiplier").get_parameter_value().double_value
-        
-
         # give an error-causing default value to force the user to pass this parameter every time
         # there is no safe assumption that can be made for this.
         self._node.declare_parameter("home_altitude_above_water", -1.0)
@@ -117,9 +111,9 @@ class DjiCaptain():
         self.ERROR_BATTERY_PERCENTAGE = 15
         self.ERROR_HEIGHT_ABOVE_GROUND = 1
         
-        # this is the idle RPM/current for the ESCs, below this we consider the vehicle not flying
-        self.NUM_PROPS = 4 # because the esc message always has 8 fields...
-        self.ESC_IDLE_RPM = 1000  
+        # this is the idle RPM for the ESCs, below this we consider the vehicle not flying
+        self.NUM_PROPS = 4 if self.ROBOT_NAME == "M350" else 8
+        self.ESC_IDLE_RPM = 1000 if self.ROBOT_NAME == "M350" else 500 #TODO FC30 idle, who knows...
 
 
         self._TF_NS : str = f"{self.ROBOT_NAME}/"
@@ -134,7 +128,7 @@ class DjiCaptain():
         self._base_pose_in_home : Optional[PoseStamped] = None
         self._base_pose_flat_in_home : Optional[PoseStamped] = None
         self._home_point_in_utm : Optional[PointStamped] = None
-        self._home_geo_altitude : float | None = None
+        self._home_geo_altitude : Optional[float] = None
         self._gps_point_in_home : Optional[PointStamped] = None
         self._rtk_point_in_home : Optional[PointStamped] = None
         self._velocity_ground : Optional[Vector3Stamped] = None
@@ -144,13 +138,12 @@ class DjiCaptain():
 
         self._esc_data : Optional[EscData] = None
 
-        self._geo_altitude : float | None = None
-        self._heading_deg : float | None = None
-        self._course_deg : float | None = None
+        self._geo_altitude : Optional[float] = None
+        self._heading_deg : Optional[float] = None
+        self._course_deg : Optional[float] = None
 
         self._got_control : bool = False
         self._flying : bool = False
-        self._carrying_payload : bool = False
         self._battery_percent : Optional[float] = None
         self._cam_processor_happy : bool = False
         self._geofence_status : Optional[GeofenceStatusStamped] = None
