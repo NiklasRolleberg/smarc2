@@ -1086,6 +1086,27 @@ class WaraPSTaskHandler:
         Returns the list of available tasks.
         """
         return self.tasks_available
+
+    def remove_available_task(self, task_name: str = None, ros_name: str = None):
+        """
+        Removes matching tasks from the available task list.
+        Matches on WaraPS task name and/or ROS action name.
+        Returns True if any task was removed.
+        """
+        if task_name is None and ros_name is None:
+            self._node.get_logger().warn("remove_available_task called without task_name or ros_name")
+            return False
+
+        initial_count = len(self.tasks_available)
+        self.tasks_available = [
+            task for task in self.tasks_available
+            if not (
+                (task_name is not None and task.get("name") == task_name)
+                or (ros_name is not None and task.get("ros_name") == ros_name)
+            )
+        ]
+
+        return len(self.tasks_available) < initial_count
     
     def current_time(self):
         """

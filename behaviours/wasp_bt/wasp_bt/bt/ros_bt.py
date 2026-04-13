@@ -179,10 +179,18 @@ class BT(HasVehicleContainer, HasClock, HasWaraPSTaskHandler):
 
 
         # check if the action server is alive (setup like below)
-        status = action_client._setup(num_iters=3)
+        status = action_client._setup(num_iters=1, timeout = 0.5)
         if not status:
             # if the action server is not alive, we cannot run the action
             self._task_handler._node.get_logger().warn(f"Action server for {task_name} is not alive")
+
+            # remove the action from the available tasks in the WaraPSTaskHandler so that it doesn't show up in the task handler tree
+            removed = self._task_handler.remove_available_task(task_name=task_name)
+            if removed:
+                self._task_handler._node.get_logger().info(
+                    f"Removed unavailable task '{task_name}' from available tasks"
+                )
+            
             return None
 
         ready_tree = Sequence(f"S_{task_name}", memory=False, children=[
@@ -267,7 +275,7 @@ class BT(HasVehicleContainer, HasClock, HasWaraPSTaskHandler):
             for action_client in action_client_list:
 
                 # first, check if the corresponding action server is available
-                availability_check = action_client._setup(num_iters = 3)
+                availability_check = action_client._setup(num_iters = 1, timeout = 0.5)
 
                 if not availability_check:
                     # if the action client is not available, skip it

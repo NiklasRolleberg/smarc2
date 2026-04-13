@@ -369,13 +369,13 @@ class SMARCActionClient(abc.ABC):
             err_str = traceback.format_exc()
             self._logerr(err_str)
 
-    def _setup(self, num_iters: int = 3):
+    def _setup(self, num_iters: int = 3, timeout: float = 1.0) -> bool:
         server_status = False
         iters = 0
         while not server_status and iters < num_iters:
             iters += 1
             self._loginfo("Waiting for server to start.")
-            server_status = self._client.wait_for_server(timeout_sec=1.0)
+            server_status = self._client.wait_for_server(timeout_sec=timeout)
         
         if server_status:
             self._loginfo("Server found.")
