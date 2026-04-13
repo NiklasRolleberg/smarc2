@@ -13,6 +13,9 @@ class TriggerServiceActionServer:
         node.declare_parameter("service_name", "unknown_trigger_service")
         self._service_name : str = node.get_parameter("service_name").get_parameter_value().string_value
 
+        node.declare_parameter("task_name", f"{self._service_name}_action_server")
+        self._task_name : str = node.get_parameter("task_name").get_parameter_value().string_value
+
         node.declare_parameter("loop_rate", 5.0)
         self._loop_rate : float = node.get_parameter("loop_rate").get_parameter_value().double_value
 
@@ -22,7 +25,7 @@ class TriggerServiceActionServer:
 
         self._as = GentlerActionServer(
             self._node,
-            f"{self._service_name}_action_server",
+            self._task_name,
             self._on_goal_received,
             self._on_cancel_received,
             lambda: None,

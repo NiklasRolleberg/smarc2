@@ -849,11 +849,7 @@ class DjiCaptain():
                 self._vehicle_health_pub.publish(self._vehicle_health)
                 return
             
-        if self._load_cell_weight is None:
-            self.logwarn(f"Load cell weight not received yet, waiting.")
-            self._vehicle_health_pub.publish(self._vehicle_health)
-            return
-        elif self._load_cell_weight > self._MAX_LOAD_KG:
+        if self._load_cell_weight is not None and self._load_cell_weight > self._MAX_LOAD_KG:
             self.logerr(f"Load cell weight above max: {self._load_cell_weight:.2f} kg > {self._MAX_LOAD_KG:.2f} kg")
             self._vehicle_health.data = SmarcTopics.VEHICLE_HEALTH_ERROR
             self._vehicle_health_pub.publish(self._vehicle_health)

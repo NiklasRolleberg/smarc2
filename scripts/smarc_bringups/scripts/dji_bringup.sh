@@ -94,7 +94,8 @@ CAPTAIN_CMD="ros2 launch dji_captain alars_captain.launch \
 CAPTAIN_STATUS_CMD="ros2 topic echo /$ROBOT_NAME/captain_status std_msgs/msg/String --field data"
 WRAPPER_CMD="ros2 launch psdk_wrapper wrapper.launch.py namespace:=/$ROBOT_NAME/wrapper"
 DISCOVERY_SERVER_CMD="fast-discovery-server -i 0"
-SERVICE_CALLER_CMD="ros2 run dji_captain service_caller --ros-args -p robot_name:=$ROBOT_NAME -p use_sim_time:=$USE_SIM_TIME -r __ns:=/$ROBOT_NAME"
+SERVICE_CALLER_CMD="ros2 run dji_captain service_caller --ros-args -r __ns:=/$ROBOT_NAME -p use_sim_time:=$USE_SIM_TIME -p robot_name:=$ROBOT_NAME"
+ALARS_SERVICES_CMD="ros2 launch dji_captain alars_services.launch.py robot_name:=$ROBOT_NAME use_sim_time:=$USE_SIM_TIME"
 
 if [[ $USE_SIM_TIME = "False" ]]; then
     tmux_make_layout "$SESSION" Captains "
@@ -106,11 +107,22 @@ if [[ $USE_SIM_TIME = "False" ]]; then
         3:row(
             2:var(CAPTAIN_CMD),
             3:var(CAPTAIN_STATUS_CMD),
-            2:var(SERVICE_CALLER_CMD)
+            2:col(
+                var(SERVICE_CALLER_CMD),
+                var(ALARS_SERVICES_CMD)
+            )
         )
     )" 
 else
-    tmux_make_layout "$SESSION" Captains "row(2:var(CAPTAIN_CMD), 3:var(CAPTAIN_STATUS_CMD), 2:var(SERVICE_CALLER_CMD))"
+    tmux_make_layout "$SESSION" Captains "
+    row(
+        2:var(CAPTAIN_CMD),
+        3:var(CAPTAIN_STATUS_CMD),
+        2:col(
+            var(SERVICE_CALLER_CMD),
+            var(ALARS_SERVICES_CMD)
+        )
+    )"
 fi
 
 
