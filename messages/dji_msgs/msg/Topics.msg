@@ -62,10 +62,3 @@ string DISABLE_ALARS_DETECTOR_SERVICE_TOPIC = 'disable_alars_detector' # Trigger
 string ENABLE_HOOK_ESTIMATOR_SERVICE_TOPIC = 'enable_hook_estimator' # Trigger
 string DISABLE_HOOK_ESTIMATOR_SERVICE_TOPIC = 'disable_hook_estimator' # Trigger
 
-
-
-
-# user feedback
-string CONTROLLER_INPUT_TOPIC = 'joy' # Joy
-string CONTROLLER_VIBRATION_TOPIC = 'joy/set_feedback' # JoyFeedback
-string TTS_TOPIC = 'speak' # String

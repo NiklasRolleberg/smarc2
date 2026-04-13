@@ -50,18 +50,17 @@ class ServiceCaller():
             try:
                 user_input = input(commands)
                 if user_input == "1":
-                    future = self._take_control_srv.call_async(Trigger.Request())
-                    future.add_done_callback(lambda future: print(f"Take control response: {future.result().success}"))
-
+                    res = call_service_blocking(self._node, self._take_control_srv, Trigger.Request())
+                    print(f"Take control response: {res.success}")
                 elif user_input == "2":
-                    future = self._release_control_srv.call_async(Trigger.Request())
-                    future.add_done_callback(lambda future: print(f"Release control response: {future.result().success}"))
+                    res = call_service_blocking(self._node, self._release_control_srv, Trigger.Request())
+                    print(f"Release control response: {res.success}")
                 elif user_input == "3":
-                    future = self._takeoff_srv.call_async(Trigger.Request())
-                    future.add_done_callback(lambda future: print(f"Take off response: {future.result().success}"))
+                    res = call_service_blocking(self._node, self._takeoff_srv, Trigger.Request())
+                    print(f"Take off response: {res.success}")
                 elif user_input == "4":
-                    future = self._land_srv.call_async(Trigger.Request())
-                    future.add_done_callback(lambda future: print(f"Land response: {future.result().success}"))
+                    res = call_service_blocking(self._node, self._land_srv, Trigger.Request())
+                    print(f"Land response: {res.success}")
                 elif user_input == "0":
                     print("Exiting...")
                     sys.exit(0)
@@ -74,7 +73,12 @@ class ServiceCaller():
                 sys.exit(1)
 
         
-            
+def call_service_blocking(node, client, request) -> Trigger.Response:
+    future = client.call_async(request)
+    rclpy.spin_until_future_complete(node, future)
+    if future.result() is None:
+        raise RuntimeError('Service call failed')
+    return future.result()            
     
 
 def main():

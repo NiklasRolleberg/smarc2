@@ -1,17 +1,23 @@
-#! /bin/bash
+#!/usr/bin/env bash
 
 tmux_make_layout() {
   local target_session="$1"
   local window_name="$2"
   local layout="$3"
 
-  if [[ -z "$window_name" || -z "$layout" ]]; then
-    echo "usage: tmux_make_layout <window-name> '<layout>' [target-session]" >&2
+  if [[ -z "$target_session" || -z "$window_name" || -z "$layout" ]]; then
+    echo "usage: tmux_make_layout <session> <window-name> '<layout>'" >&2
+    echo "example: tmux_make_layout mysession Drivers 'row(var(CMD1), 2:var(CMD2), pane)'" >&2
     return 1
   fi
 
   if ! command -v tmux >/dev/null 2>&1; then
-    echo "tmux not found" >&2
+    echo "tmux not found in PATH" >&2
+    return 1
+  fi
+
+  if ! tmux has-session -t "$target_session" 2>/dev/null; then
+    echo "tmux session '$target_session' does not exist" >&2
     return 1
   fi
 
@@ -22,55 +28,25 @@ tmux_make_layout() {
     printf '%s\n' "$s"
   }
 
-  _tml_unquote() {
+  _tml_kind() {
     local s
     s="$(_tml_trim "$1")"
 
-    if [[ "$s" =~ ^\".*\"$ ]]; then
-      s="${s:1:${#s}-2}"
-      s="${s//\\\"/\"}"
-      s="${s//\\\\/\\}"
-      printf '%s\n' "$s"
-      return 0
+    if [[ "$s" =~ ^row\(.*\)$ ]]; then
+      printf 'row\n'
+    elif [[ "$s" =~ ^col\(.*\)$ ]]; then
+      printf 'col\n'
+    else
+      printf 'leaf\n'
     fi
-
-    if [[ "$s" =~ ^\'.*\'$ ]]; then
-      s="${s:1:${#s}-2}"
-      printf '%s\n' "$s"
-      return 0
-    fi
-
-    printf '%s\n' "$s"
   }
 
-  _tml_strip_outer_ws() {
-    local s="$1"
-    local out=""
-    local i c in_sq=0 in_dq=0 prev=""
-
-    for ((i=0; i<${#s}; i++)); do
-      c="${s:i:1}"
-
-      if [[ "$c" == "'" && "$in_dq" -eq 0 ]]; then
-        if [[ "$prev" != "\\" ]]; then
-          ((in_sq = 1 - in_sq))
-        fi
-        out+="$c"
-      elif [[ "$c" == '"' && "$in_sq" -eq 0 ]]; then
-        if [[ "$prev" != "\\" ]]; then
-          ((in_dq = 1 - in_dq))
-        fi
-        out+="$c"
-      elif [[ "$in_sq" -eq 0 && "$in_dq" -eq 0 && "$c" =~ [[:space:]] ]]; then
-        :
-      else
-        out+="$c"
-      fi
-
-      prev="$c"
-    done
-
-    printf '%s\n' "$out"
+  _tml_inner() {
+    local s
+    s="$(_tml_trim "$1")"
+    s="${s#*\(}"
+    s="${s%)}"
+    printf '%s\n' "$s"
   }
 
   _tml_split_top_level() {
@@ -78,8 +54,10 @@ tmux_make_layout() {
     local depth=0
     local token=""
     local c prev=""
-    local in_sq=0 in_dq=0
+    local in_sq=0
+    local in_dq=0
     local i
+    local delim=$'\037'
 
     for ((i=0; i<${#s}; i++)); do
       c="${s:i:1}"
@@ -102,7 +80,7 @@ tmux_make_layout() {
             ;;
           ',')
             if (( depth == 0 )); then
-              printf '%s\n' "$token"
+              printf '%s%s' "$token" "$delim"
               token=""
             else
               token+="$c"
@@ -119,14 +97,15 @@ tmux_make_layout() {
       prev="$c"
     done
 
-    [[ -n "$token" ]] && printf '%s\n' "$token"
+    [[ -n "$token" ]] && printf '%s' "$token"
   }
 
   _tml_split_weight_spec() {
     local s="$1"
     local depth=0
     local c prev=""
-    local in_sq=0 in_dq=0
+    local in_sq=0
+    local in_dq=0
     local i
 
     for ((i=0; i<${#s}; i++)); do
@@ -155,43 +134,64 @@ tmux_make_layout() {
     printf '1|%s\n' "$s"
   }
 
-  _tml_kind() {
+  _tml_unquote_literal() {
     local s
-    s="$(_tml_strip_outer_ws "$1")"
+    s="$(_tml_trim "$1")"
 
-    if [[ "$s" =~ ^row\(.*\)$ ]]; then
-      printf 'row\n'
-    elif [[ "$s" =~ ^col\(.*\)$ ]]; then
-      printf 'col\n'
-    else
-      printf 'leaf\n'
+    if [[ "$s" =~ ^\".*\"$ ]]; then
+      s="${s:1:${#s}-2}"
+      s="${s//\\\"/\"}"
+      s="${s//\\\\/\\}"
+      printf '%s\n' "$s"
+      return 0
     fi
-  }
 
-  _tml_inner() {
-    local s
-    s="$(_tml_strip_outer_ws "$1")"
-    s="${s#*\(}"
-    s="${s%)}"
+    if [[ "$s" =~ ^\'.*\'$ ]]; then
+      s="${s:1:${#s}-2}"
+      printf '%s\n' "$s"
+      return 0
+    fi
+
     printf '%s\n' "$s"
   }
 
-_tml_send_command() {
-  local target="$1"
-  local raw="$2"
-  local cmd
-
-  cmd="$(_tml_unquote "$raw")"
-
-  [[ -z "$cmd" || "$cmd" == "pane" || "$cmd" == "." || "$cmd" == "leaf" ]] && return 0
-
-  tmux send-keys -t "$target" -- "$cmd" C-m
-}
-
-  _tml_realize() {
+  _tml_resolve_leaf_command() {
     local spec
     spec="$(_tml_trim "$1")"
+
+    if [[ "$spec" == "pane" || "$spec" == "." || "$spec" == "leaf" ]]; then
+      return 0
+    fi
+
+    if [[ "$spec" =~ ^var\(([A-Za-z_][A-Za-z0-9_]*)\)$ ]]; then
+      local var_name="${BASH_REMATCH[1]}"
+      if [[ -z "${!var_name+x}" ]]; then
+        echo "variable '$var_name' is not set" >&2
+        return 1
+      fi
+      printf '%s\n' "${!var_name}"
+      return 0
+    fi
+
+    _tml_unquote_literal "$spec"
+  }
+
+  _tml_send_command() {
+    local target="$1"
+    local raw="$2"
+    local cmd
+
+    cmd="$(_tml_resolve_leaf_command "$raw")" || return 1
+    [[ -z "$cmd" ]] && return 0
+
+    tmux send-keys -t "$target" -- "$cmd" C-m
+  }
+
+  _tml_realize() {
+    local spec="$1"
     local target="$2"
+
+    spec="$(_tml_trim "$spec")"
 
     local kind
     kind="$(_tml_kind "$spec")"
@@ -206,9 +206,15 @@ _tml_send_command() {
 
     local children=()
     local item
-    while IFS= read -r item; do
-      [[ -n "$item" ]] && children+=("$(_tml_trim "$item")")
-    done < <(_tml_split_top_level "$inner")
+    local split_output
+    local delim=$'\037'
+
+    split_output="$(_tml_split_top_level "$inner")"
+
+    while IFS= read -r -d "$delim" item; do
+      item="$(_tml_trim "$item")"
+      [[ -n "$item" ]] && children+=("$item")
+    done < <(printf '%s%s' "$split_output" "$delim")
 
     if (( ${#children[@]} == 0 )); then
       echo "empty container: $spec" >&2
@@ -263,10 +269,6 @@ _tml_send_command() {
   }
 
   local root_pane
-  if [[ -n "$target_session" ]]; then
-    root_pane="$(tmux new-window -P -F '#{pane_id}' -t "$target_session" -n "$window_name")" || return 1
-  else
-    root_pane="$(tmux new-window -P -F '#{pane_id}' -n "$window_name")" || return 1
-  fi
+  root_pane="$(tmux new-window -P -F '#{pane_id}' -t "$target_session" -n "$window_name")" || return 1
   _tml_realize "$layout" "$root_pane"
 }

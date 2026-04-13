@@ -13,13 +13,14 @@ setup(
     ],
     install_requires=['setuptools'],
     zip_safe=True,
-    maintainer='tko',
-    maintainer_email='kogucki@kth.se',
-    description='TODO: Package description',
-    license='TODO: License declaration',
+    maintainer='ozero',
+    maintainer_email='ozero@kth.se',
+    description='Base package for SMARC action servers and clients',
+    license='MIT',
     tests_require=['pytest'],
     entry_points={
         'console_scripts': [
+            'trigger_service_action_server = smarc_action_base.trigger_service_action_server:main'
         ],
     },
 )

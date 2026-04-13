@@ -64,12 +64,6 @@ class DjiCaptain():
         self.ROBOT_NAME : str = self._node.get_parameter("robot_name").get_parameter_value().string_value
         
 
-        self._node.declare_parameter("controller_deadzone", 0.1)
-        self._CONTROLLER_DEADZONE : float = self._node.get_parameter("controller_deadzone").get_parameter_value().double_value
-        self._node.declare_parameter("controller_yawrate_multiplier", 0.3)
-        self._CONTROLLER_YAWRATE_MULTIPLIER : float = self._node.get_parameter("controller_yawrate_multiplier").get_parameter_value().double_value
-        
-
         # give an error-causing default value to force the user to pass this parameter every time
         # there is no safe assumption that can be made for this.
         self._node.declare_parameter("home_altitude_above_water", -1.0)
@@ -117,9 +111,9 @@ class DjiCaptain():
         self.ERROR_BATTERY_PERCENTAGE = 15
         self.ERROR_HEIGHT_ABOVE_GROUND = 1
         
-        # this is the idle RPM/current for the ESCs, below this we consider the vehicle not flying
-        self.NUM_PROPS = 4 # because the esc message always has 8 fields...
-        self.ESC_IDLE_RPM = 1000  
+        # this is the idle RPM for the ESCs, below this we consider the vehicle not flying
+        self.NUM_PROPS = 4 if self.ROBOT_NAME == "M350" else 8
+        self.ESC_IDLE_RPM = 1000 if self.ROBOT_NAME == "M350" else 500 #TODO FC30 idle, who knows...
 
 
         self._TF_NS : str = f"{self.ROBOT_NAME}/"
@@ -134,7 +128,7 @@ class DjiCaptain():
         self._base_pose_in_home : Optional[PoseStamped] = None
         self._base_pose_flat_in_home : Optional[PoseStamped] = None
         self._home_point_in_utm : Optional[PointStamped] = None
-        self._home_geo_altitude : float | None = None
+        self._home_geo_altitude : Optional[float] = None
         self._gps_point_in_home : Optional[PointStamped] = None
         self._rtk_point_in_home : Optional[PointStamped] = None
         self._velocity_ground : Optional[Vector3Stamped] = None
@@ -144,13 +138,12 @@ class DjiCaptain():
 
         self._esc_data : Optional[EscData] = None
 
-        self._geo_altitude : float | None = None
-        self._heading_deg : float | None = None
-        self._course_deg : float | None = None
+        self._geo_altitude : Optional[float] = None
+        self._heading_deg : Optional[float] = None
+        self._course_deg : Optional[float] = None
 
         self._got_control : bool = False
         self._flying : bool = False
-        self._carrying_payload : bool = False
         self._battery_percent : Optional[float] = None
         self._cam_processor_happy : bool = False
         self._geofence_status : Optional[GeofenceStatusStamped] = None
@@ -186,10 +179,6 @@ class DjiCaptain():
 
         self._labeled_utm_frame_pub = node.create_publisher(String, DjiTopics.LABELED_UTM_TOPIC, qos_profile=10)
 
-        # a simple TTS node should be listening to this (robot_name/speak)
-        self._speak_pub = node.create_publisher(String, DjiTopics.TTS_TOPIC, qos_profile=10)
-        self._controller_vibrator_pub = node.create_publisher(JoyFeedback, DjiTopics.CONTROLLER_VIBRATION_TOPIC, qos_profile=10)
-        
 
         self._tf_buffer = Buffer()
         self._tf_listener = TransformListener(self._tf_buffer, self._node, spin_thread=True)
@@ -414,14 +403,6 @@ class DjiCaptain():
     def logwarn(self, msg: str):
         self._node.get_logger().warn(msg)
 
-    def _buzz(self, intensity: float = 1.0):
-        self._controller_vibrator_pub.publish(JoyFeedback(
-                type=JoyFeedback.TYPE_RUMBLE,
-                id=0,
-                intensity=intensity))
-        
-    def _speak(self, msg: str):
-        self._speak_pub.publish(String(data=msg))
 
     ############
     # DJI Services
@@ -429,16 +410,10 @@ class DjiCaptain():
     def _release_control(self):
         def on_result(f):
             self.log(f"Release control service called, success: {f.result().success}, message: {f.result().message}")
-            if f.result().success:
-                self._speak("Gave up control.")
-            else:
-                self._speak("Failed to release control.")
 
         self.log("Releasing control.")
-        self._speak("Releasing control.")
         if not self._release_control_srv.wait_for_service(timeout_sec=5.0):
             self.log("Release control service not available...")
-            self._speak("Release control service not available.")
             return
         future = self._release_control_srv.call_async(Trigger.Request())
         future.add_done_callback(on_result)
@@ -705,13 +680,11 @@ class DjiCaptain():
         
         if self._got_control and not just_got_control:
             self.log("Released control authority, stopping joy timer, discarding setpoint.")
-            self._speak("Released control.")
             self._cancel_joy_timer()
             self._got_control = False
 
         elif not self._got_control and just_got_control:
             self.log("Gained control authority.")
-            self._speak("Taken control.")
             self._got_control = True
         
     def _position_fused_callback(self, msg: PositionFused):
@@ -876,11 +849,7 @@ class DjiCaptain():
                 self._vehicle_health_pub.publish(self._vehicle_health)
                 return
             
-        if self._load_cell_weight is None:
-            self.logwarn(f"Load cell weight not received yet, waiting.")
-            self._vehicle_health_pub.publish(self._vehicle_health)
-            return
-        elif self._load_cell_weight > self._MAX_LOAD_KG:
+        if self._load_cell_weight is not None and self._load_cell_weight > self._MAX_LOAD_KG:
             self.logerr(f"Load cell weight above max: {self._load_cell_weight:.2f} kg > {self._MAX_LOAD_KG:.2f} kg")
             self._vehicle_health.data = SmarcTopics.VEHICLE_HEALTH_ERROR
             self._vehicle_health_pub.publish(self._vehicle_health)
@@ -888,15 +857,12 @@ class DjiCaptain():
             
 
         # if we made it here, then we got all the sensor happy
+        # and we _can_ do things, like take off and look around
+        self._vehicle_health.data = SmarcTopics.VEHICLE_HEALTH_READY
 
-        if self._got_control:
-            self._vehicle_health.data = SmarcTopics.VEHICLE_HEALTH_READY
-
-
+        # if we are flying, we need to check more things to make sure we are flying safely
         prop_rpms = [esc.speed for esc in list(self._esc_data.esc)[:self.NUM_PROPS]]
-        self._flying = all(rpm > self.ESC_IDLE_RPM for rpm in prop_rpms)
-
-        
+        self._flying = all(rpm > self.ESC_IDLE_RPM for rpm in prop_rpms)        
         if self._flying:
             water_altitude_error = self.altitude_above_water < self.MIN_ALTITUDE_ABOVE_WATER
             if water_altitude_error:

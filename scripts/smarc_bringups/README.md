@@ -48,6 +48,19 @@ Launches everything related to DJI drones and the ALARS project.
   - rosshow: (`cd ~/colcon_ws/src && git clone https://github.com/dheera/rosshow`)
   - Set discovery server stuff as described in `scripts/README.md ## ROS2 over a VPN`
 
+#### Proper torch installation (Jetpack 6.2.2)
+
+After everything above:
+
+```
+python3 -m pip uninstall -y torch torchvision torchaudio
+python3 -m pip cache purge
+python3 -m pip install torch==2.8.0 torchvision==0.23.0 --index-url=https://pypi.jetson-ai-lab.io/jp6/cu126
+```
+
+This will complain about numpy version ultralytics wants, if you removed the pip-installed version like auv_yolo_detector's README mentions. But things seem to run regardless.
+
+
 
 #### eport serial2usb udev rules
 `udevadm info -a -n /dev/ttyUSB0`
