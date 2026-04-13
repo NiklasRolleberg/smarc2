@@ -184,7 +184,7 @@ YOLO_DEVICE=0
 if [[ $USE_SIM_TIME = "True" ]]; then
     YOLO_DEVICE=cpu
 fi
-YOLO_CMD="ros2 launch auv_yolo_detector yolo_detector_launch.py \
+YOLO_CMD="ros2 launch alars_auv_perception alars_yolo_detector.launch.py \
 namespace:=$ROBOT_NAME \
 device:=$YOLO_DEVICE \
 use_sim_time:=$USE_SIM_TIME"
