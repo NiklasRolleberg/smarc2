@@ -179,10 +179,18 @@ class BT(HasVehicleContainer, HasClock, HasWaraPSTaskHandler):
 
 
         # check if the action server is alive (setup like below)
-        status = action_client._setup(num_iters=3)
+        status = action_client._setup(num_iters=1, timeout = 0.5)
         if not status:
             # if the action server is not alive, we cannot run the action
             self._task_handler._node.get_logger().warn(f"Action server for {task_name} is not alive")
+
+            # remove the action from the available tasks in the WaraPSTaskHandler so that it doesn't show up in the task handler tree
+            removed = self._task_handler.remove_available_task(task_name=task_name)
+            if removed:
+                self._task_handler._node.get_logger().info(
+                    f"Removed unavailable task '{task_name}' from available tasks"
+                )
+            
             return None
 
         ready_tree = Sequence(f"S_{task_name}", memory=False, children=[
@@ -267,7 +275,7 @@ class BT(HasVehicleContainer, HasClock, HasWaraPSTaskHandler):
             for action_client in action_client_list:
 
                 # first, check if the corresponding action server is available
-                availability_check = action_client._setup(num_iters = 3)
+                availability_check = action_client._setup(num_iters = 1, timeout = 0.5)
 
                 if not availability_check:
                     # if the action client is not available, skip it
@@ -473,8 +481,17 @@ def wasp_bt():
     node.declare_parameter("bt_health_timeout", 15.0) # seconds
     bt_health_timeout = node.get_parameter("bt_health_timeout").value
 
+    # timeout for considering action-server heartbeats stale in task discovery
+    node.declare_parameter("task_liveliness_timeout", 10.0) # seconds
+    task_liveliness_timeout = node.get_parameter("task_liveliness_timeout").value
 
-    wara_ps_task_handler = WaraPSTaskHandler(node, agent_waraps_dict, start_offset=bt_launch_delay)
+
+    wara_ps_task_handler = WaraPSTaskHandler(
+        node,
+        agent_waraps_dict,
+        start_offset=bt_launch_delay,
+        task_liveliness_timeout=task_liveliness_timeout,
+    )
     bt = BT(vehicle_container = agent,
             task_handler    = wara_ps_task_handler,
             get_ready_action = get_ready_action_client,
