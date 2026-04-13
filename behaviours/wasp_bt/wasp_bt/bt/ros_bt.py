@@ -473,8 +473,17 @@ def wasp_bt():
     node.declare_parameter("bt_health_timeout", 15.0) # seconds
     bt_health_timeout = node.get_parameter("bt_health_timeout").value
 
+    # timeout for considering action-server heartbeats stale in task discovery
+    node.declare_parameter("task_liveliness_timeout", 10.0) # seconds
+    task_liveliness_timeout = node.get_parameter("task_liveliness_timeout").value
 
-    wara_ps_task_handler = WaraPSTaskHandler(node, agent_waraps_dict, start_offset=bt_launch_delay)
+
+    wara_ps_task_handler = WaraPSTaskHandler(
+        node,
+        agent_waraps_dict,
+        start_offset=bt_launch_delay,
+        task_liveliness_timeout=task_liveliness_timeout,
+    )
     bt = BT(vehicle_container = agent,
             task_handler    = wara_ps_task_handler,
             get_ready_action = get_ready_action_client,

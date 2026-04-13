@@ -169,12 +169,16 @@ row(
 ############
 # 3 BTs
 ############
+# Grace period before WASP BT drops stale action servers from available task list.
+WASP_BT_TASK_LIVELINESS_TIMEOUT=10.0
+
 WASP_BT_CMD="ros2 launch wasp_bt wasp_bt.launch \
 robot_name:=$ROBOT_NAME \
 agent_type:=air \
 pulse_rate:=10.0 \
 use_sim_time:=$USE_SIM_TIME \
-bt_health_timeout:=5.0"
+bt_health_timeout:=5.0 \
+task_liveliness_timeout:=$WASP_BT_TASK_LIVELINESS_TIMEOUT"
 
 LOADED_WEIGHT_KG=1.8 # real empty sam + hook + rope weight is 1.78kg, just the hook and rope is 0.79kg
 ALARS_BT_CMD="ros2 run alars alars_bt --ros-args -r __ns:=/$ROBOT_NAME \
