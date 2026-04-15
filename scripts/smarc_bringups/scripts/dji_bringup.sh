@@ -225,20 +225,25 @@ NAU_DRIVER_CMD="ros2 run nau7802_ros2_driver nau7802_ros2_driver --ros-args -r _
 GIMBAL_IP=192.168.1.108
 GIMBAL_PORT=2332
 GSCAM_CONFIG_GIMBAL="rtspsrc location=rtsp://$GIMBAL_IP latency=0 ! rtph264depay ! h264parse ! nvv4l2decoder ! nvvidconv ! video/x-raw,format=BGRx ! videoconvert ! queue max-size-buffers=1 leaky=downstream"
+GIMBAL_CAM_TOPIC_NS=gimbal_camera
 GIMBAL_CAM_VIDEO_CMD="ros2 run gscam gscam_node --ros-args \
     -p gscam_config:=\"$GSCAM_CONFIG_GIMBAL\" \
     -p frame_id:=z1_optical_frame \
     -p image_encoding:=rgb8 \
     -p sync_sink:=false \
     -p camera.image_raw.enable_pub_plugins:="['image_transport/compressed','image_transport/raw']" \
-    -r __ns:=/$ROBOT_NAME/gimbal_camera"
-GIMBAL_CAM_DRIVER_CMD="ros2 launch z1_pro_driver z1_pro_launch.py \
-    namespace:=\"$ROBOT_NAME/gimbal_camera\" \
-    tf_frame_prefix:=\"$ROBOT_NAME/\" \
+    -r __ns:=/$ROBOT_NAME/$GIMBAL_CAM_TOPIC_NS"
+GIMBAL_CAM_DRIVER_CMD="ros2 launch z1_pro_driver z1_pro_driver_launch.py \
+    robot_name:=$ROBOT_NAME \
+    tf_frame_prefix:=$ROBOT_NAME/ \
     use_vehicle_altitude:=True \
     camera_ip:=$GIMBAL_IP \
-    camera_port:=$GIMBAL_PORT"
-GIMBAL_CMD_ACTION_CMD="ros2 launch z1_pro_driver z1_pro_action_launch.py namespace:=\"$ROBOT_NAME/gimbal_camera\" use_sim_time:=$USE_SIM_TIME"
+    camera_port:=$GIMBAL_PORT \
+    gimbal_camera_topic_ns:=$GIMBAL_CAM_TOPIC_NS"
+GIMBAL_CMD_ACTION_CMD="ros2 launch z1_pro_driver z1_pro_action_launch.py \
+    robot_name:=\"$ROBOT_NAME\" \
+    use_sim_time:=$USE_SIM_TIME \
+    gimbal_camera_topic_ns:=$GIMBAL_CAM_TOPIC_NS"
 
 # GSCAM_CONFIG_FISH="v4l2src device=/dev/insta360x4 ! image/jpeg,width=1920,height=1080,framerate=30/1 ! jpegdec ! videoconvert ! video/x-raw,format=BGR"
 # FISH_VIDEO_CMD="ros2 run gscam gscam_node --ros-args \
