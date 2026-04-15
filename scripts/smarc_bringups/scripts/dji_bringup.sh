@@ -202,7 +202,8 @@ fi
 YOLO_CMD="ros2 launch alars_auv_perception alars_yolo_detector.launch.py \
 namespace:=$ROBOT_NAME \
 device:=$YOLO_DEVICE \
-use_sim_time:=$USE_SIM_TIME"
+use_sim_time:=$USE_SIM_TIME \
+model_package:=alars_labeling_training"
 
 PROJECTION_CMD="ros2 launch auv_state_estimation projection_launch.py namespace:=$ROBOT_NAME use_sim_time:=$USE_SIM_TIME"
 
