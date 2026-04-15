@@ -47,6 +47,10 @@ string ESTIMATED_CNN_AFTER_CATCH_FLY_DIRECTION_TOPIC = 'alars_detection/cnn_vec'
 # let the consumer of camera data tell it if the camera is good, detection can happen etc.
 string CAM_PROCESSOR_HAPPY_TOPIC = 'alars_detection/cam_processor_happy' # Bool
 
+# Topic for publishing detected objects (excluding SAM and buoy) as labeled OBBs.
+# Each message contains Polygon[] obbs and string[] ids (class names).
+string LABELED_OBBS_TOPIC="alars_detection/labeled_obbs"
+
 # projected points
 string PROJECTED_AUV_HEAD_TOPIC = 'alars_projection/auv_head' # PolygonStamped
 string PROJECTED_AUV_OBB_TOPIC = 'alars_projection/auv_obb' # PolygonStamped

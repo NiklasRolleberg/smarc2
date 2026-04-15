@@ -78,7 +78,13 @@ class HasWaraPSTaskHandler:
         self._robot_name = value["name"] if value else None
 
 class WaraPSTaskHandler:
-    def __init__(self, node:Node, wara_ps_dict:Type[dict], start_offset:float=5.0):
+    def __init__(
+        self,
+        node:Node,
+        wara_ps_dict:Type[dict],
+        start_offset:float=5.0,
+        task_liveliness_timeout: float = 10.0,
+    ):
         """
         A class to handle the parts of the BT that need to interact with MQTT. This will later double up as the Mission Command and Updator.
 
@@ -92,6 +98,7 @@ class WaraPSTaskHandler:
         self._wara_ps_dict = wara_ps_dict
         self._robot_name = wara_ps_dict["name"]
         self.start_offset = start_offset
+        self._task_liveliness_timeout = max(1.0, float(task_liveliness_timeout))
 
         self.tasks_available = []
         self.past_tasks = []
@@ -202,13 +209,13 @@ class WaraPSTaskHandler:
         # update tasks executing
         self._direct_execution_info_data["tasks-executing"] = list_of_running_tasks
 
-        # drop tasks that have not been seen for a while (3 seconds)
+        # drop tasks that have not been seen for a while
         popped_indices = []
         for i in range(len(self.tasks_available)):
             # self._node.get_logger().info(f"Checking task {i} with name {self.tasks_available[i]['name']}")
             task = self.tasks_available[i]
             # log (now_time - task["last_seen"])
-            if float(now_time - task["last_seen"]) > 3.0:
+            if float(now_time - task["last_seen"]) > self._task_liveliness_timeout:
                 # remove the task from the list of available tasks
                 popped_indices.append(i)
                 self._node.get_logger().info(f"Removed task {task['name']} from available at time {now_time}, last seen at {task['last_seen']}")
@@ -1079,6 +1086,27 @@ class WaraPSTaskHandler:
         Returns the list of available tasks.
         """
         return self.tasks_available
+
+    def remove_available_task(self, task_name: str = None, ros_name: str = None):
+        """
+        Removes matching tasks from the available task list.
+        Matches on WaraPS task name and/or ROS action name.
+        Returns True if any task was removed.
+        """
+        if task_name is None and ros_name is None:
+            self._node.get_logger().warn("remove_available_task called without task_name or ros_name")
+            return False
+
+        initial_count = len(self.tasks_available)
+        self.tasks_available = [
+            task for task in self.tasks_available
+            if not (
+                (task_name is not None and task.get("name") == task_name)
+                or (ros_name is not None and task.get("ros_name") == ros_name)
+            )
+        ]
+
+        return len(self.tasks_available) < initial_count
     
     def current_time(self):
         """

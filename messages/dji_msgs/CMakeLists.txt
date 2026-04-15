@@ -18,7 +18,8 @@ find_package(std_msgs REQUIRED)
 rosidl_generate_interfaces(${PROJECT_NAME}
   "msg/Topics.msg"         # Topics for the drone
   "msg/Links.msg"          # links for drone
-  "msg/PsdkTopics.msg"     # base topics from psdk_wrapper      
+  "msg/PsdkTopics.msg"     # base topics from psdk_wrapper    
+  "msg/LabeledOBBs.msg"    # custom message for labeled object detections
   "srv/DronePath.srv"
   "srv/InitAUVSearch.srv"  
   DEPENDENCIES geometry_msgs sensor_msgs std_msgs geographic_msgs
