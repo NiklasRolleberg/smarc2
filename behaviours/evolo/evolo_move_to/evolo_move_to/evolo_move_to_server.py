@@ -118,7 +118,7 @@ class EvoloMoveTo():
         self._node.declare_parameter('timeout', 1800)
         self.timeout = float(self._node.get_parameter('timeout').value)
 
-        self._node.declare_parameter('p_gain', 0.25)
+        self._node.declare_parameter('p_gain', 0.5)
         self.pid_p_gain = float(self._node.get_parameter('p_gain').value)
 
         self._node.declare_parameter('i_gain', 0)
