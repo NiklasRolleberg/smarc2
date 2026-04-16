@@ -30,6 +30,7 @@ setup(
     entry_points={
         'console_scripts': [
             'projection = auv_state_estimation.projection:main',
+            'ekf_node = auv_state_estimation.ekf_node:main',
         ],
     },
 )
