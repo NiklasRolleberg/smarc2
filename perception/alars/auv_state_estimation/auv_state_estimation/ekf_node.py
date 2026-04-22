@@ -91,7 +91,7 @@ class EKFNode(Node):
                 q = transform.transform.rotation
                 self.current_cam_pos_map = np.array([t.x, t.y, t.z]) # Actually the optical frame
                 self.current_R_map_cam = R.from_quat([q.x, q.y, q.z, q.w]).as_matrix()
-                self.current_R_map_cam = self.current_R_map_cam 
+                self.current_R_map_cam = self.current_R_map_cam
                 self.q.popleft()
                 self.z(msg, transform)
                 continue
@@ -184,6 +184,9 @@ class EKFNode(Node):
         X = self.predict_to_measurement_time(dt)
 
         h = self.measurement_model.hx(X, cam_pos_map=self.current_cam_pos_map, R_map_cam=self.current_R_map_cam)
+        if h is None:
+            self.log_info("Measurement function returned None, skipping update")
+            return
 
         H = self.measurement_model.numerical_H(X, cam_pos_map=self.current_cam_pos_map, R_map_cam=self.current_R_map_cam)
         J_pose = self.measurement_model.numerical_J_pose(X, cam_pos_map=self.current_cam_pos_map, R_map_cam=self.current_R_map_cam)
@@ -321,7 +324,7 @@ class EKFNode(Node):
             obb_length_m=self.obb_length_m,
             obb_width_m=self.obb_width_m,
             motion_model=self.motion_model,
-            #logger=self.get_logger(),
+            logger=self.get_logger(),
         )
 
         self.noise_models = NoiseModels(
@@ -485,7 +488,7 @@ class EKFNode(Node):
 
         self.R_dyn_dt :float = self.get_parameter("R_dyn_dt").get_parameter_value().double_value
 
-        self.init_z_needed :bool = self.get_parameter("init_z_needed").get_parameter_value().bool_value
+        self.init_z_needed : int = self.get_parameter("init_z_needed").get_parameter_value().integer_value
         self.init_pos_max_spread :float = self.get_parameter("init_pos_max_spread").get_parameter_value().double_value
         self.init_yaw_max_spread :float = self.get_parameter("init_yaw_max_spread").get_parameter_value().double_value
         self.init_z_max_spread :float = self.get_parameter("init_z_max_spread").get_parameter_value().double_value
