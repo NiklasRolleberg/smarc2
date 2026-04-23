@@ -1,5 +1,7 @@
 #!/usr/bin/python
 
+import numpy as np
+
 from rclpy.node import Node
 from rclpy.time import Time, Duration
 
@@ -55,7 +57,14 @@ class DroneState():
 
     @property
     def drone_in_map(self) -> PoseStamped|None:
-        return self._drone_in_map    
+        return self._drone_in_map
+    
+    @property
+    def drone_in_map_numpy(self) -> np.ndarray|None:
+        if self._drone_in_map is not None:
+            return np.array([self._drone_in_map.pose.position.x, self._drone_in_map.pose.position.y, self._drone_in_map.pose.position.z])
+        else:
+            return None
 
     @property
     def altitude(self) -> float|None:
@@ -64,6 +73,38 @@ class DroneState():
         else:
             return None
     
+    @property
+    def now_float(self) -> float:
+        now_stamp = self._node.get_clock().now().to_msg()
+        return now_stamp.sec + now_stamp.nanosec * 1e-9
+    
+    def _loginfo(self, msg: str):
+        self._node.get_logger().info(msg)
+    
+    
+    def msg_is_older_than(self, msg, age_s: float) -> bool:
+        if msg is None: return True
+        if msg.header is None: return True
+        if msg.header.stamp is None: return True
+
+        # did someone forget to set the timestamp at all??
+        if msg.header.stamp.sec == 0 and msg.header.stamp.nanosec == 0:
+            self._loginfo("Message has zero timestamp, treating as stale.")
+            self._loginfo(f"Message timestamp: {msg.header.stamp.sec}.{msg.header.stamp.nanosec}, now: {self.now_float}")
+            return True
+        
+        age = self.now_float - (msg.header.stamp.sec + msg.header.stamp.nanosec * 1e-9)
+
+        # did someone forget sim time flag?
+        if age > 100000.0 or age < 0.0:
+            self._loginfo(f"Message age is abnormal, treating as stale.")
+            self._loginfo(f"Message timestamp: {msg.header.stamp.sec}.{msg.header.stamp.nanosec}, now: {self.now_float}, age: {age}")
+
+        if age > age_s:
+            self._loginfo(f"Message is stale (age {age:.2f} > {age_s:.2f}).")
+            return True
+        
+        return False
 
     def convert_geopoint_to_map_pose_stamped(self, gp: GeoPoint) -> PoseStamped:
         in_utm : PointStamped = convert_latlon_to_utm(gp)
@@ -81,3 +122,16 @@ class DroneState():
         in_map = do_transform_pose_stamped(in_utm_pose, tf)
         in_map.pose.position.z = gp.altitude  # ensure altitude is preserved
         return in_map
+    
+    def pose_stamped_in_map(self, pose: PoseStamped) -> PoseStamped:
+        if pose.header.frame_id == self.MAP_FRAME:
+            return pose
+        else:
+            tf = self._tf_buffer.lookup_transform(
+                target_frame = self.MAP_FRAME,
+                source_frame = pose.header.frame_id,
+                time = Time(seconds=0),
+                timeout = Duration(seconds=1)
+            )
+            in_map = do_transform_pose_stamped(pose, tf)
+            return in_map
