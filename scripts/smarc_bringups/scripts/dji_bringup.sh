@@ -41,6 +41,13 @@ else
     NO_CAM=False
 fi
 
+FAKE_IT_TILL_YOU_MAKE_IT=$4
+if [[ "$FAKE_IT_TILL_YOU_MAKE_IT" == "fake_it" ]]; then
+    FAKE_IT_TILL_YOU_MAKE_IT=True
+else
+    FAKE_IT_TILL_YOU_MAKE_IT=False
+fi
+
 
 SESSION=${ROBOT_NAME}_bringup
 
@@ -59,13 +66,13 @@ else
     USE_SIM_TIME=True
 fi
 
-if [[ $USE_SIM_TIME == "True" ]]; then
-    # useful to make sure we don't accidentally connect to real hardware with the sim bringup
-    # or when your pc has these set for the real thing and you dont want to swap around :,)
-    export ROS_SUPER_CLIENT=""
-    export ROS_DISCOVERY_SERVER=""
-    export ROS_DOMAIN_ID=""
-fi
+# if [[ $USE_SIM_TIME == "True" ]]; then
+#     # useful to make sure we don't accidentally connect to real hardware with the sim bringup
+#     # or when your pc has these set for the real thing and you dont want to swap around :,)
+#     export ROS_SUPER_CLIENT=""
+#     export ROS_DISCOVERY_SERVER=""
+#     export ROS_DOMAIN_ID=""
+# fi
 
 
 # create a tmux session with a name
@@ -81,7 +88,7 @@ tmux -2 new-session -d -x 220 -y 60 -s "$SESSION"
 # 1 Captains
 ############
 if [[ "$ROBOT_NAME" == "M350" ]]; then
-    MAX_LOAD_KG="4.0"
+    MAX_LOAD_KG="7.0"
     MIN_ALTITUDE_ABOVE_WATER="1.5"
 elif [[ "$ROBOT_NAME" == "FC30" ]]; then
     MAX_LOAD_KG="30.0"
@@ -101,9 +108,14 @@ CAPTAIN_CMD="ros2 launch dji_captain alars_captain.launch \
     min_altitude_above_water:=$MIN_ALTITUDE_ABOVE_WATER"
 CAPTAIN_STATUS_CMD="ros2 topic echo /$ROBOT_NAME/captain_status std_msgs/msg/String --field data"
 WRAPPER_CMD="ros2 launch psdk_wrapper wrapper.launch.py namespace:=/$ROBOT_NAME/wrapper"
-DISCOVERY_SERVER_CMD="fast-discovery-server -i 0"
+# DISCOVERY_SERVER_CMD="fast-discovery-server -i 0"
+DISCOVERY_SERVER_CMD="ros2 run rmw_zenoh_cpp rmw_zenohd"
 SERVICE_CALLER_CMD="ros2 run dji_captain service_caller --ros-args -r __ns:=/$ROBOT_NAME -p use_sim_time:=$USE_SIM_TIME -p robot_name:=$ROBOT_NAME"
 ALARS_SERVICES_CMD="ros2 launch dji_captain alars_services.launch.py robot_name:=$ROBOT_NAME use_sim_time:=$USE_SIM_TIME"
+
+if [[ $FAKE_IT_TILL_YOU_MAKE_IT == "True" ]]; then
+    WRAPPER_CMD="ros2 run dji_captain psdk_faker --ros-args -r __ns:=/$ROBOT_NAME -p robot_name:=$ROBOT_NAME -p use_sim_time:=$USE_SIM_TIME"
+fi
 
 if [[ $USE_SIM_TIME = "False" ]]; then
     tmux_make_layout "$SESSION" Captains "
@@ -207,11 +219,11 @@ if [[ "$NO_CAM" == "True" ]]; then
     PROJECTION_CMD="echo 'Camera disabled, not launching projection node'"
 else
     YOLO_DEVICE=0
-    CAM_CALIBRATION_FILE="real_z1_params.yaml"
+    CAM_CALIBRATION_FILE="z1_720p_cam_params.yaml"
     YOLO_MODEL="yolo_model_2cls_mixed.pt" # Options: alars_labeling_training/trained_models
     if [[ $USE_SIM_TIME = "True" ]]; then
         YOLO_DEVICE=cpu
-        CAM_CALIBRATION_FILE="cam_params.yaml"
+        CAM_CALIBRATION_FILE="sim_1080p_cam_params.yaml"
         # seems to be doing better in sim
         YOLO_MODEL="yolo_model_2cls_mixed.pt"
     fi
@@ -248,10 +260,12 @@ WAIT_CMD="ros2 run smarc_basic wait_action --ros-args -r __ns:=/$ROBOT_NAME -p u
 CTRL_MODE_PUB_CMD="ros2 topic echo /$ROBOT_NAME/wrapper/psdk_ros2/control_mode psdk_interfaces/msg/ControlMode"
 RC_PUB_CMD="ros2 topic echo /$ROBOT_NAME/wrapper/psdk_ros2/rc sensor_msgs/msg/Joy"
 
+INTERNET_CHECKER_CMD="ros2 run smarc_utilities internet_checker --ros-args -r __ns:=/$ROBOT_NAME -p use_sim_time:=$USE_SIM_TIME"
+
 tmux_make_layout "$SESSION" BasicActions "
 row(
     col(var(GEOFENCE_CMD), var(HUMAN_LOG_CMD), var(WAIT_CMD)),
-    col(var(CTRL_MODE_PUB_CMD), var(RC_PUB_CMD))
+    col(var(CTRL_MODE_PUB_CMD), var(RC_PUB_CMD), var(INTERNET_CHECKER_CMD))
 )"
 
 

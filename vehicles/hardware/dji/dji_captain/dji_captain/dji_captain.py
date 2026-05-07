@@ -12,6 +12,8 @@ from rclpy.qos import QoSProfile, ReliabilityPolicy, QoSDurabilityPolicy
 from rclpy.callback_groups import ReentrantCallbackGroup
 
 from tf2_ros import Buffer, TransformListener
+from tf2_ros.static_transform_broadcaster import StaticTransformBroadcaster
+from tf2_ros.transform_broadcaster import TransformBroadcaster
 
 from std_msgs.msg import Float32, Int8, String, Bool
 from std_srvs.srv import Trigger
@@ -116,6 +118,7 @@ class DjiCaptain():
         self._utm_zb_label : str | None = None
 
         self._base_pose_in_home : PoseStamped | None = None
+        self._base_pose_in_map : PoseStamped | None = None
         self._base_pose_flat_in_home : PoseStamped | None = None
         self._home_point_in_utm : PointStamped | None = None
         self._velocity_ground : Vector3Stamped | None = None
@@ -251,13 +254,14 @@ class DjiCaptain():
         )
 
         self._release_control_srv = node.create_client(Trigger, PSDKTopics.RELEASE_CONTROL_SRV)
-        while rclpy.ok() and not self._release_control_srv.wait_for_service(timeout_sec=2.0):
-             self.logerr("\nRelease control service not available...\nCaptain will do nothing but wait for this...\nTo fix, run PSDK ROS Wrapper OR sim+ros bridge.")
+        self._got_release_control_srv = False
         
         self._status_pub = node.create_publisher(String, "captain_status", qos_profile=10)
-        self._tf_pub = node.create_publisher(TFMessage,"/tf",qos_profile=10)
+        self._tf_pub = TransformBroadcaster(node)
+        self._static_tf_pub = StaticTransformBroadcaster(node)
 
         self._labeled_utm_frame_pub = node.create_publisher(String, DjiTopics.LABELED_UTM_TOPIC, qos_profile=10)
+        self._base_in_map_pub = node.create_publisher(PoseStamped, DjiTopics.BASE_LINK_IN_MAP_TOPIC, qos_profile=10)
         self._FLU_vel_joy_pub = node.create_publisher(Joy, PSDKTopics.FLU_VEL_YAWRATE_JOY_CMD, qos_profile=10)
 
         self._vehicle_health_pub = node.create_publisher(Int8, SmarcTopics.VEHICLE_HEALTH_TOPIC, qos_profile=10)
@@ -270,7 +274,8 @@ class DjiCaptain():
         self._altitude_pub = node.create_publisher(Float32, SmarcTopics.ALTITUDE_TOPIC, qos_profile=10)
 
         self._vehicle_health_timer = node.create_timer(1, self._publish_vehicle_health)
-        self._tf_timer = node.create_timer(0.01, self._publish_tf, callback_group=ReentrantCallbackGroup()) # its own callback group because fast
+        self._tf_timer = node.create_timer(0.1, self._publish_tf)
+        self._static_tf_timer = node.create_timer(1.0, self._publish_static_tf) 
         self._smarc_timer = node.create_timer(0.1, self._publish_smarc)
         self._status_str_timer = node.create_timer(0.1,lambda: self._status_pub.publish(String(data=self.status_str)))
         
@@ -598,14 +603,22 @@ class DjiCaptain():
         # if RC is touched by user, we give up control
         if not self._got_control: return
 
-        if msg.axes[0] != 0.0 or msg.axes[1] != 0.0 or msg.axes[2] != 0.0 or msg.axes[3] != 0.0:
-            self.logwarn("RC touched, giving up control.")
+        def give_up():
             self._got_control = False # even if the service call fails, we assume we lost control!
             self._release_control_srv.call_async(Trigger.Request()).add_done_callback(
                 lambda future: self.log(f"Release control service called, success: {future.result().success}, message: {future.result().message}")
             )
         
-        # self.log(f"RC buttons: {msg.buttons}")
+        deadband = 100
+        if np.abs(msg.axes[0]) > deadband or np.abs(msg.axes[1]) > deadband or np.abs(msg.axes[2]) > deadband or np.abs(msg.axes[3]) > deadband:
+            self.logwarn("RC Joysticks touched, giving up control.")
+            give_up()
+
+        # buttons[0] is the mode switch on the RC.
+        if msg.buttons[0] != 8000:
+            self.logwarn("RC mode is not N, giving up control.")
+            give_up()
+        
 
 
     ############
@@ -673,21 +686,30 @@ class DjiCaptain():
             self.log("Home point not set, ignoring position fused until it is...")
             return
         
-        if self._base_pose_in_home is None or self._base_pose_flat_in_home is None:
+        if self._base_pose_in_home is None:
             self._base_pose_in_home = PoseStamped()
             self._base_pose_in_home.header.frame_id = self.ODOM_FRAME
-            self._base_pose_flat_in_home = PoseStamped()
-            self._base_pose_flat_in_home.header.frame_id = self.ODOM_FRAME
-            self.log("Base pose initialized in home frame.")
-            
+            self.log("Base pose initialized.")
         self._base_pose_in_home.pose.position.x = msg.position.x
         self._base_pose_in_home.pose.position.y = msg.position.y
         self._base_pose_in_home.pose.position.z = msg.position.z
         self._base_pose_in_home.header.stamp = self.now_stamp
+            
 
+        if self._base_pose_flat_in_home is None:
+            self._base_pose_flat_in_home = PoseStamped()
+            self._base_pose_flat_in_home.header.frame_id = self.ODOM_FRAME
         self._base_pose_flat_in_home.pose.position = self._base_pose_in_home.pose.position
         self._base_pose_flat_in_home.header.stamp = self._base_pose_in_home.header.stamp
 
+        if self._base_pose_in_map is None:
+            self._base_pose_in_map = PoseStamped()
+            self._base_pose_in_map.header.frame_id = self.MAP_FRAME
+        self._base_pose_in_map.pose.position.x = self._base_pose_in_home.pose.position.x
+        self._base_pose_in_map.pose.position.y = self._base_pose_in_home.pose.position.y
+        self._base_pose_in_map.pose.position.z = self._base_pose_in_home.pose.position.z + self._HOME_ALT_ABOVE_WATER
+        self._base_pose_in_map.header.stamp = self._base_pose_in_home.header.stamp
+        self._base_in_map_pub.publish(self._base_pose_in_map)
         
 
     def _attitude_callback(self, msg: QuaternionStamped):
@@ -776,11 +798,6 @@ class DjiCaptain():
             self._vehicle_health_pub.publish(self._vehicle_health)
             return
         
-        if self._home_point_in_utm is None:
-            self.logwarn(f"Home point in UTM not set, waiting.")
-            self._vehicle_health_pub.publish(self._vehicle_health)
-            return
-        
         if self._esc_data is None:
             self.logwarn(f"ESC data not received yet, waiting.")
             self._vehicle_health_pub.publish(self._vehicle_health)
@@ -811,6 +828,19 @@ class DjiCaptain():
             self._vehicle_health.data = SmarcTopics.VEHICLE_HEALTH_ERROR
             self._vehicle_health_pub.publish(self._vehicle_health)
             return
+
+        if not self._tf_buffer.can_transform(self.MAP_FRAME, self.BASE_FLAT_FRAME, Time()):
+            self.logwarn(f"Cannot transform from {self.BASE_FLAT_FRAME} to {self.MAP_FRAME} yet, waiting for TF to be available...")
+            self._vehicle_health_pub.publish(self._vehicle_health)
+            return
+        
+        if not self._got_release_control_srv:
+            self.log("Acquiring release control service...")
+            self._got_release_control_srv = self._release_control_srv.wait_for_service(timeout_sec=1.0)
+            if not self._got_release_control_srv:
+                self.logerr("Release control service not available...\nCaptain will do nothing but wait for this...\nTo fix, run PSDK ROS Wrapper OR sim+ros bridge.")
+                return
+            
             
 
         # if we made it here, then we got all the sensor happy
@@ -851,49 +881,53 @@ class DjiCaptain():
         if prev_health_state != self._vehicle_health.data:
             self.log(f"Vehicle health changed: {self._health_to_str(prev_health_state)} -> {self._health_to_str(self._vehicle_health.data)}")
         self._vehicle_health_pub.publish(self._vehicle_health)
-            
-    
-    def _publish_tf(self):
-        tf_msg = TFMessage()
-        tf_msg.transforms = []
-        now = self.now_stamp
 
+
+    def _publish_static_tf(self):
+        if self._utm_zb_label is None or self._home_point_in_utm is None:
+            self.log("UTM frame label or home point in UTM not set, cannot publish static TF yet.")
+            return
+
+        now = self.now_stamp
         # 0 transforms for home -> odom for compatibility with other systems
         # and so we can use "odom" for all things that relate to home point
         odom_in_home = TransformStamped()
         odom_in_home.header.stamp = now
         odom_in_home.header.frame_id = self.HOME_FRAME
         odom_in_home.child_frame_id = self.ODOM_FRAME
-        tf_msg.transforms.append(odom_in_home)
+        self._static_tf_pub.sendTransform(odom_in_home)
 
+        utms = TransformStamped()
+        utms.header.stamp = now
+        utms.header.frame_id = self._utm_zb_label
+        utms.child_frame_id = DjiLinks.UTM 
+        self._static_tf_pub.sendTransform(utms)
 
-        if self._utm_zb_label is not None: 
-            utms = TransformStamped()
-            utms.header.stamp = now
-            utms.header.frame_id = self._utm_zb_label
-            utms.child_frame_id = DjiLinks.UTM 
-            tf_msg.transforms.append(utms)
+        # Home point in UTM
+        home_tf = TransformStamped()
+        home_tf.header.stamp = now
+        home_tf.header.frame_id = DjiLinks.UTM
+        home_tf.child_frame_id = self.HOME_FRAME
+        home_tf.transform.translation.x = self._home_point_in_utm.point.x 
+        home_tf.transform.translation.y = self._home_point_in_utm.point.y
+        home_tf.transform.translation.z = self._home_point_in_utm.point.z
+        self._static_tf_pub.sendTransform(home_tf)
 
-        if self._home_point_in_utm is not None:
-            # Home point in UTM
-            home_tf = TransformStamped()
-            home_tf.header.stamp = now
-            home_tf.header.frame_id = DjiLinks.UTM
-            home_tf.child_frame_id = self.HOME_FRAME
-            home_tf.transform.translation.x = self._home_point_in_utm.point.x 
-            home_tf.transform.translation.y = self._home_point_in_utm.point.y
-            home_tf.transform.translation.z = self._home_point_in_utm.point.z
-            tf_msg.transforms.append(home_tf)
+        # home point in UTM, but at water surface = map frame
+        map_tf = TransformStamped()
+        map_tf.header.stamp = now
+        map_tf.header.frame_id = self.ODOM_FRAME # == home_frame
+        map_tf.child_frame_id = self.MAP_FRAME
+        map_tf.transform.translation.x = 0.0
+        map_tf.transform.translation.y = 0.0
+        # home is above water somewhere, map is at water level, so the transform is just moving down
+        map_tf.transform.translation.z = -self._home_point_in_utm.point.z 
+        self._static_tf_pub.sendTransform(map_tf)
 
-            # home point in UTM, but at water surface = map frame
-            home_surface_tf = TransformStamped()
-            home_surface_tf.header.stamp = now
-            home_surface_tf.header.frame_id = DjiLinks.UTM
-            home_surface_tf.child_frame_id = self.MAP_FRAME
-            home_surface_tf.transform.translation.x = self._home_point_in_utm.point.x
-            home_surface_tf.transform.translation.y = self._home_point_in_utm.point.y
-            home_surface_tf.transform.translation.z = 0.0
-            tf_msg.transforms.append(home_surface_tf)
+            
+    
+    def _publish_tf(self):
+        now = self.now_stamp
 
         if self._base_pose_in_home is not None:
             # Base in odom
@@ -905,7 +939,7 @@ class DjiCaptain():
             base_in_home.transform.translation.x = self._base_pose_in_home.pose.position.x
             base_in_home.transform.translation.y = self._base_pose_in_home.pose.position.y
             base_in_home.transform.translation.z = self._base_pose_in_home.pose.position.z
-            tf_msg.transforms.append(base_in_home)
+            self._tf_pub.sendTransform(base_in_home)
 
 
         if self._base_pose_flat_in_home is not None:
@@ -918,7 +952,7 @@ class DjiCaptain():
             base_flat_in_home.transform.translation.x = self._base_pose_flat_in_home.pose.position.x
             base_flat_in_home.transform.translation.y = self._base_pose_flat_in_home.pose.position.y
             base_flat_in_home.transform.translation.z = self._base_pose_flat_in_home.pose.position.z
-            tf_msg.transforms.append(base_flat_in_home)
+            self._tf_pub.sendTransform(base_flat_in_home)
 
         
         if self._move_to_setpoint is not None:
@@ -929,9 +963,9 @@ class DjiCaptain():
             move_to_setpoint_tf.transform.translation.x = self._move_to_setpoint.pose.position.x
             move_to_setpoint_tf.transform.translation.y = self._move_to_setpoint.pose.position.y
             move_to_setpoint_tf.transform.translation.z = self._move_to_setpoint.pose.position.z
-            tf_msg.transforms.append(move_to_setpoint_tf)
+            self._tf_pub.sendTransform(move_to_setpoint_tf)
 
-        self._tf_pub.publish(tf_msg) 
+
 
 
     def _publish_smarc(self):
