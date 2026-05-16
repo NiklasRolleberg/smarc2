@@ -4,6 +4,7 @@
 # moving around
 string MOVE_TO_SETPOINT_TOPIC = 'move_to_setpoint' # PoseStamped
 string LABELED_UTM_TOPIC = 'labeled_utm_topic' # String, formatted: "utm_{zone}_{band}"
+string BASE_LINK_IN_MAP_TOPIC = 'base_link_in_map' # PoseStamped with header.frame_id == /robot_name/map
 
 
 # cameras
@@ -40,25 +41,24 @@ string ESTIMATED_AUV_TOPIC = 'alars_detection/auv' # PointStamped
 string ESTIMATED_AUV_OBB_TOPIC = "alars_detection/auv_obb" # PolygonStamped
 string ESTIMATED_AUV_HEAD_TOPIC = "alars_detection/auv_head" # PolygonStamped
 string ESTIMATED_BUOY_OBB_TOPIC = "alars_detection/buoy_obb" # PolygonStamped
-string ESTIMATED_MIDDLE_TOPIC = 'alars_detection/middle' # PointStamped
-string ESTIMATED_CNN_HOOK_ANCHOR_TOPIC = 'alars_detection/cnn' # PointStamped
-string ESTIMATED_CNN_AFTER_CATCH_FLY_DIRECTION_TOPIC = 'alars_detection/cnn_vec' # PointStamped
 # instead of captain subbing to image and so on
 # let the consumer of camera data tell it if the camera is good, detection can happen etc.
 string CAM_PROCESSOR_HAPPY_TOPIC = 'alars_detection/cam_processor_happy' # Bool
+
+# Topic for publishing detected objects (excluding SAM and buoy) as labeled OBBs.
+# Each message contains Polygon[] obbs and string[] ids (class names).
+string LABELED_OBBS_TOPIC="alars_detection/labeled_obbs"
 
 # projected points
 string PROJECTED_AUV_HEAD_TOPIC = 'alars_projection/auv_head' # PolygonStamped
 string PROJECTED_AUV_OBB_TOPIC = 'alars_projection/auv_obb' # PolygonStamped
 string PROJECTED_BUOY_OBB_TOPIC = 'alars_projection/buoy_obb' # PolygonStamped
+string PROJECTED_AUV_POSE_WITH_COV_TOPIC = 'alars_projection/auv_pose_with_cov' # PoseWithCovarianceStamped 
+string PROJECTED_BUOY_POSE_WITH_COV_TOPIC = 'alars_projection/buoy_pose_with_cov' # PoseWithCovarianceStamped
 
-# object detectors in 3D
-string ESTIMATED_HOOK_TOPIC = 'alars_detection/hook_est' #PoseStamped
-string ESTIMATED_EKF_HOOK_TOPIC = 'alars_detection/hook_ekf' #PoseStamped
 
 # services
 string ENABLE_ALARS_DETECTOR_SERVICE_TOPIC = 'enable_alars_detector' # Trigger
 string DISABLE_ALARS_DETECTOR_SERVICE_TOPIC = 'disable_alars_detector' # Trigger
-string ENABLE_HOOK_ESTIMATOR_SERVICE_TOPIC = 'enable_hook_estimator' # Trigger
-string DISABLE_HOOK_ESTIMATOR_SERVICE_TOPIC = 'disable_hook_estimator' # Trigger
+
 

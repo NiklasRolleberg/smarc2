@@ -217,10 +217,11 @@ class EvoloMovePath():
 
 
         # Publishers and Subscribers
-        # self.speed_pub       = self._node.create_publisher(TwistStamped, evoloTopics.EVOLO_TWIST_PLANNED,    10, callback_group=self.publisher_callback_group)
-        self.speed_pub       = self._node.create_publisher(TwistStamped, 'evolo/ctrl/twist_setpoint',    10, callback_group=self.publisher_callback_group)
-        # self.robot_sub = self._node.create_subscription(Odometry, smarcTopics.ODOM_TOPIC, self.robot_odom_callback, 10,callback_group=self.subscriber_callback_group)
-        self.robot_sub = self._node.create_subscription(Odometry, 'evolo/smarc/odom', self.robot_odom_callback, 10,callback_group=self.subscriber_callback_group)
+        self.dubins_path_pub = self._node.create_publisher(Path, "rviz/planned_path", 10, callback_group=self.publisher_callback_group)
+        self.speed_pub       = self._node.create_publisher(TwistStamped, evoloTopics.EVOLO_TWIST_PLANNED,    10, callback_group=self.publisher_callback_group)
+        # self.speed_pub       = self._node.create_publisher(TwistStamped, 'evolo/ctrl/twist_setpoint',    10, callback_group=self.publisher_callback_group)
+        self.robot_sub = self._node.create_subscription(Odometry, smarcTopics.ODOM_TOPIC, self.robot_odom_callback, 10,callback_group=self.subscriber_callback_group)
+        # self.robot_sub = self._node.create_subscription(Odometry, 'evolo/smarc/odom', self.robot_odom_callback, 10,callback_group=self.subscriber_callback_group)
 
 
         self._node.get_logger().info("EvoloMovePath started")
@@ -442,9 +443,9 @@ class EvoloMovePath():
         # Publication
         cmd = TwistStamped()
         cmd.header.stamp    = self._node.get_clock().now().to_msg()
-        cmd.header.frame_id = self.frame_id
+        cmd.header.frame_id = "evolo/base_link"
         cmd.twist.linear.x  = v
-        cmd.twist.angular.z = omega
+        cmd.twist.angular.z = math.radians(omega)
         self.speed_pub.publish(cmd)
 
 
@@ -508,6 +509,9 @@ class EvoloMovePath():
                 self._node.get_logger().error(f"Dubins failed: {e}")
                 return False
             q_prev = q_next
+
+        #Publish planned path for visualization
+        self.dubins_path_pub.publish(self._path_msg(full_path))
 
         self.dubins_path    = full_path
         self.wp_end_indices = wp_ends
