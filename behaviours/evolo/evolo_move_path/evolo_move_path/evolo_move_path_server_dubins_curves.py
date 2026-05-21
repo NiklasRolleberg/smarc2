@@ -354,12 +354,16 @@ class EvoloMovePath:
         omega_smoothed = self._prev_omega + max(-MAX_DELTA, min(MAX_DELTA, omega - self._prev_omega))
         self._prev_omega = omega_smoothed
 
+        # Convert to radians and m/s
+        omega_smoothed_rad = math.radians(omega_smoothed)
+        speed_ms =  v * 0.514444444
+
         # ── Publish ───────────────────────────────────────────────────────────
         cmd                 = TwistStamped()
         cmd.header.stamp    = self._node.get_clock().now().to_msg()
-        cmd.header.frame_id = self.frame_id
-        cmd.twist.linear.x  = v
-        cmd.twist.angular.z = omega_smoothed
+        cmd.header.frame_id = "evolo/base_link"
+        cmd.twist.linear.x  = speed_ms
+        cmd.twist.angular.z = omega_smoothed_rad
         self.speed_pub.publish(cmd)
 
         return None
