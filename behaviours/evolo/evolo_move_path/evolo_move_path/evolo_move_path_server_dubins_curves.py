@@ -224,12 +224,12 @@ class EvoloMovePath:
         sub_cbg = ReentrantCallbackGroup()
 
         self.dubins_path_pub = self._node.create_publisher(Path, "rviz/planned_path", 10, callback_group=pub_cbg)
-        self.speed_pub = self._node.create_publisher(TwistStamped, 'evolo/evolo_cmd', 10, callback_group=pub_cbg)
-        self.robot_sub = self._node.create_subscription(Odometry, 'evolo/smarc/odom', self.robot_odom_callback, 10, callback_group=sub_cbg)
-        # self.robot_sub = self._node.create_subscription(Odometry, smarcTopics.ODOM_TOPIC, self.robot_odom_callback, 10,callback_group=self.subscriber_callback_group)
-        # self.speed_pub       = self._node.create_publisher(TwistStamped, evoloTopics.EVOLO_TWIST_PLANNED,    10, callback_group=self.publisher_callback_group)
+        #self.speed_pub = self._node.create_publisher(TwistStamped, 'evolo/evolo_cmd', 10, callback_group=pub_cbg)
+        #self.robot_sub = self._node.create_subscription(Odometry, 'evolo/smarc/odom', self.robot_odom_callback, 10, callback_group=sub_cbg)
+        self.robot_sub = self._node.create_subscription(Odometry, smarcTopics.ODOM_TOPIC, self.robot_odom_callback, 10,callback_group=sub_cbg)
+        self.speed_pub       = self._node.create_publisher(TwistStamped, evoloTopics.EVOLO_TWIST_PLANNED,    10, callback_group=pub_cbg)
         # Subscriber geofence polygons
-        self.polygons_sub = self._node.create_subscription(GeofencePolygonsStamped, '/smarc/geofence_polygons', self._geofence_polygons_callback, 10,)
+        #self.polygons_sub = self._node.create_subscription(GeofencePolygonsStamped, '/smarc/geofence_polygons', self._geofence_polygons_callback, 10,)
         
         self._node.get_logger().info("EvoloMovePath started")
 
