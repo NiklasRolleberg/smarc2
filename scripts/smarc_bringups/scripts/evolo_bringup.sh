@@ -194,8 +194,8 @@ col(
 )"
 
 # WARA-PS bridge
-WARA_PS_MQTT_CMD="sleep 7; ros2 launch str_json_mqtt_bridge waraps_bridge.launch broker_addr:=20.240.40.232 broker_port:=1884 robot_name:=$ROBOT_NAME domain:=$AGENT_TYPE realsim:=$REALSIM use_sim_time:=$USE_SIM_TIME context:=$CONTEXT"
-#WARA_PS_MQTT_CMD="sleep 7; ros2 launch str_json_mqtt_bridge waraps_bridge.launch broker_addr:=127.0.0.1 broker_port:=1883 robot_name:=$ROBOT_NAME domain:=$AGENT_TYPE realsim:=$REALSIM use_sim_time:=$USE_SIM_TIME context:=$CONTEXT"
+#WARA_PS_MQTT_CMD="sleep 7; ros2 launch str_json_mqtt_bridge waraps_bridge.launch broker_addr:=20.240.40.232 broker_port:=1884 robot_name:=$ROBOT_NAME domain:=$AGENT_TYPE realsim:=$REALSIM use_sim_time:=$USE_SIM_TIME context:=$CONTEXT"
+WARA_PS_MQTT_CMD="sleep 7; ros2 launch str_json_mqtt_bridge waraps_bridge.launch broker_addr:=127.0.0.1 broker_port:=1883 robot_name:=$ROBOT_NAME domain:=$AGENT_TYPE realsim:=$REALSIM use_sim_time:=$USE_SIM_TIME context:=$CONTEXT"
 tmux_make_layout "$SESSION" waraps-mqtt "
 col(
     var(WARA_PS_MQTT_CMD)
@@ -210,15 +210,21 @@ col(
 )"
 
 #Obstacle avoidance
-if [ $OBSTACLE_AVOIDANCE=False == "True" ]; then
-    OBSTACLE_AVOIDANCE_CMD="ros2 run topic_tools relay /evolo/ctrl/twist_planned /evolo/ctrl/twist_setpoint"
+if [ $OBSTACLE_AVOIDANCE == "True" ]; then
+    OBSTACLE_AVOIDANCE_CMD="ros2 launch evolo_obstacle_avoidance evolo_obstacle_avoidance_launch.py"
+    CLUSTERING_CMD="ros2 launch evolo_map_cluster evolo_map_cluster_launch.py"
+    tmux_make_layout "$SESSION" Obstacle-avoidance "
+    col(
+        var(OBSTACLE_AVOIDANCE_CMD),
+        var(CLUSTERING_CMD)
+    )"
 else
     OBSTACLE_AVOIDANCE_CMD="ros2 run topic_tools relay /evolo/ctrl/twist_planned /evolo/ctrl/twist_setpoint"
+    tmux_make_layout "$SESSION" Obstacle-avoidance "
+    col(
+        var(OBSTACLE_AVOIDANCE_CMD)
+    )"
 fi
-tmux_make_layout "$SESSION" Obstacle-avoidance "
-col(
-    var(OBSTACLE_AVOIDANCE_CMD)
-)"
 
 ########################################################################
 ####################### Hardware drivers ###############################
