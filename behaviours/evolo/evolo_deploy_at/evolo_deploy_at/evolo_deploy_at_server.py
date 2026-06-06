@@ -14,7 +14,7 @@ from rclpy.task import Future
 
 class EvoloDeployAt():
 
-        _failure_states = [
+    _failure_states = [
             ActionClientState.DISCONNECTED,
             ActionClientState.ERROR,
             ActionClientState.REJECTED,
