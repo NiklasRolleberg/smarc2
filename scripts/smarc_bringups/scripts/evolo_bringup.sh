@@ -375,7 +375,7 @@ fi
 if [ $UW_COM == "True" ]; then
     SERIAL_PARSER_CMD="ros2 run serial_parser serial_parser --ros-args   -p port:=\"/dev/ttyUSB0\"   -p baudrate:=9600   -p listen_to_topic:=\"/evolo/sensors/succor/to\"   -p publish_to_topic:=\"/evolo/sensors/succor/from\""
     UWCOM_SCHEDULER="ros2 run evolo_accoustic_com succor_command_scheduler"
-    tmux_make_layout "$SESSION" SBG-localization "
+    tmux_make_layout "$SESSION" succorfish "
     col(
         var(SERIAL_PARSER_CMD),
         var(UWCOM_SCHEDULER)
