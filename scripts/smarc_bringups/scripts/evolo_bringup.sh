@@ -336,7 +336,7 @@ if [ $CAMERA_GIMBALL_DRIVER == "True" ]; then
         robot_name:=\"$ROBOT_NAME\" \
         use_sim_time:=$USE_SIM_TIME"
     GIMBAL_CAM_ACTION_CLIENT_CMD="ros2 launch evolo_gimbal_remote_control gimbal_remote_control.launch.py robot_name:=evolo"
-    GIMBAL_JSON_FEEDBACK_CMD="ros2 run evolo_gimbal_remote_control gimbal_json_publisher"
+    GIMBAL_JSON_FEEDBACK_CMD="ros2 run evolo_gimbal_remote_control gimbal_json_publisher.py"
 
     if [ $CAMERA_MQTT_CONTORL == "True" ]; then
         tmux_make_layout "$SESSION" Gimbal-driver "
