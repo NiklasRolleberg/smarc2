@@ -18,6 +18,16 @@ fi
 AGENT_TYPE=surface
 PULSE_RATE=0.5 # Hz
 CONTEXT=evolo # change this to 'smarc' or something else, then connect to the same context using sim to avoid clutter
+# Only pass agent_uuid to launch when set; ros2 launch rejects an empty 'agent_uuid:=' value
+if [[ "$(whoami)" == *"evolo"* ]]; then
+    AGENT_UUID="7bc11ad5-a2fd-4326-b9d1-6a7b2a68c51d"
+    AGENT_UUID_ARG="agent_uuid:=$AGENT_UUID"
+elif [[ "$(whoami)" == *"smarc"* ]]; then
+    AGENT_UUID="0cc7a470-619b-4ce9-b5f0-0325ed2ba0d3"
+    AGENT_UUID_ARG="agent_uuid:=$AGENT_UUID"
+else
+    AGENT_UUID_ARG=""
+fi
 
 BT_LOG_MODE=compact # can be 'compact' or 'verbose'
 
@@ -143,7 +153,7 @@ tmux select-window -t $SESSION:0
 tmux send-keys "Remember to start the logging!" 
 
 # Controllers
-CONTROLLER_CMD="ros2 launch evolo_controllers evolo_controllers_launch.py closed_loop_control:=True open_loop_gain:=3.0 closed_loop_p_gain:=0.1 closed_loop_i_gain:=2.0 closed_loop_d_gain:=0.0 max_steering_output:=40.0"
+CONTROLLER_CMD="ros2 launch evolo_controllers evolo_controllers_launch.py closed_loop_p_gain:=0.5 closed_loop_i_gain:=0.0 closed_loop_d_gain:=0.0 max_steering_output:=40.0"
 tmux_make_layout "$SESSION" Controllers "
 col(
     var(CONTROLLER_CMD)
@@ -151,7 +161,7 @@ col(
 
 
 # BT
-SMARC_BT_CMD="ros2 launch wasp_bt wasp_bt.launch robot_name:=$ROBOT_NAME agent_type:=$AGENT_TYPE pulse_rate:=$PULSE_RATE use_sim_time:=$USE_SIM_TIME bt_log_mode:=$BT_LOG_MODE"
+SMARC_BT_CMD="ros2 launch wasp_bt wasp_bt.launch robot_name:=$ROBOT_NAME agent_type:=$AGENT_TYPE pulse_rate:=$PULSE_RATE use_sim_time:=$USE_SIM_TIME bt_log_mode:=$BT_LOG_MODE $AGENT_UUID_ARG"
 tmux_make_layout "$SESSION" wasp-bt "
 col(
     var(SMARC_BT_CMD)
