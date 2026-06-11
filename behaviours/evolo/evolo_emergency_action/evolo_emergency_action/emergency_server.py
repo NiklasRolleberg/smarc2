@@ -158,7 +158,6 @@ class EmergencyServer(SMARCActionServer):
             message: feedback message to be published
         """
         feedback_msg = self.action_type.Feedback
-        feedback_msg.feedback = String()
         feedback_msg.feedback.data = message
         goal_handle.publish_feedback(feedback_msg)
         # self.logger.info(f"Published feedback: {message}")
