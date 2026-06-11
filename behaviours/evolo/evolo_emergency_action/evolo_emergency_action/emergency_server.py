@@ -68,7 +68,7 @@ class EmergencyServer(SMARCActionServer):
     def publish_emergency_messages(self):
         """ Just publish the abort topics. """
         msg = Float32()
-        msg.data = 0 #No speed
+        msg.data = 0.0 #No speed
         self._speed_pub.publish(msg)
 
     def execution_callback(self, goal_handle: ServerGoalHandle) -> ActionResult:
