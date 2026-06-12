@@ -61,7 +61,7 @@ TWIST_VIZ=False
 UW_COM=False
 
 # ---- EXPERIMENTAL ----
-PROX_OPS=False
+PROX_OPS=True
 
 if [[ "$(whoami)" == *"evolo"* ]]; then
     MODE="REAL" #[REAL, SIM, HITL]
@@ -207,7 +207,8 @@ row(
 )"
 
 # Health monitoring
-HEALTH_MONITORING_CMD="ros2 topic pub -r 1 /$ROBOT_NAME/smarc/vehicle_health std_msgs/msg/Int8 '{data: 0}' "
+# HEALTH_MONITORING_CMD="ros2 topic pub -r 1 /$ROBOT_NAME/smarc/vehicle_health std_msgs/msg/Int8 '{data: 0}' "
+HEALTH_MONITORING_CMD="ros2 run evolo_health_checker evolo_health_checker --ros-args -r __ns:=/evolo"
 tmux_make_layout "$SESSION" Health-monitoring "
 col(
     var(HEALTH_MONITORING_CMD)
@@ -488,7 +489,7 @@ fi
 #Node-red-translator
 if [ $JSON_TRANSLATOR == "True" ]; then
     JSON_TRANSLATOR_CMD="ros2 launch evolo_json_bridge json_bridge_launch.py"
-    tmux_make_layout "$SESSION" json_translator"
+    tmux_make_layout "$SESSION" json_translator "
     col(
         var(JSON_TRANSLATOR_CMD),
     )"
