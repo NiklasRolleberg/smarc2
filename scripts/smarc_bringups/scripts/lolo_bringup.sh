@@ -6,7 +6,12 @@ source "$SCRIPT_DIR/tmux_layout.sh"
 # Allow custom robot name as first argument, default to 'lolo'
 ROBOT_NAME=${1:-lolo}
 SESSION=${ROBOT_NAME}_bringup
-USE_SIM_TIME=True
+
+if [[ "$(whoami)" == *"lolo"* ]]; then
+    USE_SIM_TIME=False
+else
+    USE_SIM_TIME=True
+fi
 
 # New variables for wasp_bt.launch and wasp_mqtt_agent.launch
 AGENT_TYPE=subsurface
