@@ -134,7 +134,7 @@ if [ "$REALSIM" = "real" ]; then
     tmux_make_layout "$SESSION" Health-monitoring "
     col(
         var(HEALTH_MONITORING_CMD),
-        vat(LOLO_MQTT_BRIDGE_CMD)
+        var(LOLO_MQTT_BRIDGE_CMD)
     )"
     
 else
