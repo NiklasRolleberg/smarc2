@@ -46,23 +46,20 @@ class EvoloDeploy():
             if(self.unit_to_deploy == "right"):
                 self._node.get_logger().error(f"Dropping right puffin")
                 command = String()
-                command.data = "Puffin,dropRight"
+                command.data = "{\"Puffin\": \"dropRight\"}"
                 self.deploy_pub.publish(command)
             elif(self.unit_to_deploy == "left"):
                 self._node.get_logger().error(f"Dropping left puffin")
                 command = String()
-                command.data = "Puffin,dropLeft"
+                command.data = "{\"Puffin\": \"dropLeft\"}"
                 self.deploy_pub.publish(command)
             elif(self.unit_to_deploy == "both"):
                 self._node.get_logger().error(f"Dropping both puffins")
-                command1 = String()
-                command1.data = "Puffin,dropLeft"
-                self.deploy_pub.publish(command1)
-                command2 = String()
-                command2.data = "Puffin,dropRight"
-                self.deploy_pub.publish(command2)
+                command = String()
+                command.data = "{\"Puffin\": \"drop\"}"
+                self.deploy_pub.publish(command)
             else:
-                self._node.get_logger().error(f"Unknown puffin: {command}")
+                self._node.get_logger().error(f"Unknown puffin: {self.unit_to_deploy}")
 
         except Exception as e:
             self._node.get_logger().error(f"Error parsing goal: {e}")
