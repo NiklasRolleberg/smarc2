@@ -125,9 +125,11 @@ fi
 
 if [ "$REALSIM" = "real" ]; then
     HEALTH_MONITORING_CMD="sleep 5; ros2 launch lolo_health_checker lolo_health_checker.launch robot_name:=$ROBOT_NAME"
+    LOLO_MQTT_BRIDGE_CMD="ros2 run lolo_local_mqtt_translator lolo_local_translator_node"
     tmux_make_layout "$SESSION" Health-monitoring "
     col(
-        var(HEALTH_MONITORING_CMD)
+        var(HEALTH_MONITORING_CMD),
+        vat(LOLO_MQTT_BRIDGE_CMD)
     )"
     
 else
