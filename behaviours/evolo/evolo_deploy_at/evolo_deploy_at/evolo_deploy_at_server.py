@@ -3,7 +3,8 @@ from rclpy.node import Node
 from rclpy.callback_groups import ReentrantCallbackGroup
 from rclpy.executors import MultiThreadedExecutor
 from smarc_action_base.gentler_action_server import GentlerActionServer
-from smarc_action_base.gentler_action_client import GentlerActionClient
+from wasp_bt.bt.client import BTActionClient as GentlerActionClient
+#from smarc_action_base.gentler_action_client import GentlerActionClient
 from smarc_action_base.smarc_action_base import ActionClientState, ActionType
 from smarc_msgs.action import BaseAction
 from std_msgs.msg import String
