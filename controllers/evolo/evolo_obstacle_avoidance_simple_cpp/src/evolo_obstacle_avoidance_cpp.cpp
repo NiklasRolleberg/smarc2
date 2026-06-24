@@ -2,6 +2,8 @@
 #include "nav_msgs/msg/odometry.hpp"
 #include "tf2_ros/transform_listener.h"
 #include "tf2_geometry_msgs/tf2_geometry_msgs.hpp"
+#include "smarc_msgs/msg/topics.hpp"
+#include "evolo_msgs/msg/topics.hpp"
 #include "tf2_ros/buffer.h"
 #include "tf2/LinearMath/Quaternion.h"
 #include "tf2/LinearMath/Matrix3x3.h"
@@ -18,27 +20,30 @@ class ObstacleAvoidanceNode : public rclcpp::Node
 public:
   ObstacleAvoidanceNode() : Node("evolo_obstacle_avoidance")
   {
+
+    //TODO rosparam
+
     //Odometry buffer
-    buffer_ = OdometryBuffer(10, rclcpp::Duration::from_seconds(5.0));
+    buffer_ = OdometryBuffer(100, rclcpp::Duration::from_seconds(5.0));
 
     //tf
     tf_buffer_ = std::make_shared<tf2_ros::Buffer>(this->get_clock());
     tf_listener_ = std::make_shared<tf2_ros::TransformListener>(*tf_buffer_);
 
-    setpoint_publisher_ = this->create_publisher<nav_msgs::msg::Odometry>("control_setpoint_out", 10);
+    setpoint_publisher_ = this->create_publisher<nav_msgs::msg::Odometry>(evolo_msgs::msg::Topics::EVOLO_CONTROL_SETPOINT, 10);
 
     marker_publisher_ = this->create_publisher<visualization_msgs::msg::MarkerArray>("markers", 10);
 
     setpoint_subscription_ = this->create_subscription<nav_msgs::msg::Odometry>(
-      "ctrl/control_planned", 10,
+      evolo_msgs::msg::Topics::EVOLO_CONTROL_PLANNED, 10,
       std::bind(&ObstacleAvoidanceNode::setpoint_callback, this, std::placeholders::_1));
 
     robot_subscription_ = this->create_subscription<nav_msgs::msg::Odometry>(
-      "smarc/odom", 10,
+      smarc_msgs::msg::Topics::ODOM_TOPIC, 10,
       std::bind(&ObstacleAvoidanceNode::robot_callback, this, std::placeholders::_1));
 
     obstacle_subscription_ = this->create_subscription<nav_msgs::msg::Odometry>(
-      "obstacles", 10,
+      evolo_msgs::msg::Topics::EVOLO_CBF_OBSTACLES, 10,
       std::bind(&ObstacleAvoidanceNode::obstacle_callback, this, std::placeholders::_1));
 
     // Timer: fires every 5s
@@ -111,7 +116,17 @@ private:
       int bearing_deg = unwrap_deg(bearing_rad*180.0 / M_PI);
       if(distance < closest_distance) closest_distance = distance;
 
-      if(distance < distance_threshold) {
+      if(distance < distance_threshold_outer) {
+        float distance_inside_outer_radius = (distance_threshold_outer - distance); 
+        float distance_to_inner_radius = std::max(0.f,(distance_threshold_outer - distance_inside_outer_radius) - distance_threshold_inner);
+        float fraction = distance_to_inner_radius / (distance_threshold_outer - distance_threshold_inner);
+
+        RCLCPP_INFO(this->get_logger(), "distance_inside_outer_radius: %.2f", distance_inside_outer_radius);
+        RCLCPP_INFO(this->get_logger(), "distance_to_inner_radius: %.2f", distance_to_inner_radius);
+        RCLCPP_INFO(this->get_logger(), "fraction: %.2f", fraction);
+
+        int bearing_buffer = min_bearing_buffer + (1-fraction)*(max_bearing_buffer - min_bearing_buffer);
+        RCLCPP_INFO(this->get_logger(), "bearing buffer: %d", bearing_buffer);
         for(int i=-bearing_buffer; i<bearing_buffer;i++) {
           int occupied_bearing = unwrap_deg(bearing_deg + i);
           bearings[occupied_bearing] = 1;
@@ -129,9 +144,6 @@ private:
     //calculate prefered direction to turn
     int diff = unwrap_deg(yaw_setpoint_deg - robot_yaw_deg); //Does this work?
     if(diff > 180) diff -= 360; //-180 to 180
-    //double current_vector[] = {cos(robot_yaw_rad), sin(robot_yaw_rad)};
-    //double target_vector[] = {cos(yaw_setpoint_rad), sin(yaw_setpoint_rad)};
-    //double diff = atan2(target_vector[1] - current_vector[1], target_vector[0] - current_vector[0]) * 180.0 / M_PI;
     int direction = (diff >= 0) ? 1 : -1;
 
     RCLCPP_INFO(this->get_logger(), "Angle to turn: %0.2f, direction: %d", (float) diff, direction);
@@ -185,7 +197,7 @@ private:
     if(panic_distance < panic_distance || !possible_yaw_found) {
       RCLCPP_INFO(this->get_logger(), "Panic distance or no new direction found");
 
-      //No turning
+      //No turning. Just stop
       q2.setRPY(roll_setpoint_rad, pitch_setpoint_rad, robot_yaw_rad);
       q2.normalize();
       msg->pose.pose.orientation.x = q2.x();
@@ -227,9 +239,9 @@ private:
         marker.pose.position.z = 0.0;
         marker.pose.orientation.w = 1.0;
 
-        marker.scale.x = 0.1;
-        marker.scale.y = 0.1;
-        marker.scale.z = 0.1;
+        marker.scale.x = 0.2;
+        marker.scale.y = 0.2;
+        marker.scale.z = 0.2;
         if(bearings[i] == 0) {
           marker.color.r = 0.0f;
           marker.color.g = 1.0f;
@@ -397,8 +409,10 @@ private:
   
   //Settings
   bool publish_viz = true;
-  int bearing_buffer = 10; //+-10 deg
-  float distance_threshold = 250; // distance to considering obstacles
+  float min_bearing_buffer = 1; //+-1 deg at outer threshold distance
+  float max_bearing_buffer = 90; //+-90 deg at inner threshold distance
+  float distance_threshold_outer = 50; // distance to considering obstacles
+  float distance_threshold_inner = 10; // distance where we have maximum avoidance
   float panic_distance = 4; // distance to obstacles where we put speed=0
 
   nav_msgs::msg::Odometry robot_position;
