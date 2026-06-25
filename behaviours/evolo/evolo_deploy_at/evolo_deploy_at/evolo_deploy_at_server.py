@@ -49,23 +49,22 @@ class EvoloDeployAt():
         self.action_goals = []
         self.current_action = 0 #Index of currently running action
 
-        self.action_clients.append
-        (
-            GentlerActionClient(
+        move_to_client = GentlerActionClient(
                 node=self._node, 
                 action_name='move_to', 
                 action_type=ActionType(BaseAction)
-            )
-        )
-
-        self.action_clients.append
-        (
-            GentlerActionClient(
+                )
+        
+        deploy_client = GentlerActionClient(
                 node=self._node, 
                 action_name='deploy', 
                 action_type=ActionType(BaseAction)
-            )
-        )
+                )
+
+        self.action_clients.append(move_to_client)
+        self.action_clients.append(deploy_client)
+
+        self._node.get_logger().info(f"[CONSTRUCTOR] Action goals: {self.action_goals}, Action clients: {self.action_clients}")
 
         for ac in self.action_clients:
             ac.get_ready()
@@ -80,8 +79,8 @@ class EvoloDeployAt():
             wp = goal_request['waypoint']
 
             waypoint : GeoPoint = GeoPoint()
-            waypoint.latitude = float(wp.waypoint['latitude'])
-            waypoint.longitude = float(wp.waypoint['longitude'])
+            waypoint.latitude = float(wp['latitude'])
+            waypoint.longitude = float(wp['longitude'])
             
             self._node.get_logger().info(f"Waypoint:  {waypoint}")
             self._node.get_logger().info(f"unit:  {unit_to_deploy}")
@@ -100,23 +99,32 @@ class EvoloDeployAt():
                 },
                 "speed": "STANDARD"
             }
+
+            self._node.get_logger().info(f"Move to goal created")
+
             move_to_goal = BaseAction.Goal()
-            move_to_goal.data = json.dumps(move_to_goal_dict)
+            move_to_goal.goal.data = json.dumps(move_to_goal_dict)
 
             # Deploy goal
             deploy_goal_dict = {
                 "unit": self.unit_to_deploy
             }
             deploy_goal = BaseAction.Goal()
-            deploy_goal.data = json.dumps(deploy_goal_dict)
+            deploy_goal.goal.data = json.dumps(deploy_goal_dict)
+
+            self._node.get_logger().info(f"Deploy goal created")
 
             #Add goals to list
             self.action_goals = []
             self.action_goals.append(move_to_goal)
             self.action_goals.append(deploy_goal)
 
+            self._node.get_logger().info(f"Action goals: {self.action_goals}, Action clients: {self.action_clients}")
+
             #Make sure we have the same numer of goals as action clients
             assert len(self.action_clients) == len(self.action_goals)
+
+            self._node.get_logger().info(f"Assert OK")
 
             return True
         except Exception as e:
@@ -131,12 +139,16 @@ class EvoloDeployAt():
         future :Future = Future()
         action_client : GentlerActionClient = self.action_clients[self.current_action]
         action_client.cancel_goal(future.set_result)
-        rclpy.spin_until_future_complete(self, self.future2, timeout_sec=4)
+        rclpy.spin_until_future_complete(self._node, future, timeout_sec=4)
 
-        self._node.get_logger().info("future result: " + str(future.result))
-        if(False):
+        response = future.result()
+        self._node.get_logger().info("future result: " + str(response))
+        if len(response.goals_canceling) > 0:
+            self._node.get_logger().info("Successfully canceled goal")
             return True
-        return False
+        else:
+            self._node.get_logger().info("Failed to cancel goal")
+            return False
 
     def _prepare_loop(self) -> None:
         self._node.get_logger().info("Preparing loop for action execution")
