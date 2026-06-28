@@ -12,6 +12,8 @@ from evolo_msgs.msg import Topics as evoloTopics
 from geographic_msgs.msg import GeoPoint
 import json
 from rclpy.task import Future
+import asyncio
+import time
 
 class EvoloDeployAt():
 
@@ -97,7 +99,7 @@ class EvoloDeployAt():
                     "tolerance": 10.0,  
                     "rostype": "GeoPoint"
                 },
-                "speed": "STANDARD"
+                "speed": goal_request['speed']
             }
 
             self._node.get_logger().info(f"Move to goal created")
@@ -107,7 +109,7 @@ class EvoloDeployAt():
 
             # Deploy goal
             deploy_goal_dict = {
-                "unit": self.unit_to_deploy
+                "unit": unit_to_deploy
             }
             deploy_goal = BaseAction.Goal()
             deploy_goal.goal.data = json.dumps(deploy_goal_dict)
@@ -130,7 +132,7 @@ class EvoloDeployAt():
         except Exception as e:
             self._node.get_logger().error(f"Error parsing goal: {e}")
         return False
-
+    
     def _on_cancel_received(self) -> bool:
         self._node.get_logger().info("Received cancel request")
         # Here you would typically handle the cancel request
@@ -139,11 +141,16 @@ class EvoloDeployAt():
         future :Future = Future()
         action_client : GentlerActionClient = self.action_clients[self.current_action]
         action_client.cancel_goal(future.set_result)
-        rclpy.spin_until_future_complete(self._node, future, timeout_sec=4)
+
+        for i in range(4000): #4s max sleep
+            if(future.done()): break
+            asyncio.sleep(0)
+            time.sleep(0.01)
+        #rclpy.spin_until_future_complete(self._node, future, timeout_sec=4)
 
         response = future.result()
         self._node.get_logger().info("future result: " + str(response))
-        if len(response.goals_canceling) > 0:
+        if response != None and len(response.goals_canceling) > 0:
             self._node.get_logger().info("Successfully canceled goal")
             return True
         else:
@@ -154,10 +161,13 @@ class EvoloDeployAt():
         self._node.get_logger().info("Preparing loop for action execution")
         # Here you would typically set up any necessary state or resources
         # This is run once before the loop starts, after you accept the goal
+        self.current_action = 0
+        for ac in self.action_clients:
+            ac.get_ready()
 
     def _loop_inner(self) -> bool | None:
 
-        if(self.current_action  > len(self.action_clients)):
+        if(self.current_action  >= len(self.action_clients)):
             #We have reached the end of the list of action servers. Must be good..
             return True
         
@@ -176,7 +186,7 @@ class EvoloDeployAt():
 
         #Previous action client is done. Mone on to the next
         if(action_client.state == ActionClientState.DONE):
-            self.action_clients += 1
+            self.current_action += 1
         
         return None
 
