@@ -99,12 +99,14 @@ class EvoloMoveTo():
         self._tf_listener = TransformListener(
             self._tf_buffer, self._node, spin_thread=True
         )
-        
+
         # State variables. gets updated from topic callbacks
         self.robot_position = PoseStamped() #robot positon [geometry_msgs/msg/Pose]
+        self.robot_speed = 0 #Speed in m/s
         self.robot_position_time = None #robot position time to be compared with current time
         self.target_position = PoseStamped() #target positon [geometry_msgs/msg/Pose]
         self.distance_to_target = None
+        self.start_location = PoseStamped()
 
         #Target frame
         #self.frame_id = 'map_gt'
@@ -118,14 +120,9 @@ class EvoloMoveTo():
         self._node.declare_parameter('timeout', 1800)
         self.timeout = float(self._node.get_parameter('timeout').value)
 
-        self._node.declare_parameter('p_gain', 0.5)
-        self.pid_p_gain = float(self._node.get_parameter('p_gain').value)
-
-        self._node.declare_parameter('i_gain', 0)
-        self.pid_i_gain = float(self._node.get_parameter('i_gain').value)
-
-        self._node.declare_parameter('d_gain', 0)
-        self.pid_d_gain = float(self._node.get_parameter('d_gain').value)
+        self._node.declare_parameter('aim_ahead_dist_m', 40)
+        self.aim_ahead_dist_m = float(self._node.get_parameter('aim_ahead_dist_m').value)
+        self.aim_ahead_dist_m = max(0,min(40,self.aim_ahead_dist_m))
 
         self.max_speed = 8.0        
         
@@ -190,6 +187,9 @@ class EvoloMoveTo():
         # This is run once before the loop starts, after you accept the goal
         self.action_started_time = int(self._node.get_clock().now().nanoseconds * 1e-9)
 
+        #Save start location so it can be used in XTE calculation
+        self.start_location = self.robot_position
+
     def _loop_inner(self) -> bool | None:
         # Here you would typically perform the main logic of the action
         # Return True to indicate success, False for failure, or None to continue
@@ -211,11 +211,71 @@ class EvoloMoveTo():
             #TODO send speed = Stop
             return True
 
-        dx = self.target_position.pose.position.x - self.robot_position.pose.position.x
-        dy = self.target_position.pose.position.y - self.robot_position.pose.position.y
-        targetYaw = math.atan2(dy,dx) # yaw in ENU
-        target_quaternion = euler2quat(0,0,targetYaw, axes='sxyz')
+        # XTE math. (Coordinate system is in meters)
+        #(1) create local coordinate system start_pos = origin
+        goalX = self.target_position.pose.position.x - self.start_location.pose.position.x
+        goalY = self.target_position.pose.position.y - self.start_location.pose.position.y
+        currentX = self.robot_position.pose.position.x - self.start_location.pose.position.x
+        currentY = self.robot_position.pose.position.y - self.start_location.pose.position.y
 
+        #(2) project current position on the line between start and goal
+
+        #normalized vector from start to goal n=[nx,ny]
+        dist_total = math.sqrt(goalX*goalX + goalY*goalY)
+        nx = goalX / dist_total
+        ny = goalY / dist_total
+
+        # current pos projected on line p=[px,py]
+        dist_from_start = nx*currentX + ny*currentY; #dot product
+        px = nx*dist_from_start
+        py = ny*dist_from_start
+
+        #Check if the point p is actually between start and goal
+        f = nx*px + ny*py
+        case = 0 # 0 = between start and goal, 1 = before the start point, 2 = after the end point
+        if(f < 0): case = 1
+        if(f > dist_total): case = 2
+
+        if(case == 0): #Closest point is on the line between start and goal
+            self._node.get_logger().info("Steering using XTE")
+
+            #Calcualte XTE error
+            dx_xte = px -currentX
+            dy_xte = py -currentY
+            xte_m = math.sqrt(dx_xte*dx_xte + dy_xte*dy_xte)
+            # TODO low pass filter xte_m?
+            # TODO XTE PID
+
+            #move projected point on the line
+            dist_to_goal = dist_total - dist_from_start; # m left to goal
+            dist_to_move = self.aim_ahead_dist_m * (self.robot_speed / (0.514444444*15)) #15kn = move target aim_ahead_distance
+            dist_to_move = min(dist_to_goal, dist_to_move) # Don't move the target past goal
+
+            px += nx*dist_to_move
+            py += ny*dist_to_move
+            self._node.get_logger().info(f"Moving target along rumbline: {dist_to_move} meters")
+        elif(case == 1): #target = start point
+            self._node.get_logger().info("Steering towards start point")
+            px = 0
+            py = 0
+        else : #target = goal point
+            self._node.get_logger().info("Steering towards goal point")
+            px = goalX
+            py = goalY
+
+        #Calcualte yaw to the target position
+        # targetpos = origin + proected target position
+        target_pos_x = self.start_location.pose.position.x + px
+        target_pos_y = self.start_location.pose.position.y + py
+        self._node.get_logger().info(f"target location: x={target_pos_x}, y={target_pos_y}")
+
+        dx = target_pos_x - self.robot_position.pose.position.x
+        dy = target_pos_y - self.robot_position.pose.position.y
+        targetYaw = math.atan2(dy,dx) # yaw in ENU
+
+        # TODO add value from XTE PID
+
+        target_quaternion = euler2quat(0,0,targetYaw, axes='sxyz')
         control_msg = Odometry()
         control_msg.header.stamp    = self._node.get_clock().now().to_msg()
         control_msg.header.frame_id = self.frame_id
@@ -290,6 +350,7 @@ class EvoloMoveTo():
         self.robot_position.header = msg.header
         self.robot_position.pose = msg.pose.pose
         self.robot_position_time = int(self._node.get_clock().now().nanoseconds * 1e-9)
+        self.robot_speed = msg.twist.twist.linear.x
         #self._node.get_logger().info("" + str(msg.header.frame_id))
 
     def testcase(self):
