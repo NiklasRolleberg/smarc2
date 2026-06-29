@@ -21,7 +21,30 @@ public:
   ObstacleAvoidanceNode() : Node("evolo_obstacle_avoidance")
   {
 
-    //TODO rosparam
+    // Declare parameters with default values
+    this->declare_parameter<bool>("publish_viz", true);
+    this->declare_parameter<float>("min_bearing_buffer", 10.0);
+    this->declare_parameter<float>("max_bearing_buffer", 90.0);
+    this->declare_parameter<float>("distance_threshold_outer", 50.0);
+    this->declare_parameter<float>("distance_threshold_inner", 10.0);
+    this->declare_parameter<float>("panic_distance", 10);
+
+    publish_viz               = this->get_parameter("publish_viz").as_bool();
+    min_bearing_buffer        = this->get_parameter("min_bearing_buffer").as_double();
+    max_bearing_buffer        = this->get_parameter("max_bearing_buffer").as_double();
+    distance_threshold_outer  = this->get_parameter("distance_threshold_outer").as_double();
+    distance_threshold_inner  = this->get_parameter("distance_threshold_inner").as_double();
+    panic_distance            = this->get_parameter("panic_distance").as_double();
+
+
+    RCLCPP_INFO(this->get_logger(), "Parameters:");
+    RCLCPP_INFO(this->get_logger(), "  publish_viz = %d", publish_viz);
+    RCLCPP_INFO(this->get_logger(), "  min_bearing_buffer = %f", min_bearing_buffer);
+    RCLCPP_INFO(this->get_logger(), "  max_bearing_buffer = %f", max_bearing_buffer);
+    RCLCPP_INFO(this->get_logger(), "  distance_threshold_outer = %f", distance_threshold_outer);
+    RCLCPP_INFO(this->get_logger(), "  distance_threshold_inner = %f", distance_threshold_inner);
+    RCLCPP_INFO(this->get_logger(), "  panic_distance = %f", panic_distance);
+
 
     //Odometry buffer
     buffer_ = OdometryBuffer(100, rclcpp::Duration::from_seconds(5.0));
