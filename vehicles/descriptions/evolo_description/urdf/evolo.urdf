@@ -19,7 +19,7 @@
   
 
   <joint name="evolo/lidar_joint" type="fixed">
-    <origin rpy="0 0 0" xyz="0.35 0.0 0.27"/>
+    <origin rpy="0 0 1.57079633" xyz="0.35 0.0 0.27"/>
     <parent link="evolo/base_link"/>
     <child link="evolo/lidar_link"/>
   </joint>
@@ -36,7 +36,7 @@
   </joint>
 
   <joint name="sensor_lidar_joint" type="fixed">
-    <origin rpy="0 0 2.356194490192345" xyz="0 0 0.038"/>
+    <origin rpy="0 0 3.141592653589793" xyz="0 0 0.038"/>
     <parent link="os_sensor"/>
     <child link="os_lidar"/>
   </joint>
