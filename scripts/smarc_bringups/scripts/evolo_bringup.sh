@@ -457,8 +457,8 @@ fi
 
 # Perception
 if [ $LIDAR_PROCESSING == "True" ]; then
-    POINTCLOUD_PEPROCESSING_CMD="ros2 launch pointcloud_preprocessing pointcloud_preprocessing_launch_evolo.py use_sim_time:=$USE_SIM_TIME"
-    POINTCLOUD_CLUSTERING_CMD="ros2 run clustering_segmentation clustering_segmentation --ros-args -p use_sim_time:=$USE_SIM_TIME -p DynamicStatic_clusters_segmentation:=True"
+    POINTCLOUD_PEPROCESSING_CMD="ros2 launch pointcloud_preprocessing pointcloud_preprocessing_launch_ghostfoiler.py use_sim_time:=$USE_SIM_TIME"
+    POINTCLOUD_CLUSTERING_CMD="ros2 run clustering_segmentation clustering_segmentation --ros-args -p use_sim_time:=$USE_SIM_TIME -p DynamicStatic_clusters_segmentation:=True -p occupancy_percentage:=0.9 -p threshold_occupancy:=0.8"
     tmux_make_layout "$SESSION" pointcloud-processing "
     col(
         var(POINTCLOUD_PEPROCESSING_CMD),

@@ -31,8 +31,8 @@ class cluster_grid(Node):
         self.robot_name = self.get_parameter("robot_name").value
 
         # Occupancy grid
-        self.occ_limit = 30 # Limit for a single square
-        self.cluster_limit = 80 # Limit for a cluster
+        self.occ_limit = 50 # Limit for a single square
+        self.cluster_limit = 100 # Limit for a cluster
         self.obstacle_closeness_limit = 3
         self.reduce_search = 20
         self.max_cluster_size = 100
