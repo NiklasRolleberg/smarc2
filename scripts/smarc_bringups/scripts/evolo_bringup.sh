@@ -162,7 +162,7 @@ tmux select-window -t $SESSION:0
 tmux send-keys "Remember to start the logging!" 
 
 # Controllers
-CONTROLLER_CMD="ros2 launch evolo_controllers evolo_controllers_launch.py closed_loop_p_gain:=1.0 closed_loop_i_gain:=0.1 closed_loop_d_gain:=0.0 max_steering_output:=40.0 max_integral:=10.0"
+CONTROLLER_CMD="ros2 launch evolo_controllers evolo_controllers_launch.py closed_loop_p_gain:=0.5 closed_loop_i_gain:=0.05 closed_loop_d_gain:=0.0 max_steering_output:=100.0 max_integral:=10.0"
 tmux_make_layout "$SESSION" Controllers "
 col(
     var(CONTROLLER_CMD)
@@ -178,7 +178,7 @@ col(
 
 
 # Evolo action servers
-MOVE_TO_ACTION_CMD="sleep 4; ros2 run evolo_move_to move_to_server --ros-args -r __ns:=/$ROBOT_NAME -p use_sim_time:=$USE_SIM_TIME -p use_xte:=True -p aim_ahead_dist_max:=40"
+MOVE_TO_ACTION_CMD="sleep 4; ros2 run evolo_move_to move_to_server --ros-args -r __ns:=/$ROBOT_NAME -p use_sim_time:=$USE_SIM_TIME -p use_xte:=True -p aim_ahead_dist_max:=80 -p xte_pid_p:=0.0 -p xte_pid_i:=0.0 -p xte_pid_d:=0.0 -p xte_pid_max_integral:=5.0 -p xte_pid_max_output:=10.0"
 MOVE_PATH_ACTION_CMD="sleep 4; ros2 run evolo_move_path move_path_server_dubins_curves --ros-args -r __ns:=/$ROBOT_NAME -p use_sim_time:=$USE_SIM_TIME --params-file \$(ros2 pkg prefix evolo_move_path)/share/evolo_move_path/config/evolo_params.yaml"
 EXTERNAL_CTRL_ACTION_CMD="sleep 4; ros2 run evolo_external_control externalcontrol_server --ros-args -r __ns:=/$ROBOT_NAME -p use_sim_time:=$USE_SIM_TIME"
 DEPLOY_ACTION_CMD="ros2 run evolo_deploy evolo_deploy_server --ros-args -r __ns:=/$ROBOT_NAME -p use_sim_time:=$USE_SIM_TIME"
