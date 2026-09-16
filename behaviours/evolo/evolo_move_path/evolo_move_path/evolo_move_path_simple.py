@@ -60,9 +60,9 @@ class EvoloMovePath():
             if isinstance(raw_speed, (int, float)):
                 self.speed = float(raw_speed)
             elif raw_speed == 'slow':
-                self.speed = 4.63
+                self.speed = 2.0
             elif raw_speed == 'fast':
-                self.speed = 6.0
+                self.speed = 3.6
             else:
                 self.speed_kn = 4.9
 
