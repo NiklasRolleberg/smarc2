@@ -216,7 +216,7 @@ class twist_control(Node):
             steering_output = max(-self.max_steering_output, min(self.max_steering_output, pid_output))
 
             #Stationary turns
-            if(self.odom_feedback.twist.twist.linear.x < 1.0 and abs(self.steering_output) > 0.7*self.max_steering_output):
+            if(self.odom_feedback.twist.twist.linear.x < 1.0 and abs(steering_output) > 0.7*self.max_steering_output):
                 target_speed = 0.0
 
             steering_msg = Float32()
