@@ -245,7 +245,7 @@ class EvoloMoveTo():
 
                 #move projected point on the line
                 dist_to_goal = dist_total - dist_from_start; # m left to goal
-                dist_to_move = self.aim_ahead_dist_m * (self.robot_speed / (0.514444444*11)) #15kn = move target aim_ahead_distance
+                dist_to_move = self.aim_ahead_dist_m # * (self.robot_speed / (0.514444444*11)) #15kn = move target aim_ahead_distance
                 dist_to_move = min(dist_to_goal, dist_to_move) # Don't move the target past goal
 
                 px += nx*dist_to_move
