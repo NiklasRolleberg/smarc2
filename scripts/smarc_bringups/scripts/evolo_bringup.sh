@@ -257,10 +257,12 @@ if [ $OBSTACLE_AVOIDANCE == "True" ]; then
     #OBSTACLE_AVOIDANCE_CMD="ros2 run topic_tools relay /evolo/ctrl/twist_planned /evolo/ctrl/twist_setpoint"
     OBSTACLE_AVOIDANCE_CMD="ros2 run evolo_obstacle_avoidance_simple_cpp evolo_obstacle_avoidance_cpp --ros-args -r __ns:=/evolo -p panic_distance:=3.0 -p distance_threshold_outer:=15.0 -p distance_threshold_inner:=7.0"
     CLUSTERING_CMD="ros2 launch evolo_map_cluster evolo_map_cluster_launch.py"
+    CAMERA_AVOIDACE_CMD="ros2 run evolo_camera_tools_cpp yolo_to_obstacle_cpp --ros-args -p projection_distance:=10.0 -p threshold:=0.6"
     tmux_make_layout "$SESSION" Obstacle-avoidance "
     col(
         var(OBSTACLE_AVOIDANCE_CMD),
-        var(CLUSTERING_CMD)
+        var(CLUSTERING_CMD),
+        var(CAMERA_AVOIDACE_CMD)
     )"
 else
     #OBSTACLE_AVOIDANCE_CMD="ros2 run topic_tools relay /evolo/ctrl/twist_planned /evolo/ctrl/twist_setpoint"
