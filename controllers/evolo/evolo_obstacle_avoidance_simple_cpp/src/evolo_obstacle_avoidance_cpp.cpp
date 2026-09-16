@@ -25,9 +25,9 @@ public:
     this->declare_parameter<bool>("publish_viz", true);
     this->declare_parameter<float>("min_bearing_buffer", 10.0);
     this->declare_parameter<float>("max_bearing_buffer", 90.0);
-    this->declare_parameter<float>("distance_threshold_outer", 50.0);
-    this->declare_parameter<float>("distance_threshold_inner", 10.0);
-    this->declare_parameter<float>("panic_distance", 10);
+    this->declare_parameter<float>("distance_threshold_outer", 15.0);
+    this->declare_parameter<float>("distance_threshold_inner", 7.0);
+    this->declare_parameter<float>("panic_distance", 3);
 
     publish_viz               = this->get_parameter("publish_viz").as_bool();
     min_bearing_buffer        = this->get_parameter("min_bearing_buffer").as_double();
