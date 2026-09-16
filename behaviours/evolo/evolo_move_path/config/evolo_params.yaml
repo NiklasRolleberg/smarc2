@@ -1,20 +1,20 @@
 /**/evolo_move_path_action_server:
   ros__parameters:
     frame_id: "evolo/odom"
-    timeout: 1200.0
+    timeout: 3600.0
 
     # Speed
-    speed_slow: 1.0
+    speed_slow: 2.0
     speed_standard: 4.9
-    speed_fast: 6.0
+    speed_fast: 3.6
     omega_max: 30.0
 
     # Pure Pursuit
-    ld_base: 20.0
-    ld_min: 10.0
+    ld_base: 60.0
+    ld_min: 35.0
 
     # Dubins planner
-    min_turning_radius: 20.0
+    min_turning_radius: 25.0
     dubins_step: 0.5
     dubins_mode: "smooth"  # "vwp" or "smooth"
 

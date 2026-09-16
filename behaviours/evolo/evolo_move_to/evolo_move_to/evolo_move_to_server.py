@@ -80,7 +80,7 @@ class EvoloMoveTo():
 
         self._node.declare_parameter('aim_ahead_dist_max', 40)
         self.aim_ahead_dist_m = float(self._node.get_parameter('aim_ahead_dist_max').value)
-        self.aim_ahead_dist_m = max(0,min(40,self.aim_ahead_dist_m))
+        self.aim_ahead_dist_m = max(0,min(200,self.aim_ahead_dist_m))
 
         #PID parameters
         #Closed loop gains
@@ -133,9 +133,9 @@ class EvoloMoveTo():
                 speed = float(speed)
             except Exception as e:
                 self._node.get_logger().info(f"Tried to parse speed as float. Did not work: {speed}, {e}")
-                if(speed == "slow"): speed = 1.0
+                if(speed == "slow"): speed = 2
                 elif(speed == "standard"): speed = 4.9
-                elif(speed == "fast"): speed = 6
+                elif(speed == "fast"): speed = 3.6
                 else: speed = 0.0
 
             assert type(speed) == float
@@ -152,6 +152,9 @@ class EvoloMoveTo():
             #self._node.get_logger().info(f"lat lon sent to function: {lat}, {lon}")
             self.target_position = self.latlon_to_local_frame([lat,lon])
             self.target_speed = speed
+            self.target_tol = max(5, float(waypoint['tolerance']))
+
+
         except Exception as e:
             self._node.get_logger().info(f"Failed to parse goal request: {str(e)}")
             return False
@@ -242,7 +245,7 @@ class EvoloMoveTo():
 
                 #move projected point on the line
                 dist_to_goal = dist_total - dist_from_start; # m left to goal
-                dist_to_move = self.aim_ahead_dist_m * (self.robot_speed / (0.514444444*15)) #15kn = move target aim_ahead_distance
+                dist_to_move = self.aim_ahead_dist_m * (self.robot_speed / (0.514444444*11)) #15kn = move target aim_ahead_distance
                 dist_to_move = min(dist_to_goal, dist_to_move) # Don't move the target past goal
 
                 px += nx*dist_to_move

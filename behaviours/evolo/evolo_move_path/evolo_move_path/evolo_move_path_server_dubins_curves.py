@@ -870,7 +870,7 @@ class EvoloMovePath:
                 pass
 
         dist_to_goal = math.hypot(robot_pos.x - path[-1][0], robot_pos.y - path[-1][1])
-        tolerance = 5
+        tolerance = self.target_list[-1].tol
         if self.path_cursor >= len(path) - 1 and dist_to_goal < tolerance:
             self._node.get_logger().info('End of Dubins path reached')
             self._send_stop()
@@ -940,7 +940,7 @@ class EvoloMovePath:
         cmd.header.stamp    = self._node.get_clock().now().to_msg()
         cmd.header.frame_id = self.frame_id
         cmd.child_frame_id  = "evolo/base_link"
-        cmd.pose.pose.orientation.w = 1.0  
+        cmd.pose.pose.orientation = self.robot_position.pose.orientation
         cmd.twist.twist.linear.x  = 0.0
         cmd.twist.twist.angular.z = 0.0
         self.speed_pub.publish(cmd)
